@@ -278,9 +278,9 @@ export default function App() {
         )}
 
         {!isDeviceBound && (
-          <p className="text-center text-sm text-[#9ca3af] mt-8">
-            Ask your admin for your access token.
-          </p>
+            <p className="mt-8 text-center text-xs text-[#262626]">
+              Secure connection established.<br/>v1.0.1 (OTA Test)
+            </p>
         )}
       </div>
     </div>
