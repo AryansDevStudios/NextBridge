@@ -27,11 +27,14 @@ async function buildAndConsolidate() {
   // 4. Organize Deploy Folder
   console.log('Organizing Deployment Folder...');
   
-  // A. Admin Panel -> /admin
+  // A. Student App -> Root of DEPLOY_DIR
+  await fs.copy(path.join(STUDENT_APP_DIR, 'dist'), DEPLOY_DIR);
+
+  // B. Admin Panel -> /admin
   const adminDeployPath = path.join(DEPLOY_DIR, 'admin');
   await fs.copy(path.join(ADMIN_APP_DIR, 'dist'), adminDeployPath);
 
-  // B. Student App -> /buildcode (for OTA)
+  // C. Student App -> /buildcode (for OTA)
   const buildcodePath = path.join(DEPLOY_DIR, 'buildcode');
   await fs.ensureDir(buildcodePath);
   
@@ -48,10 +51,7 @@ async function buildAndConsolidate() {
     releaseDate: new Date().toISOString()
   });
 
-  // C. Optional: Default root index.html just to prevent 404
-  await fs.writeFile(path.join(DEPLOY_DIR, 'index.html'), '<html><body>Next Bridge API Endpoint</body></html>');
-
-  // D. Netlify _redirects to handle SPA routing if needed
+  // D. Netlify _redirects to handle SPA routing
   const redirects = `
 /admin/* /admin/index.html 200
 /* /index.html 200

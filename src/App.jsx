@@ -1,12 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { db } from './firebase';
 import LearningHub from './components/LearningHub';
-import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor } from '@capacitor/core';
 import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
+
+// CRITICAL: Notify Capgo immediately on module import that the app has booted
+CapacitorUpdater.notifyAppReady().catch(e => console.warn('[OTA] notifyAppReady module-level:', e));
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -25,26 +28,35 @@ export default function App() {
 
   useEffect(() => {
     const init = async () => {
-      // 1. Instant Cache Check for seamless offline playback
+      // 1. Re-affirm notifyAppReady on component mount to ensure Capgo watchdog is satisfied
+      try {
+        await CapacitorUpdater.notifyAppReady();
+        console.log('[OTA] Successfully notified Capgo that app is ready');
+      } catch (err) {
+        console.warn('[OTA] notifyAppReady ignored on non-native platform:', err);
+      }
+
+      // 2. Check cached user credentials for instant offline loading
       const cached = localStorage.getItem('student_user');
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.id) {
             setUser(parsed);
-            setLoading(false); // UI opens immediately!
+            setLoading(false); // Render UI immediately
           }
         } catch (e) {
-          console.error("Failed to parse cached user:", e);
+          console.error('[Auth] Failed to parse cached student user:', e);
         }
       }
 
-      // 2. Background OTA check
-      checkForUpdates();
+      // 3. OTA Update Check (only on physical mobile platforms)
+      await checkForUpdates();
 
-      // 3. Verify authentication state & device binding with Firestore
+      // 4. Validate or establish session with Firestore
       await checkAutoLogin();
     };
+
     init();
   }, []);
 
@@ -67,7 +79,7 @@ export default function App() {
               });
             }
           } catch (err) {
-            console.error("Failed to update screen time:", err);
+            console.error('[Analytics] Failed to update screen time:', err);
           }
         }
       }
@@ -84,23 +96,31 @@ export default function App() {
     }
     
     try {
+      console.log('[OTA] Checking for remote updates...');
       const response = await fetch('https://nextbridgeweb.netlify.app/buildcode/version.json?t=' + Date.now());
       const data = await response.json();
       
       const currentVersion = localStorage.getItem('app_version') || '0';
+      console.log(`[OTA] Local: ${currentVersion} | Remote: ${data.version}`);
+      
       if (data.version && String(data.version) !== String(currentVersion)) {
-        setUpdateMsg('Downloading new update...');
+        setUpdateMsg('Updating to latest version...');
         const downloadUrl = 'https://nextbridgeweb.netlify.app' + data.url;
+        
+        console.log('[OTA] Downloading bundle:', downloadUrl);
         const update = await CapacitorUpdater.download({
           url: downloadUrl,
           version: String(data.version)
         });
-        setUpdateMsg('Applying update...');
+        
+        console.log('[OTA] Download complete, applying update...');
         localStorage.setItem('app_version', String(data.version));
+        
+        // This reloads the WebView with the new bundle
         await CapacitorUpdater.set(update);
       }
     } catch (err) {
-      console.error('[OTA] Error during update process:', err);
+      console.error('[OTA] Error during update check (offline or network error):', err);
     }
   };
 
@@ -112,11 +132,14 @@ export default function App() {
 
       try {
         const info = await Device.getId();
-        identifier = info.identifier;
+        if (info && info.identifier) {
+          identifier = info.identifier;
+        }
       } catch (e) {
-        console.warn("Device.getId failed:", e);
+        console.warn('[Device] Device.getId unavailable:', e);
       }
 
+      // Robust persistent fallback for emulators or web previews
       if (!identifier) {
         identifier = localStorage.getItem('_app_device_id');
         if (!identifier) {
@@ -135,7 +158,7 @@ export default function App() {
       setDeviceInfo(combined);
       return combined;
     } catch (e) {
-      console.warn("Capacitor device data error, using fallback:", e);
+      console.warn('[Device] getDeviceData error, fallback generated:', e);
       const fallbackId = localStorage.getItem('_app_device_id') || 'dev_fallback_' + Date.now();
       localStorage.setItem('_app_device_id', fallbackId);
       return { androidId: fallbackId, model: 'Android', osVersion: '14' };
@@ -149,17 +172,16 @@ export default function App() {
     try {
       let targetStudent = null;
 
-      // Check by saved PAT first if available
+      // 1. Look up by cached PAT first
       if (savedPat) {
-        const qPat = query(collection(db, 'students'), where('pat', '==', savedPat));
+        const qPat = query(collection(db, 'students'), where('pat', '==', savedPat.trim().toUpperCase()));
         const snapPat = await getDocs(qPat);
         if (!snapPat.empty) {
-          const docData = snapPat.docs[0].data();
-          targetStudent = { id: snapPat.docs[0].id, ...docData };
+          targetStudent = { id: snapPat.docs[0].id, ...snapPat.docs[0].data() };
         }
       }
 
-      // Otherwise check by registered device ID
+      // 2. Look up by bound Device ID
       if (!targetStudent && dev?.androidId) {
         const qDev = query(collection(db, 'students'), where('device.androidId', '==', dev.androidId));
         const snapDev = await getDocs(qDev);
@@ -174,27 +196,27 @@ export default function App() {
 
       if (targetStudent) {
         if (targetStudent.status === 'active') {
-          // Verify device matches
-          if (!targetStudent.device || targetStudent.device.androidId === dev?.androidId) {
+          // Device match validation: allowed if unbound or bound to this device
+          if (!targetStudent.device || !targetStudent.device.androidId || targetStudent.device.androidId === dev?.androidId) {
             setUser(targetStudent);
             localStorage.setItem('student_user', JSON.stringify(targetStudent));
-            localStorage.setItem('student_pat', targetStudent.pat);
+            localStorage.setItem('student_pat', targetStudent.pat || savedPat || '');
             setIsDeviceBound(false);
             setErrorMsg('');
 
-            // Silently log login
+            // Silently log login activity
             addDoc(collection(db, 'students', targetStudent.id, 'logs'), {
               type: 'login',
               timestamp: new Date().toISOString(),
               device: dev
             }).catch(console.error);
           } else {
-            setErrorMsg('This account is registered to another device.');
+            setErrorMsg(`This account is bound to another device (${targetStudent.device.model || 'Device'}).`);
             localStorage.removeItem('student_user');
             setUser(null);
           }
         } else {
-          // Status is revoked
+          // Status revoked
           setErrorMsg(targetStudent.customMessage || 'Your access has been revoked by the admin.');
           localStorage.removeItem('student_user');
           setUser(null);
@@ -202,8 +224,8 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("Auto-login error (possibly offline):", err);
-      // Keep cached user if offline
+      console.error('[Auth] Auto-login error (offline fallback preserved):', err);
+      // If offline, keep the cached user active
     }
     setLoading(false);
   };
@@ -211,23 +233,66 @@ export default function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorMsg('');
-    const cleanPat = patInput.trim().toUpperCase();
-    if (!cleanPat) return;
+    const rawInput = patInput.trim();
+    const cleanPat = rawInput.toUpperCase();
+    if (!rawInput) return;
 
     setIsVerifying(true);
     try {
-      const q = query(collection(db, 'students'), where('pat', '==', cleanPat));
-      const querySnapshot = await getDocs(q);
+      let studentDoc = null;
+      let studentData = null;
 
-      if (querySnapshot.empty) {
-        setErrorMsg('Invalid Access Token. Please check and try again.');
+      // 1. Try matching PAT uppercase (e.g. 9PBQEETM)
+      const qPat = query(collection(db, 'students'), where('pat', '==', cleanPat));
+      const snapPat = await getDocs(qPat);
+      if (!snapPat.empty) {
+        studentDoc = snapPat.docs[0];
+        studentData = studentDoc.data();
+      }
+
+      // 2. Try matching PAT exact case
+      if (!studentDoc && cleanPat !== rawInput) {
+        const qRaw = query(collection(db, 'students'), where('pat', '==', rawInput));
+        const snapRaw = await getDocs(qRaw);
+        if (!snapRaw.empty) {
+          studentDoc = snapRaw.docs[0];
+          studentData = studentDoc.data();
+        }
+      }
+
+      // 3. Try matching Document ID directly (e.g. bQsbjVAfH5dheDfMl8Qa)
+      if (!studentDoc) {
+        try {
+          const directSnap = await getDoc(doc(db, 'students', rawInput));
+          if (directSnap.exists()) {
+            studentDoc = directSnap;
+            studentData = directSnap.data();
+          }
+        } catch (err) {}
+      }
+
+      // 4. Fallback search across all students (checks PAT, ID, or Name)
+      if (!studentDoc) {
+        const allSnap = await getDocs(collection(db, 'students'));
+        const matched = allSnap.docs.find(d => {
+          const data = d.data();
+          const p = data.pat ? String(data.pat).trim().toUpperCase() : '';
+          const n = data.name ? String(data.name).trim().toLowerCase() : '';
+          return p === cleanPat || d.id === rawInput || n === rawInput.toLowerCase();
+        });
+        if (matched) {
+          studentDoc = matched;
+          studentData = matched.data();
+        }
+      }
+
+      if (!studentDoc || !studentData) {
+        setErrorMsg('Invalid Access Token or Student ID. Please check and try again.');
         setIsVerifying(false);
         return;
       }
 
-      const studentDoc = querySnapshot.docs[0];
-      const studentData = studentDoc.data();
-
+      // Status check
       if (studentData.status !== 'active') {
         setErrorMsg(studentData.customMessage || 'Your access has been revoked by the admin.');
         setIsVerifying(false);
@@ -237,14 +302,14 @@ export default function App() {
 
       const dev = await getDeviceData();
 
-      // Check if already bound to another device
+      // Device binding check: if already bound to a different device
       if (studentData.device && studentData.device.androidId && studentData.device.androidId !== dev.androidId) {
-        setErrorMsg('This Access Token is already authenticated on another device.');
+        setErrorMsg(`This account is already registered on another device (${studentData.device.model || 'Device'}). Contact admin to unbind.`);
         setIsVerifying(false);
         return;
       }
 
-      // Bind device if not bound yet
+      // Bind device if not currently bound
       if (!studentData.device || !studentData.device.androidId) {
         await updateDoc(doc(db, 'students', studentDoc.id), {
           device: dev
@@ -260,12 +325,14 @@ export default function App() {
 
       const authedStudent = { id: studentDoc.id, ...studentData, device: dev };
       localStorage.setItem('student_user', JSON.stringify(authedStudent));
-      localStorage.setItem('student_pat', cleanPat);
+      localStorage.setItem('student_pat', studentData.pat || cleanPat);
+      
       setUser(authedStudent);
       setIsDeviceBound(false);
+      setErrorMsg('');
     } catch (err) {
-      console.error(err);
-      setErrorMsg('An error occurred during authentication. Check your internet connection.');
+      console.error('[Auth] Login exception:', err);
+      setErrorMsg('An error occurred during authentication. Please check your internet connection.');
     }
     setIsVerifying(false);
   };
@@ -286,8 +353,8 @@ export default function App() {
           <div className="login-icon">
             {updateMsg ? <Download size={32} className="animate-bounce" /> : <Loader2 size={32} className="spin-icon" />}
           </div>
-          <h2>{updateMsg ? 'Updating App' : 'Authenticating'}</h2>
-          <p>{updateMsg || 'Verifying device credentials...'}</p>
+          <h2>{updateMsg ? 'Updating NextBridge' : 'Authenticating'}</h2>
+          <p>{updateMsg || 'Verifying credentials...'}</p>
         </div>
       </div>
     );
@@ -300,7 +367,7 @@ export default function App() {
   return (
     <div className="login-container">
       <div className="login-card">
-        {/* Logo */}
+        {/* App Logo */}
         <div style={{ marginBottom: '20px' }}>
           <img 
             src="/favicon.png" 
@@ -331,7 +398,8 @@ export default function App() {
             gap: '10px',
             width: '100%',
             textAlign: 'left',
-            color: '#f87171'
+            color: '#f87171',
+            marginBottom: '16px'
           }}>
             <ShieldAlert size={20} style={{ flexShrink: 0 }} />
             <span style={{ fontSize: '0.875rem', lineHeight: '1.4' }}>{errorMsg}</span>
@@ -433,7 +501,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Footer */}
+      {/* Anonymous Footer */}
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
         <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
           Secure Device-Bound Portal
