@@ -51,6 +51,16 @@ async function startUpdate() {
     const data = await res.json();
     if (!data.version || !data.url) throw new Error('Invalid update manifest');
 
+    // If Capgo already has this bundle set or downloaded, launch it
+    try {
+      const current = await CapacitorUpdater.current();
+      if (current?.bundle?.version === String(data.version)) {
+        setStatus('Starting Next Bridge...', 'Launching application');
+        await CapacitorUpdater.set(current.bundle);
+        return;
+      }
+    } catch (e) {}
+
     setStatus('Downloading application...', 'Fetching latest resources');
     const downloadUrl = 'https://nextbridgeweb.netlify.app' + data.url;
 
@@ -92,8 +102,18 @@ async function startUpdate() {
     }, 400);
 
   } catch (err) {
-    console.error('Update failed:', err);
-    showError('Unable to connect to server. Check your internet.');
+    console.error('Update check failed:', err);
+    // Offline resilience: if any bundle exists on disk, launch it
+    try {
+      const list = await CapacitorUpdater.list();
+      if (list?.bundles && list.bundles.length > 0) {
+        const latest = list.bundles[list.bundles.length - 1];
+        setStatus('Starting Next Bridge...', 'Launching cached application');
+        await CapacitorUpdater.set(latest);
+        return;
+      }
+    } catch (e) {}
+    showError('Unable to connect to update server. Please check your internet connection.');
   }
 }
 

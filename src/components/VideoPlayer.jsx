@@ -490,9 +490,19 @@ function VideoDownloader({ url, item, user }) {
         return;
       }
 
-      const { CapacitorHttp } = await import('@capacitor/core');
-      const masterRes = await CapacitorHttp.request({ method: 'GET', url });
-      const masterText = masterRes.data;
+      let masterText = '';
+      try {
+        const fetchRes = await fetch(url);
+        if (fetchRes.ok) {
+          masterText = await fetchRes.text();
+        } else {
+          throw new Error('Fetch status ' + fetchRes.status);
+        }
+      } catch (e) {
+        const { CapacitorHttp } = await import('@capacitor/core');
+        const masterRes = await CapacitorHttp.request({ method: 'GET', url });
+        masterText = masterRes.data;
+      }
       
       let mediaPlaylistUrl = url;
       const lines = masterText.split('\n');
@@ -506,8 +516,19 @@ function VideoDownloader({ url, item, user }) {
          }
       }
 
-      const mediaRes = await CapacitorHttp.request({ method: 'GET', url: mediaPlaylistUrl });
-      const mediaText = mediaRes.data;
+      let mediaText = '';
+      try {
+        const fetchRes = await fetch(mediaPlaylistUrl);
+        if (fetchRes.ok) {
+          mediaText = await fetchRes.text();
+        } else {
+          throw new Error('Fetch status ' + fetchRes.status);
+        }
+      } catch (e) {
+        const { CapacitorHttp } = await import('@capacitor/core');
+        const mediaRes = await CapacitorHttp.request({ method: 'GET', url: mediaPlaylistUrl });
+        mediaText = mediaRes.data;
+      }
       const mediaBase = mediaPlaylistUrl.substring(0, mediaPlaylistUrl.lastIndexOf('/') + 1);
       
       let modifiedPlaylist = [];

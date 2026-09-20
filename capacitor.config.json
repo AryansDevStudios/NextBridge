@@ -5,10 +5,11 @@
   "bundledWebRuntime": false,
   "plugins": {
     "CapacitorHttp": {
-      "enabled": true
+      "enabled": false
     },
     "CapacitorUpdater": {
-      "autoUpdate": false
+      "autoUpdate": false,
+      "appReadyTimeout": 20000
     }
   }
 }

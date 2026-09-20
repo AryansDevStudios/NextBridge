@@ -98,12 +98,21 @@ export default function App() {
     try {
       console.log('[OTA] Checking for remote updates...');
       const response = await fetch('https://nextbridgeweb.netlify.app/buildcode/version.json?t=' + Date.now());
+      if (!response.ok) return;
       const data = await response.json();
       
-      const currentVersion = localStorage.getItem('app_version') || '0';
-      console.log(`[OTA] Local: ${currentVersion} | Remote: ${data.version}`);
+      let runningVersion = localStorage.getItem('app_version') || '0';
+      try {
+        const current = await CapacitorUpdater.current();
+        if (current?.bundle?.version && current.bundle.version !== 'builtin') {
+          runningVersion = current.bundle.version;
+          localStorage.setItem('app_version', runningVersion);
+        }
+      } catch (e) {}
+
+      console.log(`[OTA] Local: ${runningVersion} | Remote: ${data.version}`);
       
-      if (data.version && String(data.version) !== String(currentVersion)) {
+      if (data.version && String(data.version) !== String(runningVersion)) {
         setUpdateMsg('Updating to latest version...');
         const downloadUrl = 'https://nextbridgeweb.netlify.app' + data.url;
         
@@ -168,12 +177,32 @@ export default function App() {
   const checkAutoLogin = async () => {
     const dev = await getDeviceData();
     const savedPat = localStorage.getItem('student_pat');
+    const cachedUser = localStorage.getItem('student_user');
+    let cachedId = null;
+    if (cachedUser) {
+      try {
+        const parsed = JSON.parse(cachedUser);
+        if (parsed?.id) cachedId = parsed.id;
+      } catch (e) {}
+    }
 
     try {
       let targetStudent = null;
 
-      // 1. Look up by cached PAT first
-      if (savedPat) {
+      // 1. Direct document lookup by cached ID if available
+      if (cachedId) {
+        try {
+          const docSnap = await getDoc(doc(db, 'students', cachedId));
+          if (docSnap.exists()) {
+            targetStudent = { id: docSnap.id, ...docSnap.data() };
+          }
+        } catch (e) {
+          console.warn('[Auth] Direct cached ID lookup error:', e);
+        }
+      }
+
+      // 2. Look up by cached PAT
+      if (!targetStudent && savedPat) {
         const qPat = query(collection(db, 'students'), where('pat', '==', savedPat.trim().toUpperCase()));
         const snapPat = await getDocs(qPat);
         if (!snapPat.empty) {
@@ -181,23 +210,33 @@ export default function App() {
         }
       }
 
-      // 2. Look up by bound Device ID
+      // 3. Look up by bound Device ID
       if (!targetStudent && dev?.androidId) {
         const qDev = query(collection(db, 'students'), where('device.androidId', '==', dev.androidId));
         const snapDev = await getDocs(qDev);
         if (!snapDev.empty) {
-          snapDev.forEach(doc => {
-            const data = doc.data();
-            if (data.status === 'active') targetStudent = { id: doc.id, ...data };
-            else if (!targetStudent) targetStudent = { id: doc.id, ...data };
+          snapDev.forEach(d => {
+            const data = d.data();
+            if (data.status === 'active') targetStudent = { id: d.id, ...data };
+            else if (!targetStudent) targetStudent = { id: d.id, ...data };
           });
         }
       }
 
       if (targetStudent) {
         if (targetStudent.status === 'active') {
+          const boundId = typeof targetStudent.device === 'string'
+            ? targetStudent.device
+            : targetStudent.device?.androidId;
+
           // Device match validation: allowed if unbound or bound to this device
-          if (!targetStudent.device || !targetStudent.device.androidId || targetStudent.device.androidId === dev?.androidId) {
+          if (!boundId || boundId === dev?.androidId) {
+            // Update device info if not bound yet
+            if (!boundId && dev?.androidId) {
+              await updateDoc(doc(db, 'students', targetStudent.id), { device: dev }).catch(console.warn);
+              targetStudent.device = dev;
+            }
+
             setUser(targetStudent);
             localStorage.setItem('student_user', JSON.stringify(targetStudent));
             localStorage.setItem('student_pat', targetStudent.pat || savedPat || '');
@@ -211,9 +250,10 @@ export default function App() {
               device: dev
             }).catch(console.error);
           } else {
-            setErrorMsg(`This account is bound to another device (${targetStudent.device.model || 'Device'}).`);
+            setErrorMsg(`This account is bound to another device (${targetStudent.device?.model || 'Device'}).`);
             localStorage.removeItem('student_user');
             setUser(null);
+            setIsDeviceBound(true);
           }
         } else {
           // Status revoked
@@ -273,16 +313,20 @@ export default function App() {
 
       // 4. Fallback search across all students (checks PAT, ID, or Name)
       if (!studentDoc) {
-        const allSnap = await getDocs(collection(db, 'students'));
-        const matched = allSnap.docs.find(d => {
-          const data = d.data();
-          const p = data.pat ? String(data.pat).trim().toUpperCase() : '';
-          const n = data.name ? String(data.name).trim().toLowerCase() : '';
-          return p === cleanPat || d.id === rawInput || n === rawInput.toLowerCase();
-        });
-        if (matched) {
-          studentDoc = matched;
-          studentData = matched.data();
+        try {
+          const allSnap = await getDocs(collection(db, 'students'));
+          const matched = allSnap.docs.find(d => {
+            const data = d.data();
+            const p = data.pat ? String(data.pat).trim().toUpperCase() : '';
+            const n = data.name ? String(data.name).trim().toLowerCase() : '';
+            return p === cleanPat || d.id === rawInput || n === rawInput.toLowerCase();
+          });
+          if (matched) {
+            studentDoc = matched;
+            studentData = matched.data();
+          }
+        } catch (e) {
+          console.warn('[Auth] Fallback student collection scan error:', e);
         }
       }
 
@@ -302,15 +346,19 @@ export default function App() {
 
       const dev = await getDeviceData();
 
+      const boundId = typeof studentData.device === 'string'
+        ? studentData.device
+        : studentData.device?.androidId;
+
       // Device binding check: if already bound to a different device
-      if (studentData.device && studentData.device.androidId && studentData.device.androidId !== dev.androidId) {
-        setErrorMsg(`This account is already registered on another device (${studentData.device.model || 'Device'}). Contact admin to unbind.`);
+      if (boundId && boundId !== dev.androidId) {
+        setErrorMsg(`This account is already registered on another device (${studentData.device?.model || 'Device'}). Contact admin to unbind.`);
         setIsVerifying(false);
         return;
       }
 
       // Bind device if not currently bound
-      if (!studentData.device || !studentData.device.androidId) {
+      if (!boundId) {
         await updateDoc(doc(db, 'students', studentDoc.id), {
           device: dev
         });
