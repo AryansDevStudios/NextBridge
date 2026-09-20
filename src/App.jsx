@@ -245,6 +245,7 @@ export default function App() {
     <div className="min-h-screen bg-[#0a0a0a] flex flex-col p-6 text-[#f3f4f6]">
       <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
         <div className="text-center mb-10">
+          <img src="/favicon.png" alt="Logo" className="w-16 h-16 mx-auto mb-4 rounded-xl shadow-lg" />
           <h1 className="text-3xl font-extrabold text-[#f59e0b] mb-2">Next Bridge</h1>
           <p className="text-[#9ca3af]">Student Learning Platform</p>
         </div>

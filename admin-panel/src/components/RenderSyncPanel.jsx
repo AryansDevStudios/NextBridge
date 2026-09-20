@@ -1,38 +1,52 @@
-import React, { useState } from 'react';
-import { RefreshCw, Server, CheckCircle, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Server, CheckCircle, Clock, Key } from 'lucide-react';
 
-const RENDER_BACKEND_URL = "https://your-render-app-url.onrender.com/api/sync"; // PLACEHOLDER URL
+const RENDER_BACKEND_URL = "https://nxttoppers-archive.onrender.com/api/sync";
+const TOKEN_INFO_URL = "https://nxttoppers-archive.onrender.com/api/token/info";
 
 const RenderSyncPanel = () => {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState(null);
+  
+  const [tokenInfo, setTokenInfo] = useState(null);
+  const [loadingToken, setLoadingToken] = useState(true);
+
+  const fetchTokenInfo = async () => {
+    setLoadingToken(true);
+    try {
+      const res = await fetch(TOKEN_INFO_URL);
+      if (res.ok) {
+        const data = await res.json();
+        setTokenInfo(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch token info", err);
+    } finally {
+      setLoadingToken(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTokenInfo();
+  }, []);
 
   const handleForceSync = async () => {
     setSyncing(true);
     try {
-      // Hit the render backend
-      // Note: We use no-cors or standard fetch depending on Render's setup. 
-      // This is a placeholder payload for now.
       const res = await fetch(RENDER_BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'admin_panel_force' })
-      }).catch(err => {
-         // Silently fail if the placeholder URL is dead, but simulate success for demo
-         console.log("Mocking sync due to dead placeholder URL", err);
-         return { ok: true };
       });
 
       if (res && res.ok) {
-        setTimeout(() => {
-           setLastSyncResult({ success: true, time: new Date().toLocaleTimeString() });
-           setSyncing(false);
-        }, 1500);
+        const data = await res.json();
+        setLastSyncResult({ success: true, time: new Date().toLocaleTimeString(), message: data.message });
       } else {
         throw new Error("Failed to trigger sync");
       }
     } catch(err) {
       setLastSyncResult({ success: false, error: err.message });
+    } finally {
       setSyncing(false);
     }
   };
@@ -50,12 +64,36 @@ const RenderSyncPanel = () => {
            This will force the server to crawl <strong>NextToppers.com</strong> and upload any new batches, PDFs, or videos to the Firebase Realtime Database.
         </p>
 
-        <div className="flex items-center space-x-4 bg-[#0a0a0a] p-4 rounded-lg border border-[#262626]">
-           <Clock className="text-[#525252]" size={20} />
-           <div>
-               <p className="text-sm font-medium text-white">Automated Sync Schedule</p>
-               <p className="text-xs text-[#9ca3af]">Runs every 30 minutes in the background</p>
-           </div>
+        <div className="space-y-4">
+          <div className="flex items-center space-x-4 bg-[#0a0a0a] p-4 rounded-lg border border-[#262626]">
+             <Clock className="text-[#525252]" size={20} />
+             <div>
+                 <p className="text-sm font-medium text-white">Automated Sync Schedule</p>
+                 <p className="text-xs text-[#9ca3af]">Runs every 30 minutes in the background</p>
+             </div>
+          </div>
+          
+          <div className="flex items-center space-x-4 bg-[#0a0a0a] p-4 rounded-lg border border-[#262626]">
+             <Key className="text-[#525252]" size={20} />
+             <div className="flex-1">
+                 <div className="flex justify-between items-center mb-1">
+                   <p className="text-sm font-medium text-white">Current API Token</p>
+                   <button onClick={fetchTokenInfo} className="text-[#f59e0b] hover:text-[#fbbf24] text-xs font-semibold px-2 py-1 bg-[#f59e0b]/10 rounded transition-colors">
+                     Refresh
+                   </button>
+                 </div>
+                 {loadingToken ? (
+                   <p className="text-xs text-[#9ca3af]">Loading token info...</p>
+                 ) : tokenInfo ? (
+                   <div className="space-y-1">
+                     <p className="text-xs text-[#9ca3af] font-mono break-all">{tokenInfo.maskedToken}</p>
+                     <p className="text-xs text-green-500">Last updated: {tokenInfo.lastUpdated}</p>
+                   </div>
+                 ) : (
+                   <p className="text-xs text-red-500">Failed to load token information</p>
+                 )}
+             </div>
+          </div>
         </div>
       </div>
 
@@ -72,14 +110,16 @@ const RenderSyncPanel = () => {
         </button>
 
         {lastSyncResult && (
-          <div className="flex items-center space-x-2 text-sm">
+          <div className="flex items-center space-x-2 text-sm max-w-sm">
              {lastSyncResult.success ? (
                  <>
-                   <CheckCircle className="text-green-500" size={18} />
-                   <span className="text-green-500 font-medium">Sync Triggered at {lastSyncResult.time}</span>
+                   <CheckCircle className="text-green-500 shrink-0" size={18} />
+                   <span className="text-green-500 font-medium break-words">
+                     {lastSyncResult.message || `Sync Triggered at ${lastSyncResult.time}`}
+                   </span>
                  </>
              ) : (
-                 <span className="text-red-500 font-medium">Sync Failed: {lastSyncResult.error}</span>
+                 <span className="text-red-500 font-medium break-words">Sync Failed: {lastSyncResult.error}</span>
              )}
           </div>
         )}

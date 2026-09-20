@@ -1,6 +1,11 @@
 {
-  "appId": "com.nxttoppers.app",
-  "appName": "nxttoppers",
+  "appId": "com.nextbridgedev.app",
+  "appName": "nextbridge",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }

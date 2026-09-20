@@ -1,13 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, Folder, Video, FileText, ArrowLeft, Download, CheckCircle, Smartphone } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ChevronRight, Folder, Video, FileText, ArrowLeft, Download, CheckCircle, Smartphone, Search, BookOpen, LogOut, Calendar, Clock } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
+function formatDuration(seconds) {
+  if (!seconds) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 const LearningHub = ({ user }) => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]); // Array of folder objects
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
 
@@ -47,10 +63,7 @@ const LearningHub = ({ user }) => {
 
   const handleFolderClick = (subjectId, itemOrFolder) => {
     setCurrentPath([...currentPath, { subjectId, ...itemOrFolder }]);
-  };
-
-  const handleBack = () => {
-    setCurrentPath(currentPath.slice(0, -1));
+    setSearchQuery('');
   };
 
   const handlePlayVideo = (item) => {
@@ -60,6 +73,31 @@ const LearningHub = ({ user }) => {
   const closeVideo = () => {
     setPlayingVideo(null);
   };
+
+  // Flatten all items across all subjects into one big array for search
+  const allItems = useMemo(() => {
+    let items = [];
+    if (!courseData || !courseData.subjects) return items;
+    
+    const subjectsList = Array.isArray(courseData.subjects) 
+      ? courseData.subjects.filter(Boolean) 
+      : Object.values(courseData.subjects).filter(Boolean);
+    
+    subjectsList.forEach(subject => {
+      const itemsList = Array.isArray(subject.items) 
+        ? subject.items.filter(Boolean) 
+        : (subject.items ? Object.values(subject.items).filter(Boolean) : []);
+        
+      itemsList.forEach(item => {
+        const unifiedPath = item.folder_path 
+          ? `${subject.subject_name}/${item.folder_path}` 
+          : subject.subject_name;
+        
+        items.push({ ...item, unified_path: unifiedPath });
+      });
+    });
+    return items;
+  }, [courseData]);
 
   if (loading && !courseData) {
     return (
@@ -80,9 +118,19 @@ const LearningHub = ({ user }) => {
 
   // --- Breadcrumb & Hierarchy Logic ---
   let currentItems = [];
-  let currentTitle = "Learning Hub";
 
-  if (currentPath.length === 0) {
+  if (searchQuery.trim().length > 0) {
+    const q = searchQuery.toLowerCase();
+    currentItems = allItems.filter(item => 
+      (item.title && item.title.toLowerCase().includes(q)) || 
+      (item.unified_path && item.unified_path.toLowerCase().includes(q))
+    ).sort((a, b) => {
+      const timeA = typeof a.created_at === 'number' ? a.created_at : 0;
+      const timeB = typeof b.created_at === 'number' ? b.created_at : 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return a.title.localeCompare(b.title);
+    });
+  } else if (currentPath.length === 0) {
     // Root level: show subjects
     currentItems = Object.values(courseData.subjects)
       .filter(sub => !sub.isHidden)
@@ -94,29 +142,24 @@ const LearningHub = ({ user }) => {
   } else {
     // Inside a folder/subject
     const currentFolder = currentPath[currentPath.length - 1];
-    currentTitle = currentFolder.displayTitle || currentFolder.title;
-    
     const subject = courseData.subjects[currentFolder.subjectId];
+    
     if (subject && subject.items) {
-      // Find items matching the current folder path
       let targetPath = "";
       if (!currentFolder.isRootSubject) {
          targetPath = currentFolder.folder_path ? `${currentFolder.folder_path}/${currentFolder.title}` : currentFolder.title;
       }
       
-      const allItems = Object.values(subject.items);
-      
-      // Filter direct children
+      const subjectItems = Object.values(subject.items);
       const directChildren = [];
       const folders = new Set();
 
-      allItems.forEach(item => {
+      subjectItems.forEach(item => {
         if (item.isHidden) return; // Hide locked content
 
         if (item.folder_path === targetPath) {
           directChildren.push(item);
         } else if (item.folder_path && item.folder_path.startsWith(targetPath)) {
-          // It's in a subfolder
           const remainingPath = targetPath === "" ? item.folder_path : item.folder_path.substring(targetPath.length + 1);
           const nextFolder = remainingPath.split('/')[0];
           if (nextFolder) folders.add(nextFolder);
@@ -125,7 +168,12 @@ const LearningHub = ({ user }) => {
 
       currentItems = [
         ...Array.from(folders).map(f => ({ title: f, isFolder: true, subjectId: currentFolder.subjectId, folder_path: targetPath })),
-        ...directChildren
+        ...directChildren.sort((a, b) => {
+           const timeA = typeof a.created_at === 'number' ? a.created_at : 0;
+           const timeB = typeof b.created_at === 'number' ? b.created_at : 0;
+           if (timeB !== timeA) return timeB - timeA;
+           return a.title.localeCompare(b.title);
+        })
       ];
     }
   }
@@ -135,77 +183,139 @@ const LearningHub = ({ user }) => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0a] text-[#f3f4f6]">
-      {/* Header */}
-      <div className="bg-[#121212] border-b border-[#262626] px-4 py-4 flex items-center sticky top-0 z-10 pt-10">
-        {currentPath.length > 0 && (
-          <button onClick={handleBack} className="p-2 mr-2 text-[#9ca3af] hover:text-[#f59e0b] bg-[#1e1e1e] rounded-full">
-            <ArrowLeft size={20} />
+    <div className="app-container">
+      {/* Top Navbar */}
+      <nav className="navbar" style={{ paddingTop: '40px' }}> {/* Capacitor top padding */}
+        <div className="nav-left">
+          <div className="logo" onClick={() => { setCurrentPath([]); setSearchQuery(''); }} style={{cursor: 'pointer'}}>
+            <BookOpen size={24} />
+            NextBridge Archive
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifySelf: 'flex-end', marginLeft: 'auto' }}>
+          <div className="search-container" style={{ width: '100%', maxWidth: '300px' }}>
+            <Search size={18} className="search-icon" />
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder="Search..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <button 
+            className="logout-btn" 
+            onClick={() => window.location.reload()}
+            title="Log Out"
+          >
+            <LogOut size={18} />
           </button>
-        )}
-        <h1 className="text-lg font-bold truncate">{currentTitle}</h1>
-      </div>
+        </div>
+      </nav>
 
-      {/* Content List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
-        {currentItems.length === 0 && (
-          <p className="text-center text-[#9ca3af] mt-10">Folder is empty.</p>
+      <div className="main-content pb-24">
+        {/* Breadcrumbs */}
+        {!searchQuery && (
+          <div className="breadcrumbs">
+            <span className="breadcrumb-item" onClick={() => setCurrentPath([])}>
+              Home
+            </span>
+            {currentPath.map((part, idx) => (
+              <React.Fragment key={idx}>
+                <ChevronRight size={18} className="breadcrumb-separator" />
+                <span 
+                  className="breadcrumb-item" 
+                  onClick={() => setCurrentPath(currentPath.slice(0, idx + 1))}
+                >
+                  {part.displayTitle || part.title}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+        
+        {searchQuery && (
+          <div className="breadcrumbs" style={{ color: 'var(--accent)' }}>
+            Search Results for "{searchQuery}"
+          </div>
         )}
 
-        {currentItems.map((item, idx) => {
-          if (item.isRootSubject) {
-            return (
-              <div 
-                key={idx} 
-                onClick={() => handleFolderClick(item.subject_id, item)}
-                className="bg-[#121212] border border-[#262626] rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="bg-[#f59e0b]/10 p-3 rounded-lg text-[#f59e0b]">
+        {/* List Container */}
+        <div className="list-container">
+          {currentItems.length === 0 && (
+            <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '50%', marginBottom: '16px' }}>
+                <Search size={32} style={{ color: 'var(--text-secondary)' }} />
+              </div>
+              <h3 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '8px', fontWeight: '600' }}>No Content Found</h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: '1.5' }}>
+                We couldn't find any items matching your request.
+              </p>
+            </div>
+          )}
+          
+          {currentItems.map((item, idx) => {
+            if (item.isRootSubject || item.isFolder) {
+              return (
+                <div 
+                  key={idx} 
+                  className="list-item"
+                  onClick={() => handleFolderClick(item.subject_id || item.subjectId, item)}
+                >
+                  <div className="item-icon-container folder">
                     <Folder size={24} />
                   </div>
-                  <span className="font-semibold text-lg">{item.subject_name}</span>
+                  <div className="item-details">
+                    <div className="item-title">{item.isRootSubject ? item.subject_name : item.title}</div>
+                    <div className="item-meta">
+                       {item.isRootSubject && item.items ? Object.keys(item.items).length : ''} {item.isRootSubject ? 'items' : 'Folder'}
+                    </div>
+                  </div>
                 </div>
-                <ChevronRight className="text-[#525252]" />
-              </div>
-            );
-          }
-          
-          if (item.isFolder) {
+              );
+            }
+
+            // File / Video Item
             return (
               <div 
-                key={idx} 
-                onClick={() => handleFolderClick(item.subjectId, item)}
-                className="bg-[#1a1a1a] border border-[#262626] rounded-xl p-4 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                key={item.id || idx} 
+                className="list-item"
+                onClick={() => handlePlayVideo(item)}
               >
-                <div className="flex items-center space-x-3">
-                  <Folder size={20} className="text-[#f59e0b]" />
-                  <span className="font-medium text-[15px]">{item.title}</span>
+                <div className={item.type === 'video' && item.thumbnail ? "item-thumbnail-container" : `item-icon-container ${item.type}`}>
+                  {item.type === 'video' && item.thumbnail ? (
+                    <img src={item.thumbnail} alt="Thumbnail" className="item-thumbnail" />
+                  ) : item.type === 'video' ? (
+                    <Video size={24} />
+                  ) : (
+                    <FileText size={24} />
+                  )}
                 </div>
-                <ChevronRight className="text-[#525252]" size={18} />
+                
+                <div className="item-details">
+                  <div className="item-title">{item.title}</div>
+                  <div className="item-meta">
+                    {item.type === 'video' && item.duration > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Clock size={14} />
+                        {formatDuration(item.duration)}
+                      </span>
+                    )}
+                    {item.created_at && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Calendar size={14} />
+                        {formatDate(item.created_at)}
+                      </span>
+                    )}
+                    <span style={{ textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.8, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4 }}>
+                      {item.type}
+                    </span>
+                  </div>
+                </div>
               </div>
             );
-          }
-
-          // File / Video Item
-          return (
-            <div 
-              key={item.id || idx} 
-              className="bg-[#121212] border border-[#262626] rounded-xl p-4 flex flex-col space-y-3 cursor-pointer"
-              onClick={() => handlePlayVideo(item)}
-            >
-              <div className="flex items-start space-x-3">
-                <div className="mt-1">
-                  {item.type === 'video' ? <Video size={20} className="text-blue-400" /> : <FileText size={20} className="text-red-400" />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium text-[15px] leading-snug text-white">{item.title}</h3>
-                  {item.duration > 0 && <span className="text-xs text-[#9ca3af] mt-1 block">{item.duration}</span>}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );

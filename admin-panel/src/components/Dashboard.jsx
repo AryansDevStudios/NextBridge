@@ -65,7 +65,7 @@ export default function Dashboard({ onLogout }) {
       <nav className="bg-[#121212] border-b border-[#262626] px-6 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-8">
           <div className="flex items-center space-x-2 text-[#f59e0b] font-bold text-xl mr-8">
-            <Users />
+            <img src="/favicon.png" alt="Logo" className="w-8 h-8 rounded" />
             <span>Next Bridge Admin</span>
           </div>
           
