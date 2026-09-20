@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react';
 import { db } from './firebase';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
-import { ShieldAlert, CheckCircle, Loader2 } from 'lucide-react';
+import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { Capacitor } from '@capacitor/core';
+import { ShieldAlert, CheckCircle, Loader2, Download } from 'lucide-react';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [updateMsg, setUpdateMsg] = useState('');
   const [user, setUser] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
   
@@ -15,8 +18,36 @@ export default function App() {
   const [isDeviceBound, setIsDeviceBound] = useState(false);
 
   useEffect(() => {
-    checkAutoLogin();
+    const init = async () => {
+      await checkForUpdates();
+      await checkAutoLogin();
+    };
+    init();
   }, []);
+
+  const checkForUpdates = async () => {
+    if (Capacitor.getPlatform() !== 'android' && Capacitor.getPlatform() !== 'ios') return;
+    
+    try {
+      const response = await fetch('https://nextbridgeweb.netlify.app/buildcode/version.json?t=' + Date.now());
+      const data = await response.json();
+      const currentVersion = localStorage.getItem('app_version') || '0';
+      
+      if (data.version && data.version !== currentVersion) {
+        setUpdateMsg('Downloading new update...');
+        const update = await CapacitorUpdater.download({
+          url: 'https://nextbridgeweb.netlify.app' + data.url,
+          version: data.version
+        });
+        
+        setUpdateMsg('Applying update...');
+        localStorage.setItem('app_version', data.version);
+        await CapacitorUpdater.set(update);
+      }
+    } catch (err) {
+      console.warn('Failed to check for OTA updates', err);
+    }
+  };
 
   const getDeviceData = async () => {
     try {
@@ -135,11 +166,15 @@ export default function App() {
     setPatInput('');
   };
 
-  if (loading) {
+  if (loading || updateMsg) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-[#f59e0b] mb-4" size={40} />
-        <p className="text-[#9ca3af] font-medium">Authenticating Device...</p>
+        {updateMsg ? (
+          <Download className="animate-bounce text-[#f59e0b] mb-4" size={40} />
+        ) : (
+          <Loader2 className="animate-spin text-[#f59e0b] mb-4" size={40} />
+        )}
+        <p className="text-[#9ca3af] font-medium">{updateMsg || 'Authenticating Device...'}</p>
       </div>
     );
   }
