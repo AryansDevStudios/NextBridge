@@ -26,26 +26,43 @@ export default function App() {
   }, []);
 
   const checkForUpdates = async () => {
-    if (Capacitor.getPlatform() !== 'android' && Capacitor.getPlatform() !== 'ios') return;
+    console.log('[OTA] Starting OTA Update Check...');
+    if (Capacitor.getPlatform() !== 'android' && Capacitor.getPlatform() !== 'ios') {
+      console.log('[OTA] Skipping OTA check because platform is', Capacitor.getPlatform());
+      return;
+    }
     
     try {
+      console.log('[OTA] Fetching version.json from Netlify...');
       const response = await fetch('https://nextbridgeweb.netlify.app/buildcode/version.json?t=' + Date.now());
       const data = await response.json();
-      const currentVersion = localStorage.getItem('app_version') || '0';
       
-      if (data.version && data.version !== currentVersion) {
+      const currentVersion = localStorage.getItem('app_version') || '0';
+      console.log(`[OTA] Local Version: ${currentVersion} | Remote Version: ${data.version}`);
+      
+      if (data.version && String(data.version) !== String(currentVersion)) {
+        console.log(`[OTA] New version found! Preparing to download update from ${data.url}...`);
         setUpdateMsg('Downloading new update...');
+        
+        const downloadUrl = 'https://nextbridgeweb.netlify.app' + data.url;
+        console.log(`[OTA] Initiating CapacitorUpdater.download with URL: ${downloadUrl}`);
+        
         const update = await CapacitorUpdater.download({
-          url: 'https://nextbridgeweb.netlify.app' + data.url,
-          version: data.version
+          url: downloadUrl,
+          version: String(data.version)
         });
         
+        console.log('[OTA] Download successful! Applying update now...', update);
         setUpdateMsg('Applying update...');
-        localStorage.setItem('app_version', data.version);
+        localStorage.setItem('app_version', String(data.version));
+        
         await CapacitorUpdater.set(update);
+        console.log('[OTA] Update applied successfully! App should reload now.');
+      } else {
+        console.log('[OTA] App is already up-to-date.');
       }
     } catch (err) {
-      console.warn('Failed to check for OTA updates', err);
+      console.error('[OTA] Error during OTA update process:', err);
     }
   };
 
