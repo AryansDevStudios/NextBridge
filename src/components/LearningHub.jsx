@@ -20,7 +20,7 @@ function formatDate(timestamp) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const LearningHub = ({ user }) => {
+const LearningHub = ({ user, onLogout }) => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]); // Array of folder objects
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +33,7 @@ const LearningHub = ({ user }) => {
 
   const fetchCourseData = async () => {
     setLoading(true);
-    const classId = user.class === "9th" ? "9" : "10";
+    const classId = (user.class === "9" || user.class === "9th") ? "9" : "10";
     const cacheKey = `course_data_${classId}`;
     
     // 1. Instant Load from Cache
@@ -205,7 +205,7 @@ const LearningHub = ({ user }) => {
           </div>
           <button 
             className="logout-btn" 
-            onClick={() => window.location.reload()}
+            onClick={onLogout}
             title="Log Out"
           >
             <LogOut size={18} />
