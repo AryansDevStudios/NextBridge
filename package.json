@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:shell": "vite build --config vite.shell.config.js",
+    "build:all": "vite build && vite build --config vite.shell.config.js",
     "build:deploy": "node build-deploy.cjs",
     "lint": "oxlint",
     "preview": "vite preview"
