@@ -44,7 +44,7 @@ function AdminVideoDownloader({ url, title }) {
       if (!url.includes('.m3u8')) {
         const sanitizedTitle = (title || 'file').replace(/[^a-zA-Z0-9_ \\-|]/g, '').trim();
         const ext = url.split('?')[0].split('.').pop() || 'mp4';
-        const fileStream = streamSaver.createWriteStream(\\.\\);
+        const fileStream = streamSaver.createWriteStream(`${sanitizedTitle}.${ext}`);
         const res = await fetch(url, { signal });
         await res.body.pipeTo(fileStream);
         setState('done');
@@ -56,7 +56,7 @@ function AdminVideoDownloader({ url, title }) {
       const masterText = await masterRes.text();
       let mediaPlaylistUrl = url;
 
-      const lines = masterText.split('\\n');
+      const lines = masterText.split('\n');
       for (let i = 0; i < lines.length; i++) {
          if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
             const nextLine = lines[i+1]?.trim();
@@ -69,7 +69,7 @@ function AdminVideoDownloader({ url, title }) {
 
       const mediaRes = await fetch(mediaPlaylistUrl, { signal });
       const mediaText = await mediaRes.text();
-      const mediaLines = mediaText.split('\\n').map(l => l.trim());
+      const mediaLines = mediaText.split('\n').map(l => l.trim());
       
       const segmentUrls = [];
       const mediaBase = mediaPlaylistUrl.substring(0, mediaPlaylistUrl.lastIndexOf('/') + 1);
@@ -85,7 +85,7 @@ function AdminVideoDownloader({ url, title }) {
       setProgress({ current: 0, total: segmentUrls.length, bytes: 0, speed: 0 });
       
       const sanitizedTitle = (title || 'lecture').replace(/[^a-zA-Z0-9_ \\-|]/g, '').trim();
-      const fileStream = streamSaver.createWriteStream(\\.ts\);
+      const fileStream = streamSaver.createWriteStream(`${sanitizedTitle}.ts`);
       const writer = fileStream.getWriter();
 
       lastTimeRef.current = Date.now();
@@ -223,7 +223,7 @@ const AdminCourseLibrary = () => {
   const fetchCourseData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(\\/classes/class_\.json\);
+      const res = await fetch(`${FIREBASE_DB_URL}/classes/class_${selectedClass}.json`);
       const data = await res.json();
       setCourseData(data || {});
     } catch (err) {
@@ -235,7 +235,7 @@ const AdminCourseLibrary = () => {
   const toggleVisibility = async (e, subjectId, itemId, currentIsHidden) => {
     e.stopPropagation();
     try {
-      const endpoint = \\/classes/class_\/subjects/\/items/\.json\;
+      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}/items/${itemId}.json`;
       const payload = currentIsHidden ? { isHidden: null } : { isHidden: true };
       
       await fetch(endpoint, {
@@ -257,7 +257,7 @@ const AdminCourseLibrary = () => {
   const toggleSubjectVisibility = async (e, subjectId, currentIsHidden) => {
     e.stopPropagation();
     try {
-      const endpoint = \\/classes/class_\/subjects/\.json\;
+      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}.json`;
       const payload = currentIsHidden ? { isHidden: null } : { isHidden: true };
       
       await fetch(endpoint, {
@@ -301,7 +301,7 @@ const AdminCourseLibrary = () => {
         if (subject && subject.items) {
           let targetPath = "";
           if (!currentFolder.isRootSubject) {
-             targetPath = currentFolder.folder_path ? \\/\\ : currentFolder.title;
+             targetPath = currentFolder.folder_path ? `${currentFolder.folder_path}/${currentFolder.title}` : currentFolder.title;
           }
           
           const allItems = Object.values(subject.items);
@@ -364,7 +364,7 @@ const AdminCourseLibrary = () => {
                 return (
                 <div 
                     key={idx} 
-                    className={\g-[#1a1a1a] border border-[#262626] rounded-xl p-4 flex items-center justify-between cursor-pointer hover:border-[#f59e0b]/50 transition \\}
+                    className={`bg-[#1a1a1a] border border-[#262626] rounded-xl p-4 flex items-center justify-between cursor-pointer hover:border-[#f59e0b]/50 transition ${item.isHidden ? 'opacity-50' : ''}`}
                     onClick={() => handleFolderClick(item.subject_id, item)}
                 >
                     <div className="flex items-center space-x-4">
@@ -405,7 +405,7 @@ const AdminCourseLibrary = () => {
             return (
                 <div 
                   key={item.id} 
-                  className={\g-[#1a1a1a] border border-[#262626] rounded-xl p-4 flex items-center justify-between hover:border-[#f59e0b]/30 transition \\}
+                  className={`bg-[#1a1a1a] border border-[#262626] rounded-xl p-4 flex items-center justify-between hover:border-[#f59e0b]/30 transition ${item.isHidden ? 'opacity-50' : ''}`}
                 >
                 <div className="flex items-center space-x-4 flex-1">
                     <div className="w-20 h-14 bg-black rounded overflow-hidden flex-shrink-0 flex items-center justify-center border border-[#333]">
