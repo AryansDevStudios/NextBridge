@@ -242,62 +242,55 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex flex-col p-6 text-[#f3f4f6]">
-      <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
-        <div className="text-center mb-10">
-          <img src="/favicon.png" alt="Logo" className="w-16 h-16 mx-auto mb-4 rounded-xl shadow-lg" />
-          <h1 className="text-3xl font-extrabold text-[#f59e0b] mb-2">Next Bridge</h1>
-          <p className="text-[#9ca3af]">Student Learning Platform</p>
+    <div className="login-container">
+      <form className="login-card" onSubmit={handleLogin}>
+        <div className="login-icon">
+          <ShieldAlert size={32} />
         </div>
-
-        {errorMsg && (
-          <div className="bg-[#ef4444]/10 border border-[#ef4444]/20 text-[#ef4444] p-4 rounded-xl mb-6 flex items-start space-x-3 text-sm">
-            <ShieldAlert size={20} className="shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        <h2>Next Bridge</h2>
+        <p>Enter your Permanent Access Token to unlock course materials.</p>
+        
+        {errorMsg && <div className="error-message">{errorMsg}</div>}
 
         {isDeviceBound ? (
-          <div className="space-y-4">
-            <button
-              onClick={() => {
-                setLoading(true);
-                checkAutoLogin();
-              }}
-              className="w-full bg-[#f59e0b] text-[#0a0a0a] font-bold py-3.5 rounded-xl hover:bg-[#fbbf24] transition-colors"
-            >
-              Check Status Again
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              checkAutoLogin();
+            }}
+            className="login-button"
+          >
+            Check Status Again
+          </button>
         ) : (
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-[#9ca3af] mb-2">Permanent Access Token (PAT)</label>
+          <>
+            <div className="input-group">
               <input
                 type="text"
                 value={patInput}
                 onChange={e => setPatInput(e.target.value.toUpperCase())}
                 placeholder="e.g. A7X9BQ"
-                className="w-full px-4 py-3 bg-[#121212] border border-[#262626] rounded-xl focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent outline-none transition-all text-lg font-mono uppercase text-[#f3f4f6] placeholder-[#9ca3af]/50"
-                required
+                disabled={loading}
+                autoFocus
+                style={{ fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '2px' }}
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading || !patInput}
-              className="w-full bg-[#f59e0b] text-[#0a0a0a] font-bold py-3.5 rounded-xl hover:bg-[#fbbf24] transition-colors disabled:opacity-50"
-            >
-              Authenticate Device
+            <button type="submit" className="login-button" disabled={loading || !patInput}>
+              {loading ? 'Verifying...' : 'Authenticate Device'}
             </button>
-          </form>
+          </>
         )}
+      </form>
 
-        {!isDeviceBound && (
-            <p className="mt-8 text-center text-xs text-[#262626]">
-              Secure connection established.<br/>v1.0.1 (OTA Test)
-            </p>
-        )}
-      </div>
+      {!isDeviceBound && (
+        <div style={{ textAlign: 'center', marginTop: '40px' }}>
+          <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+            Secure connection established.<br/>
+            Built by <span style={{ fontWeight: '500', color: '#fff' }}>AryansDevStudios</span>
+          </p>
+        </div>
+      )}
     </div>
   );
 }
