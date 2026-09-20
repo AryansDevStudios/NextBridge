@@ -10,7 +10,6 @@ import {
   Smartphone, 
   Search, 
   BookOpen, 
-  LogOut, 
   Calendar, 
   Clock, 
   Trash2, 
@@ -465,13 +464,6 @@ const LearningHub = ({ user, onLogout }) => {
               />
             </div>
           )}
-          <button 
-            className="logout-btn" 
-            onClick={onLogout}
-            title="Log Out"
-          >
-            <LogOut size={16} />
-          </button>
         </div>
       </nav>
 
