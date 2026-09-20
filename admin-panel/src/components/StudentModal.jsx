@@ -18,6 +18,23 @@ export default function StudentModal({ student, onClose }) {
   const [studentClass, setStudentClass] = useState(student.class);
   const [school, setSchool] = useState(student.personalDetails?.school || '');
   const [area, setArea] = useState(student.personalDetails?.area || '');
+  
+  // Device State
+  const [currentDevice, setCurrentDevice] = useState(student.device);
+
+  const handleUnbindDevice = async () => {
+    if (!window.confirm(`Are you sure you want to unbind this device from ${student.name}? They will be able to log in from a new device using their PAT.`)) return;
+    
+    try {
+      await updateDoc(doc(db, 'students', student.id), {
+        device: null
+      });
+      setCurrentDevice(null);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to unbind device. Please try again.');
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'logs') {
@@ -174,14 +191,24 @@ export default function StudentModal({ student, onClose }) {
             <div className="space-y-6">
               {/* Device Info */}
               <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
-                <h3 className="text-sm font-bold text-[#f3f4f6] mb-3 flex items-center space-x-2">
-                  <Smartphone size={16} className="text-[#f59e0b]" /> <span>Current Bound Device</span>
-                </h3>
-                {student.device ? (
+                <div className="flex justify-between items-start mb-3">
+                  <h3 className="text-sm font-bold text-[#f3f4f6] flex items-center space-x-2">
+                    <Smartphone size={16} className="text-[#f59e0b]" /> <span>Current Bound Device</span>
+                  </h3>
+                  {currentDevice && (
+                    <button 
+                      onClick={handleUnbindDevice}
+                      className="text-xs px-3 py-1 bg-red-900/20 text-red-400 border border-red-900/50 rounded-lg hover:bg-red-900/40 transition-colors"
+                    >
+                      Unbind Device
+                    </button>
+                  )}
+                </div>
+                {currentDevice ? (
                   <div className="space-y-2 text-sm text-[#9ca3af]">
-                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Model:</span> <span>{student.device.model}</span></div>
-                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">OS Version:</span> <span>{student.device.osVersion}</span></div>
-                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Android ID:</span> <span className="font-mono bg-[#121212] px-1 border border-[#262626] rounded text-xs break-all text-[#f59e0b]">{student.device.androidId}</span></div>
+                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Model:</span> <span>{currentDevice.model}</span></div>
+                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">OS Version:</span> <span>{currentDevice.osVersion}</span></div>
+                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Android ID:</span> <span className="font-mono bg-[#121212] px-1 border border-[#262626] rounded text-xs break-all text-[#f59e0b]">{currentDevice.androidId}</span></div>
                   </div>
                 ) : (
                   <p className="text-sm text-[#9ca3af] italic">No device bound yet.</p>

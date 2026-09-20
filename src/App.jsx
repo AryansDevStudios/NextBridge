@@ -236,15 +236,6 @@ export default function App() {
             >
               Check Status Again
             </button>
-            <button
-              onClick={() => {
-                setIsDeviceBound(false);
-                setErrorMsg('');
-              }}
-              className="w-full text-[#9ca3af] text-sm hover:text-[#f3f4f6]"
-            >
-              Enter a new token
-            </button>
           </div>
         ) : (
           <form onSubmit={handleLogin} className="space-y-6">
