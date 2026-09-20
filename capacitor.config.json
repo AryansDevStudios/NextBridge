@@ -1,0 +1,6 @@
+{
+  "appId": "com.nxttoppers.app",
+  "appName": "nxttoppers",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
