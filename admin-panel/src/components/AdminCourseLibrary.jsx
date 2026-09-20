@@ -284,7 +284,7 @@ const AdminCourseLibrary = () => {
   };
 
   let currentItems = [];
-  let currentTitle = \Class \ Content\;
+  let currentTitle = `Class ${selectedClass} Content`;
 
   if (courseData && courseData.subjects) {
       if (currentPath.length === 0) {
