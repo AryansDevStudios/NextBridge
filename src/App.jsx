@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { db } from './firebase';
+import LearningHub from './components/LearningHub';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
@@ -197,34 +198,7 @@ export default function App() {
   }
 
   if (user) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] p-6 flex flex-col text-[#f3f4f6]">
-        <div className="bg-[#121212] border border-[#262626] rounded-2xl shadow-sm p-6 mb-6 mt-10 text-center">
-          <div className="flex justify-center mb-4">
-            <CheckCircle className="text-[#f59e0b]" size={60} />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Welcome, {user.name}!</h1>
-          <p className="text-[#9ca3af] mb-6">You have successfully logged in.</p>
-          
-          <div className="bg-[#1a1a1a] rounded-xl p-4 text-left space-y-2 border border-[#262626]">
-            <div className="flex justify-between">
-              <span className="text-[#9ca3af] text-sm">Class</span>
-              <span className="font-medium text-[#f3f4f6]">{user.class}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#9ca3af] text-sm">School</span>
-              <span className="font-medium text-[#f3f4f6]">{user.personalDetails?.school}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-auto pb-8 text-center">
-           <button onClick={handleLogoutLocal} className="w-full text-[#9ca3af] text-sm font-medium hover:text-[#f3f4f6] transition-colors">
-             (Dev) Clear local session
-           </button>
-        </div>
-      </div>
-    );
+    return <LearningHub user={user} />;
   }
 
   return (
