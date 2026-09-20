@@ -84,11 +84,13 @@ const LearningHub = ({ user }) => {
 
   if (currentPath.length === 0) {
     // Root level: show subjects
-    currentItems = Object.values(courseData.subjects).map(sub => ({
-      ...sub,
-      isRootSubject: true,
-      displayTitle: sub.subject_name
-    }));
+    currentItems = Object.values(courseData.subjects)
+      .filter(sub => !sub.isHidden)
+      .map(sub => ({
+        ...sub,
+        isRootSubject: true,
+        displayTitle: sub.subject_name
+      }));
   } else {
     // Inside a folder/subject
     const currentFolder = currentPath[currentPath.length - 1];
@@ -109,6 +111,8 @@ const LearningHub = ({ user }) => {
       const folders = new Set();
 
       allItems.forEach(item => {
+        if (item.isHidden) return; // Hide locked content
+
         if (item.folder_path === targetPath) {
           directChildren.push(item);
         } else if (item.folder_path && item.folder_path.startsWith(targetPath)) {
@@ -127,7 +131,7 @@ const LearningHub = ({ user }) => {
   }
 
   if (playingVideo) {
-    return <VideoPlayer item={playingVideo} onClose={closeVideo} />;
+    return <VideoPlayer item={playingVideo} onClose={closeVideo} user={user} />;
   }
 
   return (

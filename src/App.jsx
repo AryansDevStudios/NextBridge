@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { db } from './firebase';
 import LearningHub from './components/LearningHub';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
@@ -6,6 +6,7 @@ import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor } from '@capacitor/core';
 import { ShieldAlert, CheckCircle, Loader2, Download } from 'lucide-react';
+import { App as CapApp } from '@capacitor/app';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -18,6 +19,9 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isDeviceBound, setIsDeviceBound] = useState(false);
 
+  // Ref to hold the timestamp of when the app became active
+  const sessionStartTime = useRef(null);
+
   useEffect(() => {
     const init = async () => {
       await checkForUpdates();
@@ -25,6 +29,40 @@ export default function App() {
     };
     init();
   }, []);
+
+  useEffect(() => {
+    // Setup Capacitor App State Listener for Screen Time Tracking
+    const appStateListener = CapApp.addListener('appStateChange', async ({ isActive }) => {
+      if (isActive) {
+        sessionStartTime.current = Date.now();
+      } else {
+        // App went to background, calculate session duration
+        if (sessionStartTime.current && user) {
+          const durationSecs = Math.floor((Date.now() - sessionStartTime.current) / 1000);
+          
+          try {
+            // Retrieve current total from Firestore to increment safely
+            // Note: In production, increment() from firestore is better, but this works
+            const userRef = doc(db, 'students', user.id);
+            const userDoc = await getDocs(query(collection(db, 'students'), where('__name__', '==', user.id)));
+            if (!userDoc.empty) {
+              const currentTotal = userDoc.docs[0].data().totalScreenTime || 0;
+              await updateDoc(userRef, {
+                lastActive: new Date().toISOString(),
+                totalScreenTime: currentTotal + durationSecs
+              });
+            }
+          } catch (err) {
+            console.error("Failed to update screen time:", err);
+          }
+        }
+      }
+    });
+
+    return () => {
+      appStateListener.then(listener => listener.remove());
+    };
+  }, [user]);
 
   const checkForUpdates = async () => {
     console.log('[OTA] Starting OTA Update Check...');
@@ -106,7 +144,8 @@ export default function App() {
         if (targetStudent.status === 'active') {
           setUser(targetStudent);
           // Log login silently
-          addDoc(collection(db, 'students', targetStudent.id, 'login_logs'), {
+          addDoc(collection(db, 'students', targetStudent.id, 'logs'), {
+            type: 'login',
             timestamp: new Date().toISOString(),
             device: dev
           });
@@ -165,7 +204,8 @@ export default function App() {
         });
       }
 
-      await addDoc(collection(db, 'students', studentDoc.id, 'login_logs'), {
+      await addDoc(collection(db, 'students', studentDoc.id, 'logs'), {
+        type: 'login',
         timestamp: new Date().toISOString(),
         device: dev
       });

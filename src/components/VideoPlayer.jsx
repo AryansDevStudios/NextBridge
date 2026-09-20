@@ -4,16 +4,20 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { Capacitor } from '@capacitor/core';
+import { db } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
-const VideoPlayer = ({ item, onClose }) => {
+const VideoPlayer = ({ item, onClose, user }) => {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [localUri, setLocalUri] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef(null);
 
+  const totalWatchTime = useRef(0);
+  const lastPlayTime = useRef(null);
+
   useEffect(() => {
-    // 1. Enable FLAG_SECURE to prevent screenshots/recording
     if (Capacitor.isNativePlatform()) {
       PrivacyScreen.enable().catch(console.error);
     }
@@ -21,13 +25,39 @@ const VideoPlayer = ({ item, onClose }) => {
     checkLocalFile();
 
     return () => {
-      // Revert FLAG_SECURE when unmounting
+      // Log the total watch time to Firebase on close
+      if (lastPlayTime.current) {
+        totalWatchTime.current += (Date.now() - lastPlayTime.current);
+      }
+      
+      if (totalWatchTime.current > 1000 && user) {
+        const watchDurationSecs = Math.floor(totalWatchTime.current / 1000);
+        addDoc(collection(db, 'students', user.id, 'logs'), {
+          type: 'watch',
+          videoId: item.id || '',
+          videoTitle: item.title || 'Unknown Video',
+          durationSecs: watchDurationSecs,
+          timestamp: new Date().toISOString()
+        }).catch(console.error);
+      }
+
       if (Capacitor.isNativePlatform()) {
         PrivacyScreen.disable().catch(console.error);
         ScreenOrientation.unlock().catch(console.error);
       }
     };
   }, []);
+
+  const handlePlay = () => {
+    lastPlayTime.current = Date.now();
+  };
+
+  const handlePause = () => {
+    if (lastPlayTime.current) {
+      totalWatchTime.current += (Date.now() - lastPlayTime.current);
+      lastPlayTime.current = null;
+    }
+  };
 
   const checkLocalFile = async () => {
     try {
@@ -38,7 +68,6 @@ const VideoPlayer = ({ item, onClose }) => {
       });
       
       if (stat) {
-        // File exists locally! Get the native URI to play it securely.
         const uri = await Filesystem.getUri({
           path: fileName,
           directory: Directory.Data
@@ -46,7 +75,6 @@ const VideoPlayer = ({ item, onClose }) => {
         setLocalUri(Capacitor.convertFileSrc(uri.uri));
       }
     } catch (e) {
-      // File doesn't exist
       setLocalUri(null);
     }
   };
@@ -57,15 +85,12 @@ const VideoPlayer = ({ item, onClose }) => {
     try {
       const fileName = `${item.id}_${item.type === 'video' ? 'video.mp4' : 'doc.pdf'}`;
       
-      // We simulate download progress because Capacitor Http plugin doesn't give precise progress on simple fetch
-      // For production, use Capacitor Http with `downloadFile` plugin or standard fetch reading streams
       let progress = 0;
       const interval = setInterval(() => {
          progress += 10;
          if(progress <= 90) setDownloadProgress(progress);
       }, 500);
 
-      // Simple fetch blob and write approach (Good for moderate sizes)
       const res = await fetch(item.url);
       const blob = await res.blob();
       
@@ -83,7 +108,17 @@ const VideoPlayer = ({ item, onClose }) => {
         
         setDownloadProgress(100);
         setIsDownloading(false);
-        checkLocalFile(); // reload the UI to use the local URI
+        checkLocalFile();
+
+        // Log the download event
+        if (user) {
+          addDoc(collection(db, 'students', user.id, 'logs'), {
+            type: 'download',
+            videoId: item.id || '',
+            videoTitle: item.title || 'Unknown Document',
+            timestamp: new Date().toISOString()
+          }).catch(console.error);
+        }
       };
     } catch (err) {
       console.error("Download failed", err);
@@ -134,6 +169,9 @@ const VideoPlayer = ({ item, onClose }) => {
                controls 
                controlsList="nodownload"
                playsInline
+               onPlay={handlePlay}
+               onPause={handlePause}
+               onEnded={handlePause}
                className="w-full h-auto max-h-[60vh] object-contain"
              />
              

@@ -3,6 +3,8 @@ import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { LogOut, Users, Plus, Copy, Check, Info, ShieldAlert, Settings } from 'lucide-react';
 import StudentModal from './StudentModal';
+import AdminCourseLibrary from './AdminCourseLibrary';
+import RenderSyncPanel from './RenderSyncPanel';
 
 function generatePAT() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -55,14 +57,40 @@ export default function Dashboard({ onLogout }) {
     setTimeout(() => setCopiedPAT(null), 2000);
   };
 
+  const [activeTab, setActiveTab] = useState('students'); // 'students', 'library', 'sync'
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f3f4f6]">
       {/* Navbar */}
       <nav className="bg-[#121212] border-b border-[#262626] px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-2 text-[#f59e0b] font-bold text-xl">
-          <Users />
-          <span>Next Bridge Admin</span>
+        <div className="flex items-center space-x-8">
+          <div className="flex items-center space-x-2 text-[#f59e0b] font-bold text-xl mr-8">
+            <Users />
+            <span>Next Bridge Admin</span>
+          </div>
+          
+          <div className="flex space-x-1 border-l border-[#262626] pl-8">
+            <button 
+              onClick={() => setActiveTab('students')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'students' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+            >
+              Students
+            </button>
+            <button 
+              onClick={() => setActiveTab('library')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'library' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+            >
+              Course Library
+            </button>
+            <button 
+              onClick={() => setActiveTab('sync')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'sync' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+            >
+              Backend Sync
+            </button>
+          </div>
         </div>
+        
         <button onClick={onLogout} className="flex items-center space-x-2 text-[#9ca3af] hover:text-[#ef4444] transition">
           <LogOut size={20} />
           <span>Logout</span>
@@ -71,8 +99,10 @@ export default function Dashboard({ onLogout }) {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold">Students Directory</h1>
+        {activeTab === 'students' && (
+          <>
+            <div className="flex justify-between items-center mb-8">
+              <h1 className="text-2xl font-bold">Students Directory</h1>
           <button 
             onClick={() => setShowAddModal(true)}
             className="flex items-center space-x-2 bg-[#f59e0b] text-[#0a0a0a] px-4 py-2 rounded-lg hover:bg-[#fbbf24] transition font-bold"
@@ -148,6 +178,16 @@ export default function Dashboard({ onLogout }) {
             </tbody>
           </table>
         </div>
+        </>
+        )}
+
+        {activeTab === 'library' && (
+          <AdminCourseLibrary />
+        )}
+
+        {activeTab === 'sync' && (
+          <RenderSyncPanel />
+        )}
       </div>
 
       {/* Add Modal */}

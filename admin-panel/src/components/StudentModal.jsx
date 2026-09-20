@@ -45,7 +45,7 @@ export default function StudentModal({ student, onClose }) {
   const fetchLogs = async () => {
     setLoadingLogs(true);
     try {
-      const q = query(collection(db, 'students', student.id, 'login_logs'), orderBy('timestamp', 'desc'));
+      const q = query(collection(db, 'students', student.id, 'logs'), orderBy('timestamp', 'desc'));
       const snapshot = await getDocs(q);
       setLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
@@ -215,10 +215,26 @@ export default function StudentModal({ student, onClose }) {
                 )}
               </div>
 
+              {/* Analytics Summary */}
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
+                    <p className="text-xs text-[#9ca3af] uppercase tracking-wider mb-1">Total Screen Time</p>
+                    <p className="text-xl font-bold text-[#4ade80]">
+                       {student.totalScreenTime ? Math.floor(student.totalScreenTime / 60) + ' mins' : '0 mins'}
+                    </p>
+                 </div>
+                 <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
+                    <p className="text-xs text-[#9ca3af] uppercase tracking-wider mb-1">Last Active</p>
+                    <p className="text-sm font-medium text-[#f3f4f6]">
+                       {student.lastActive ? new Date(student.lastActive).toLocaleString() : 'Never'}
+                    </p>
+                 </div>
+              </div>
+
               {/* Login Logs */}
               <div>
                 <h3 className="text-sm font-bold text-[#f3f4f6] mb-3 flex items-center space-x-2">
-                  <Clock size={16} className="text-[#f59e0b]" /> <span>Login History</span>
+                  <Clock size={16} className="text-[#f59e0b]" /> <span>Activity Timeline</span>
                 </h3>
                 {loadingLogs ? (
                   <p className="text-sm text-[#9ca3af] text-center py-4">Loading logs...</p>
@@ -227,17 +243,22 @@ export default function StudentModal({ student, onClose }) {
                     {logs.map(log => (
                       <div key={log.id} className="bg-[#1a1a1a] border border-[#262626] p-3 rounded-lg flex justify-between items-center text-sm">
                         <div>
-                          <p className="font-medium text-[#f3f4f6]">{new Date(log.timestamp).toLocaleString()}</p>
-                          <p className="text-xs text-[#9ca3af]">{log.device?.model}</p>
+                          <p className="font-medium text-[#f3f4f6] flex items-center space-x-2">
+                             {log.type === 'watch' && <span className="text-blue-400 bg-blue-900/20 px-2 py-0.5 rounded text-xs font-bold">WATCHED</span>}
+                             {log.type === 'download' && <span className="text-green-400 bg-green-900/20 px-2 py-0.5 rounded text-xs font-bold">DOWNLOADED</span>}
+                             {(!log.type || log.type === 'login') && <span className="text-[#f59e0b] bg-[#f59e0b]/20 px-2 py-0.5 rounded text-xs font-bold">LOGIN</span>}
+                             <span>{log.videoTitle || 'App Login'}</span>
+                          </p>
+                          <p className="text-xs text-[#9ca3af] mt-1">{new Date(log.timestamp).toLocaleString()}</p>
                         </div>
                         <span className="text-xs font-mono text-[#f59e0b] bg-[#121212] border border-[#262626] px-2 py-1 rounded">
-                          {log.device?.androidId?.slice(0, 8)}...
+                          {log.durationSecs ? `${Math.floor(log.durationSecs / 60)}m ${log.durationSecs % 60}s` : (log.device?.model || 'Device')}
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-[#9ca3af] text-center py-4 border border-dashed border-[#262626] rounded-lg bg-[#1a1a1a]">No login records found.</p>
+                  <p className="text-sm text-[#9ca3af] text-center py-4 border border-dashed border-[#262626] rounded-lg bg-[#1a1a1a]">No activity records found.</p>
                 )}
               </div>
             </div>
