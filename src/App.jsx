@@ -435,9 +435,8 @@ export default function App() {
 
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
-        <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
-          Secure Device-Bound Portal<br />
-          Built by <span style={{ fontWeight: '600', color: '#f59e0b' }}>AryansDevStudios</span>
+        <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
+          Secure Device-Bound Portal
         </p>
       </div>
     </div>
