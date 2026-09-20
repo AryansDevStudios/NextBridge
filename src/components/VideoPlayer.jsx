@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { db } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
+
+const ImmersiveMode = registerPlugin('ImmersiveMode');
 
 function HlsPlayer({ url, item, user }) {
   const videoRef = useRef(null);
@@ -22,13 +24,27 @@ function HlsPlayer({ url, item, user }) {
   useEffect(() => {
     const checkOffline = async () => {
       try {
-        const path = `downloads/${item.id}/index.m3u8`;
-        const stat = await Filesystem.stat({ path, directory: Directory.Data });
+        const m3u8Path = `downloads/${item.id}/index.m3u8`;
+        const stat = await Filesystem.stat({ path: m3u8Path, directory: Directory.Data });
         if (stat) {
-          const uriInfo = await Filesystem.getUri({ path, directory: Directory.Data });
+          const uriInfo = await Filesystem.getUri({ path: m3u8Path, directory: Directory.Data });
           setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
+          setIsReady(true);
+          return;
         }
       } catch (e) {}
+
+      try {
+        const mp4Path = `downloads/${item.id}/video.mp4`;
+        const statMp4 = await Filesystem.stat({ path: mp4Path, directory: Directory.Data });
+        if (statMp4) {
+          const uriInfo = await Filesystem.getUri({ path: mp4Path, directory: Directory.Data });
+          setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
+          setIsReady(true);
+          return;
+        }
+      } catch (e) {}
+
       setIsReady(true);
     };
     checkOffline();
@@ -208,17 +224,21 @@ function HlsPlayer({ url, item, user }) {
       }, 100);
 
       plyrInstance.on('enterfullscreen', () => {
-        setTimeout(() => {
-          if (Capacitor.isNativePlatform()) {
-            ScreenOrientation.lock({ orientation: 'landscape' }).catch(console.error);
-          } else if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
-            window.screen.orientation.lock('landscape').catch(e => console.log('Orientation lock failed:', e));
-          }
-        }, 600);
+        if (Capacitor.isNativePlatform()) {
+          try {
+            ImmersiveMode.enter().catch(() => {});
+            ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {});
+          } catch (e) {}
+        } else if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+          window.screen.orientation.lock('landscape').catch(e => console.log('Orientation lock failed:', e));
+        }
       });
       plyrInstance.on('exitfullscreen', () => {
         if (Capacitor.isNativePlatform()) {
-          ScreenOrientation.unlock().catch(console.error);
+          try {
+            ImmersiveMode.exit().catch(() => {});
+            ScreenOrientation.unlock().catch(() => {});
+          } catch (e) {}
         } else if (window.screen && window.screen.orientation && window.screen.orientation.unlock) {
           window.screen.orientation.unlock();
         }
@@ -413,7 +433,10 @@ function HlsPlayer({ url, item, user }) {
 
       if (Capacitor.isNativePlatform()) {
         PrivacyScreen.disable().catch(console.error);
-        ScreenOrientation.unlock().catch(console.error);
+        try {
+          ImmersiveMode.exit().catch(() => {});
+          ScreenOrientation.unlock().catch(() => {});
+        } catch (e) {}
       }
     };
   }, [isReady, offlineUrl, url, item, user]);
@@ -459,83 +482,156 @@ function HlsPlayer({ url, item, user }) {
 }
 
 function VideoDownloader({ url, item, user }) {
-  const [state, setState] = useState('idle');
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [state, setState] = useState('idle'); // idle | fetchingOptions | selecting | downloading | done | error
+  const [variants, setVariants] = useState([]);
+  const [selectedVariant, setSelectedVariant] = useState(null);
+  const [progress, setProgress] = useState({ current: 0, total: 0, percent: 0 });
+  const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef(null);
-  
+
   useEffect(() => {
-    Filesystem.stat({ path: `downloads/${item.id}/index.m3u8`, directory: Directory.Data })
-      .then(() => setState('done'))
-      .catch(() => setState('idle'));
+    const checkDownloaded = async () => {
+      try {
+        const m3u8Stat = await Filesystem.stat({ path: `downloads/${item.id}/index.m3u8`, directory: Directory.Data });
+        if (m3u8Stat) { setState('done'); return; }
+      } catch (e) {}
+
+      try {
+        const mp4Stat = await Filesystem.stat({ path: `downloads/${item.id}/video.mp4`, directory: Directory.Data });
+        if (mp4Stat) { setState('done'); return; }
+      } catch (e) {}
+
+      setState('idle');
+    };
+    checkDownloaded();
   }, [item.id]);
 
-  const startDownload = async () => {
-    setState('downloading');
-    abortRef.current = new AbortController();
-    const signal = abortRef.current.signal;
+  const fetchOptions = async () => {
+    if (!url.includes('.m3u8')) {
+      // Direct MP4 - download immediately
+      startDownloadDirect();
+      return;
+    }
 
     try {
-      if (!url.includes('.m3u8')) {
-        await Filesystem.downloadFile({
-          url,
-          path: `downloads/${item.id}/video.mp4`,
-          directory: Directory.Data
-        });
-        await Filesystem.writeFile({
-          path: `downloads/${item.id}/index.m3u8`,
-          data: '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:99999\n#EXTINF:99999,\nvideo.mp4\n#EXT-X-ENDLIST',
-          directory: Directory.Data, encoding: 'utf8'
-        });
-        setState('done');
-        return;
-      }
+      setState('fetchingOptions');
+      setErrorMsg('');
 
       let masterText = '';
       try {
-        const fetchRes = await fetch(url);
-        if (fetchRes.ok) {
-          masterText = await fetchRes.text();
-        } else {
-          throw new Error('Fetch status ' + fetchRes.status);
-        }
+        const res = await fetch(url);
+        if (res.ok) masterText = await res.text();
+        else throw new Error('Fetch status ' + res.status);
       } catch (e) {
         const { CapacitorHttp } = await import('@capacitor/core');
         const masterRes = await CapacitorHttp.request({ method: 'GET', url });
         masterText = masterRes.data;
       }
-      
-      let mediaPlaylistUrl = url;
-      const lines = masterText.split('\n');
+
+      const lines = masterText.split('\n').map(l => l.trim());
+      let parsedVariants = [];
+
       for (let i = 0; i < lines.length; i++) {
-         if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-            const nextLine = lines[i+1]?.trim();
-            if (nextLine && !nextLine.startsWith('#')) {
-               mediaPlaylistUrl = nextLine.startsWith('http') ? nextLine : url.substring(0, url.lastIndexOf('/') + 1) + nextLine;
-               break; 
-            }
-         }
+        if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
+          const resMatch = lines[i].match(/RESOLUTION=\d+x(\d+)/);
+          const height = resMatch ? parseInt(resMatch[1]) : 0;
+          const nextLine = lines[i + 1];
+          if (nextLine && !nextLine.startsWith('#')) {
+            parsedVariants.push({ height: height || 720, path: nextLine });
+          }
+        }
       }
+
+      if (parsedVariants.length === 0) {
+        parsedVariants = [{ height: 720, path: url }];
+      } else {
+        parsedVariants.sort((a, b) => b.height - a.height);
+      }
+
+      setVariants(parsedVariants);
+      const savedQuality = parseInt(localStorage.getItem('global_quality') || '720');
+      let initialSelected = parsedVariants[0];
+      const matched = parsedVariants.find(v => v.height === savedQuality);
+      if (matched) initialSelected = matched;
+
+      setSelectedVariant(initialSelected);
+      setState('selecting');
+    } catch (err) {
+      console.error('[Download] Failed to fetch qualities:', err);
+      // If fetching variants fails, fallback to direct download
+      startDownloadDirect();
+    }
+  };
+
+  const startDownloadDirect = async () => {
+    setState('downloading');
+    setErrorMsg('');
+    setProgress({ current: 0, total: 1, percent: 10 });
+    abortRef.current = new AbortController();
+
+    try {
+      const baseDir = `downloads/${item.id}`;
+      await Filesystem.mkdir({ path: 'downloads', directory: Directory.Data, recursive: true }).catch(() => {});
+      await Filesystem.mkdir({ path: baseDir, directory: Directory.Data, recursive: true }).catch(() => {});
+
+      await Filesystem.downloadFile({
+        url,
+        path: `${baseDir}/video.mp4`,
+        directory: Directory.Data
+      });
+
+      // Register in downloaded_lectures
+      saveToDownloadRegistry('Direct');
+
+      setState('done');
+      if (user) {
+        addDoc(collection(db, 'students', user.id, 'logs'), {
+          type: 'download',
+          videoId: item.id || '',
+          videoTitle: item.title || 'Unknown Video',
+          timestamp: new Date().toISOString()
+        }).catch(console.error);
+      }
+    } catch (err) {
+      console.error('[Download] Direct download failed:', err);
+      setErrorMsg('Download failed. Check your internet.');
+      setState('error');
+    }
+  };
+
+  const startDownload = async (variant) => {
+    setState('downloading');
+    setErrorMsg('');
+    setProgress({ current: 0, total: 0, percent: 0 });
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    try {
+      const baseDir = `downloads/${item.id}`;
+      await Filesystem.mkdir({ path: 'downloads', directory: Directory.Data, recursive: true }).catch(() => {});
+      await Filesystem.mkdir({ path: baseDir, directory: Directory.Data, recursive: true }).catch(() => {});
+
+      const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+      const variantUrl = variant.path.startsWith('http') ? variant.path : baseUrl + variant.path;
 
       let mediaText = '';
       try {
-        const fetchRes = await fetch(mediaPlaylistUrl);
-        if (fetchRes.ok) {
-          mediaText = await fetchRes.text();
-        } else {
-          throw new Error('Fetch status ' + fetchRes.status);
-        }
+        const fetchRes = await fetch(variantUrl, { signal });
+        if (fetchRes.ok) mediaText = await fetchRes.text();
+        else throw new Error('Fetch status ' + fetchRes.status);
       } catch (e) {
         const { CapacitorHttp } = await import('@capacitor/core');
-        const mediaRes = await CapacitorHttp.request({ method: 'GET', url: mediaPlaylistUrl });
+        const mediaRes = await CapacitorHttp.request({ method: 'GET', url: variantUrl });
         mediaText = mediaRes.data;
       }
-      const mediaBase = mediaPlaylistUrl.substring(0, mediaPlaylistUrl.lastIndexOf('/') + 1);
-      
+
+      const mediaBase = variantUrl.substring(0, variantUrl.lastIndexOf('/') + 1);
+      const mediaLines = mediaText.split('\n');
+
       let modifiedPlaylist = [];
       let segmentUrls = [];
-      const mediaLines = mediaText.split('\n');
-      
       let segCount = 0;
+
       for (let line of mediaLines) {
         line = line.trim();
         if (!line) continue;
@@ -550,28 +646,39 @@ function VideoDownloader({ url, item, user }) {
         }
       }
 
-      setProgress({ current: 0, total: segmentUrls.length });
-      
+      if (segmentUrls.length === 0) throw new Error('No video segments found');
+
+      setProgress({ current: 0, total: segmentUrls.length, percent: 0 });
+
+      // Parallel download in batches of 5
+      const CONCURRENCY = 5;
       let completed = 0;
-      for (const seg of segmentUrls) {
+
+      for (let i = 0; i < segmentUrls.length; i += CONCURRENCY) {
         if (signal.aborted) throw new Error('Aborted');
-        
-        await Filesystem.downloadFile({
+        const batch = segmentUrls.slice(i, i + CONCURRENCY);
+
+        await Promise.all(batch.map(seg => Filesystem.downloadFile({
           url: seg.url,
-          path: `downloads/${item.id}/${seg.localName}`,
+          path: `${baseDir}/${seg.localName}`,
           directory: Directory.Data
-        });
-        
-        completed++;
-        setProgress({ current: completed, total: segmentUrls.length });
+        })));
+
+        completed += batch.length;
+        const pct = Math.round((completed / segmentUrls.length) * 100);
+        setProgress({ current: completed, total: segmentUrls.length, percent: pct });
       }
 
+      // Write relative index.m3u8
       await Filesystem.writeFile({
-        path: `downloads/${item.id}/index.m3u8`,
+        path: `${baseDir}/index.m3u8`,
         data: modifiedPlaylist.join('\n'),
         directory: Directory.Data,
         encoding: 'utf8'
       });
+
+      // Save to download registry
+      saveToDownloadRegistry(`${variant.height}p`);
 
       setState('done');
 
@@ -580,35 +687,121 @@ function VideoDownloader({ url, item, user }) {
           type: 'download',
           videoId: item.id || '',
           videoTitle: item.title || 'Unknown Video',
+          quality: `${variant.height}p`,
           timestamp: new Date().toISOString()
         }).catch(console.error);
       }
-
     } catch (err) {
-      if (err.message !== 'Aborted') {
-        console.error(err);
+      if (err.message === 'Aborted') {
         setState('idle');
+      } else {
+        console.error('[Download] Execution failed:', err);
+        setErrorMsg(err.message || 'Download failed');
+        setState('error');
       }
     }
   };
 
+  const saveToDownloadRegistry = (qualityLabel) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+      const updated = existing.filter(d => String(d.id) !== String(item.id));
+      updated.unshift({
+        id: item.id,
+        title: item.title,
+        subjectName: item.unified_path || item.folder_path || 'Class Lecture',
+        folderPath: item.folder_path || '',
+        duration: item.duration || 0,
+        thumbnail: item.thumbnail || null,
+        downloadedAt: new Date().toISOString(),
+        path: `downloads/${item.id}`,
+        quality: qualityLabel
+      });
+      localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('[Download] Failed to update download registry:', e);
+    }
+  };
+
+  const cancelDownload = () => {
+    if (abortRef.current) abortRef.current.abort();
+    setState('idle');
+  };
+
   if (state === 'idle') {
     return (
-      <button className="yt-download-btn" onClick={startDownload}>
+      <button className="yt-download-btn" onClick={fetchOptions}>
         <Download size={18} /> Download Lecture
       </button>
+    );
+  }
+
+  if (state === 'fetchingOptions') {
+    return (
+      <div className="download-progress-container">
+        <Loader2 size={16} className="spin-icon text-amber-500" />
+        <div className="download-progress-text">Preparing download...</div>
+      </div>
+    );
+  }
+
+  if (state === 'selecting') {
+    return (
+      <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', padding: '10px 14px' }}>
+        <div className="download-progress-text" style={{ color: '#f3f4f6', fontWeight: '600' }}>
+          Select Quality to Download:
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {variants.map(v => (
+            <button
+              key={v.height}
+              onClick={() => setSelectedVariant(v)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                border: selectedVariant?.height === v.height ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+                background: selectedVariant?.height === v.height ? 'rgba(245, 158, 11, 0.2)' : '#1a1a1a',
+                color: selectedVariant?.height === v.height ? 'var(--accent)' : '#9ca3af',
+                cursor: 'pointer'
+              }}
+            >
+              {v.height}p
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button 
+            className="yt-download-btn" 
+            style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+            onClick={() => startDownload(selectedVariant || variants[0])}
+          >
+            Start Download
+          </button>
+          <button 
+            onClick={() => setState('idle')}
+            style={{ background: 'transparent', border: '1px solid var(--border-color)', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     );
   }
 
   if (state === 'downloading') {
     return (
       <div className="download-progress-container">
-         <div className="download-progress-text">
-           Downloading: {progress.current} / {progress.total} chunks
-         </div>
-         <button className="download-cancel-btn" onClick={() => { if(abortRef.current) abortRef.current.abort(); setState('idle'); }}>
-           <X size={14} /> Cancel
-         </button>
+        <div className="download-progress-bar-track">
+          <div className="download-progress-bar-fill" style={{ width: `${progress.percent}%` }} />
+        </div>
+        <div className="download-progress-text">
+          {progress.percent}% ({progress.current}/{progress.total})
+        </div>
+        <button className="download-cancel-btn" onClick={cancelDownload} title="Cancel Download">
+          <X size={14} />
+        </button>
       </div>
     );
   }
@@ -616,9 +809,25 @@ function VideoDownloader({ url, item, user }) {
   if (state === 'done') {
     return (
       <div className="download-progress-container">
-         <div className="download-progress-text" style={{ color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
-           <CheckCircle size={16} /> Downloaded Securely
-         </div>
+        <div className="download-progress-text" style={{ color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckCircle size={16} /> Saved to Device
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="download-progress-container">
+        <div className="download-progress-text" style={{ color: 'var(--danger)' }}>
+          {errorMsg || 'Download failed'}
+        </div>
+        <button 
+          onClick={fetchOptions}
+          style={{ background: 'var(--accent)', color: '#000', border: 'none', padding: '3px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -642,23 +851,84 @@ function formatDate(timestamp) {
 }
 
 const VideoPlayer = ({ item, onClose, user }) => {
+  useEffect(() => {
+    if (item.type === 'pdf' && Capacitor.isNativePlatform()) {
+      // Explicitly allow screenshots on PDF files as requested
+      PrivacyScreen.disable().catch(console.error);
+    }
+  }, [item.type]);
+
   if (item.type === 'pdf') {
     return (
-      <div className={`viewer-overlay pdf-mode`} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: '#121212' }}>
-        <div className="viewer-content" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-          <div style={{ padding: '12px 16px', background: '#1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333' }}>
-            <h1 className="text-lg font-bold text-white truncate">{item.title}</h1>
-            <button className="flex items-center gap-2 bg-[#262626] text-white px-4 py-2 rounded-lg font-bold hover:bg-[#333]" onClick={onClose}>
-              <X size={18} /> Close
+      <div 
+        className="viewer-overlay pdf-mode" 
+        style={{ 
+          position: 'fixed', 
+          inset: 0, 
+          width: '100vw', 
+          height: '100vh', 
+          zIndex: 9999, 
+          background: '#121212',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{ 
+          padding: '10px 16px', 
+          background: '#181818', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          borderBottom: '1px solid #262626',
+          width: '100%',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+            <button 
+              onClick={onClose}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: '#f3f4f6', 
+                cursor: 'pointer', 
+                padding: '6px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                borderRadius: '6px' 
+              }}
+              title="Go Back"
+            >
+              <ArrowLeft size={20} />
             </button>
+            <h1 className="text-sm font-semibold text-white truncate" style={{ margin: 0 }}>
+              {item.title}
+            </h1>
           </div>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <iframe 
-              src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(item.url)}`} 
-              style={{ width: '100%', height: '100%', border: 'none' }} 
-              title={item.title}
-            />
-          </div>
+          <button 
+            className="flex items-center gap-1.5 bg-[#262626] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#333]" 
+            onClick={onClose}
+          >
+            <X size={16} /> Close
+          </button>
+        </div>
+        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124' }}>
+          <iframe 
+            src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(item.url)}#zoom=page-width`} 
+            style={{ 
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%', 
+              height: '100%', 
+              minWidth: '100%',
+              minHeight: '100%',
+              border: 'none', 
+              display: 'block' 
+            }} 
+            title={item.title}
+            allowFullScreen
+          />
         </div>
       </div>
     );
@@ -668,6 +938,63 @@ const VideoPlayer = ({ item, onClose, user }) => {
     <div className="viewer-overlay video-mode">
       <div className="viewer-content">
         <div className="yt-layout">
+          {/* Mobile-friendly top header with Back navigation */}
+          <div style={{ 
+            padding: '8px 12px', 
+            background: '#0e0e0e', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            gap: '8px', 
+            borderBottom: '1px solid #222',
+            flexShrink: 0
+          }}>
+            <button 
+              onClick={onClose}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: '#f3f4f6', 
+                cursor: 'pointer', 
+                padding: '6px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                borderRadius: '6px' 
+              }}
+              title="Go Back"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <span style={{ 
+              fontSize: '0.875rem', 
+              fontWeight: 600, 
+              color: '#f3f4f6', 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis', 
+              whiteSpace: 'nowrap',
+              flex: 1,
+              margin: '0 8px'
+            }}>
+              {item.title}
+            </span>
+            <button 
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: 'none',
+                color: '#9ca3af',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <X size={14} /> Close
+            </button>
+          </div>
           <div className="yt-video-section">
             <div className="video-container">
               <HlsPlayer url={item.url} item={item} user={user} />
