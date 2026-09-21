@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { db } from './firebase';
 import LearningHub from './components/LearningHub';
-import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, onSnapshot, increment } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -72,35 +72,92 @@ export default function App() {
     init();
   }, []);
 
+  // Real-time subscription & status listener
   useEffect(() => {
-    // Setup Capacitor App State Listener for Screen Time Tracking
-    const appStateListener = CapApp.addListener('appStateChange', async ({ isActive }) => {
+    if (!user?.id) return;
+
+    const unsub = onSnapshot(doc(db, 'students', user.id), (snap) => {
+      if (!snap.exists()) return;
+      const data = { id: snap.id, ...snap.data() };
+
+      // 1. Check if revoked by admin
+      if (data.status !== 'active') {
+        setErrorMsg(data.customMessage || 'Your access has been revoked by the admin.');
+        localStorage.removeItem('student_user');
+        setUser(null);
+        setIsDeviceBound(true);
+        return;
+      }
+
+      // 2. Check if subscription expired
+      if (data.subscriptionExpiresAt) {
+        const expiry = new Date(data.subscriptionExpiresAt).getTime();
+        if (expiry <= Date.now()) {
+          const formatted = new Date(data.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          setErrorMsg(data.customMessage || `Your subscription access expired on ${formatted}. Please contact admin to renew.`);
+          localStorage.removeItem('student_user');
+          setUser(null);
+          setIsDeviceBound(true);
+          return;
+        }
+      }
+
+      // 3. Keep local user state synchronized with server
+      setUser(prev => ({ ...prev, ...data }));
+      try {
+        const local = JSON.parse(localStorage.getItem('student_user') || '{}');
+        localStorage.setItem('student_user', JSON.stringify({ ...local, ...data }));
+      } catch (e) {}
+    }, (err) => {
+      console.warn('[Auth] Realtime listener error (safe offline fallback):', err);
+    });
+
+    return () => unsub();
+  }, [user?.id]);
+
+  // Screen Time Tracking (Periodic Heartbeat & App State Lifecycle)
+  useEffect(() => {
+    if (!user?.id) return;
+    sessionStartTime.current = Date.now();
+
+    const flushScreenTime = () => {
+      if (sessionStartTime.current && user?.id) {
+        const elapsed = Math.floor((Date.now() - sessionStartTime.current) / 1000);
+        if (elapsed >= 5) {
+          sessionStartTime.current = Date.now();
+          updateDoc(doc(db, 'students', user.id), {
+            lastActive: new Date().toISOString(),
+            totalScreenTime: increment(elapsed)
+          }).catch(() => {});
+        }
+      }
+    };
+
+    // 60-second periodic heartbeat while student is active in the app
+    const heartbeat = setInterval(flushScreenTime, 60000);
+
+    // Capacitor App State Listener for background/foreground transitions
+    const appStateListener = CapApp.addListener('appStateChange', ({ isActive }) => {
       if (isActive) {
         sessionStartTime.current = Date.now();
       } else {
-        if (sessionStartTime.current && user) {
-          const durationSecs = Math.floor((Date.now() - sessionStartTime.current) / 1000);
-          try {
-            const userRef = doc(db, 'students', user.id);
-            const userDoc = await getDocs(query(collection(db, 'students'), where('__name__', '==', user.id)));
-            if (!userDoc.empty) {
-              const currentTotal = userDoc.docs[0].data().totalScreenTime || 0;
-              await updateDoc(userRef, {
-                lastActive: new Date().toISOString(),
-                totalScreenTime: currentTotal + durationSecs
-              });
-            }
-          } catch (err) {
-            console.error('[Analytics] Failed to update screen time:', err);
-          }
-        }
+        flushScreenTime();
+        sessionStartTime.current = null;
       }
     });
 
+    const handleBeforeUnload = () => {
+      flushScreenTime();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      flushScreenTime();
       appStateListener.then(listener => listener.remove());
     };
-  }, [user]);
+  }, [user?.id]);
 
   const checkForUpdates = async () => {
     if (Capacitor.getPlatform() !== 'android' && Capacitor.getPlatform() !== 'ios') {
@@ -236,7 +293,12 @@ export default function App() {
       }
 
       if (targetStudent) {
-        if (targetStudent.status === 'active') {
+        // Check if subscription has expired
+        const now = Date.now();
+        const expiry = targetStudent.subscriptionExpiresAt ? new Date(targetStudent.subscriptionExpiresAt).getTime() : null;
+        const isExpired = expiry && expiry <= now;
+
+        if (targetStudent.status === 'active' && !isExpired) {
           const boundId = typeof targetStudent.device === 'string'
             ? targetStudent.device
             : targetStudent.device?.androidId;
@@ -267,6 +329,12 @@ export default function App() {
             setUser(null);
             setIsDeviceBound(true);
           }
+        } else if (isExpired) {
+          const formatted = new Date(targetStudent.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          setErrorMsg(targetStudent.customMessage || `Your subscription access expired on ${formatted}. Please contact admin to renew.`);
+          localStorage.removeItem('student_user');
+          setUser(null);
+          setIsDeviceBound(true);
         } else {
           // Status revoked
           setErrorMsg(targetStudent.customMessage || 'Your access has been revoked by the admin.');
@@ -354,6 +422,18 @@ export default function App() {
         setIsVerifying(false);
         setIsDeviceBound(true);
         return;
+      }
+
+      // Subscription expiry check
+      if (studentData.subscriptionExpiresAt) {
+        const expiry = new Date(studentData.subscriptionExpiresAt).getTime();
+        if (expiry <= Date.now()) {
+          const formatted = new Date(studentData.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          setErrorMsg(studentData.customMessage || `Your subscription access expired on ${formatted}. Please contact admin to renew.`);
+          setIsVerifying(false);
+          setIsDeviceBound(true);
+          return;
+        }
       }
 
       const dev = await getDeviceData();

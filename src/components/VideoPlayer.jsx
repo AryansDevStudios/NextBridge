@@ -4,7 +4,7 @@ import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { db } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
@@ -453,22 +453,50 @@ function HlsPlayer({ url, item, user }) {
       });
     }
 
-    return () => {
-      savePosition();
+    const flushWatchTime = () => {
       handlePauseTime();
-      clearInterval(saveInterval);
-      clearTimeout(pauseHideTimer);
-      
-      if (totalWatchTime.current > 1000 && user) {
-        const watchDurationSecs = Math.floor(totalWatchTime.current / 1000);
+      if (lastPlayTime.current === null && video && !video.paused) {
+        lastPlayTime.current = Date.now();
+      }
+      const pendingMs = totalWatchTime.current;
+      if (pendingMs >= 3000 && user?.id) {
+        totalWatchTime.current = 0;
+        const durationSecs = Math.floor(pendingMs / 1000);
+        const cleanVidId = String(item.id || 'vid_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
+        
         addDoc(collection(db, 'students', user.id, 'logs'), {
           type: 'watch',
           videoId: item.id || '',
           videoTitle: item.title || 'Unknown Video',
-          durationSecs: watchDurationSecs,
+          subjectName: item.subject_name || item.subjectName || '',
+          durationSecs: durationSecs,
           timestamp: new Date().toISOString()
-        }).catch(console.error);
+        }).catch(() => {});
+
+        updateDoc(doc(db, 'students', user.id), {
+          totalVideoTime: increment(durationSecs),
+          lastActive: new Date().toISOString(),
+          [`videoStats.${cleanVidId}.title`]: item.title || 'Unknown Video',
+          [`videoStats.${cleanVidId}.subjectName`]: item.subject_name || item.subjectName || '',
+          [`videoStats.${cleanVidId}.watchTimeSecs`]: increment(durationSecs),
+          [`videoStats.${cleanVidId}.lastWatched`]: new Date().toISOString(),
+          [`videoStats.${cleanVidId}.playCount`]: increment(1)
+        }).catch(() => {});
       }
+    };
+
+    const watchSyncInterval = setInterval(() => {
+      if (video && !video.paused) {
+        flushWatchTime();
+      }
+    }, 30000);
+
+    return () => {
+      savePosition();
+      clearInterval(saveInterval);
+      clearInterval(watchSyncInterval);
+      clearTimeout(pauseHideTimer);
+      flushWatchTime();
 
       video.removeEventListener('pause', savePosition);
       video.removeEventListener('pause', onPauseHide);
@@ -859,7 +887,34 @@ const VideoPlayer = ({ item, onClose, user }) => {
           if (isMounted) setResolvedPdfUrl(item.url || '');
         }
       };
-      syncPdfUrl();
+      let pdfStartTime = Date.now();
+      const flushPdfTime = () => {
+        const elapsedSecs = Math.floor((Date.now() - pdfStartTime) / 1000);
+        if (elapsedSecs >= 3 && user?.id) {
+          pdfStartTime = Date.now();
+          const cleanDocId = String(item.id || 'doc_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
+          addDoc(collection(db, 'students', user.id, 'logs'), {
+            type: 'notes',
+            noteId: item.id || '',
+            noteTitle: item.title || 'Study Material / Notes',
+            subjectName: item.subject_name || item.subjectName || '',
+            durationSecs: elapsedSecs,
+            timestamp: new Date().toISOString()
+          }).catch(() => {});
+
+          updateDoc(doc(db, 'students', user.id), {
+            totalNotesTime: increment(elapsedSecs),
+            lastActive: new Date().toISOString(),
+            [`notesStats.${cleanDocId}.title`]: item.title || 'Study Material / Notes',
+            [`notesStats.${cleanDocId}.subjectName`]: item.subject_name || item.subjectName || '',
+            [`notesStats.${cleanDocId}.readTimeSecs`]: increment(elapsedSecs),
+            [`notesStats.${cleanDocId}.lastRead`]: new Date().toISOString(),
+            [`notesStats.${cleanDocId}.openCount`]: increment(1)
+          }).catch(() => {});
+        }
+      };
+
+      const pdfInterval = setInterval(flushPdfTime, 30000);
 
       const unsub = downloadManager.subscribe(() => {
         setIsPdfDownloaded(downloadManager.isDownloaded(item.id));
@@ -869,6 +924,8 @@ const VideoPlayer = ({ item, onClose, user }) => {
 
       return () => {
         isMounted = false;
+        clearInterval(pdfInterval);
+        flushPdfTime();
         unsub();
         if (Capacitor.isNativePlatform()) {
           PrivacyScreen.disable().catch(console.error);

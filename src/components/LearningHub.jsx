@@ -82,6 +82,44 @@ const LearningHub = ({ user, onLogout }) => {
     return downloadManager.getStorageDetails();
   }, [downloadedLectures]);
 
+  const subInfo = useMemo(() => {
+    if (!user) return { status: 'none', text: 'Enrolled' };
+    if (!user.subscriptionExpiresAt) {
+      return { status: 'unlimited', text: 'Unlimited Full Access', badge: 'Active' };
+    }
+    const expiry = new Date(user.subscriptionExpiresAt).getTime();
+    const diff = expiry - Date.now();
+    if (diff <= 0) {
+      return { 
+        status: 'expired', 
+        text: 'Access Expired', 
+        badge: 'Expired', 
+        isExpired: true,
+        formattedDate: new Date(user.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      };
+    }
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    let text = `${days}d ${hours}h remaining`;
+    if (days === 0 && hours > 0) text = `${hours}h ${mins}m remaining`;
+    if (days === 0 && hours === 0) text = `${mins}m remaining`;
+
+    const badge = days > 0 ? `${days}d left` : `${hours}h left`;
+
+    return {
+      status: 'active',
+      text,
+      badge,
+      days,
+      hours,
+      mins,
+      isExpired: false,
+      formattedDate: new Date(user.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    };
+  }, [user?.subscriptionExpiresAt]);
+
   const normalizedDownloads = useMemo(() => {
     return downloadedLectures.map(item => {
       const { subject, folder } = parseDownloadSubjectAndFolder(item);
@@ -601,6 +639,28 @@ const LearningHub = ({ user, onLogout }) => {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          {subInfo.badge && (
+            <div 
+              onClick={() => setShowProfileModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '4px 9px',
+                borderRadius: '12px',
+                background: subInfo.isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                color: subInfo.isExpired ? '#ef4444' : '#4ade80',
+                border: `1px solid ${subInfo.isExpired ? 'rgba(239, 68, 68, 0.3)' : 'rgba(74, 222, 128, 0.3)'}`,
+                cursor: 'pointer'
+              }}
+              title={subInfo.text}
+            >
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: subInfo.isExpired ? '#ef4444' : '#4ade80' }} />
+              <span>{subInfo.badge}</span>
+            </div>
+          )}
           <button 
             className="student-avatar-btn" 
             onClick={() => setShowProfileModal(true)}
@@ -1339,6 +1399,20 @@ const LearningHub = ({ user, onLogout }) => {
                 <span className="profile-detail-label">Device Status</span>
                 <span className="profile-detail-value" style={{ color: '#4ade80' }}>● Bound & Verified</span>
               </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Subscription</span>
+                <span className="profile-detail-value" style={{ color: subInfo.isExpired ? '#ef4444' : '#4ade80', fontWeight: 600 }}>
+                  {subInfo.text}
+                </span>
+              </div>
+              {subInfo.formattedDate && (
+                <div className="profile-detail-row">
+                  <span className="profile-detail-label">Valid Until</span>
+                  <span className="profile-detail-value" style={{ fontSize: '0.8rem' }}>
+                    {subInfo.formattedDate}
+                  </span>
+                </div>
+              )}
               <div className="profile-detail-row" style={{ alignItems: 'center' }}>
                 <span className="profile-detail-label">Offline Storage</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
-import { LogOut, Users, Plus, Copy, Check, Info, ShieldAlert, Settings } from 'lucide-react';
+import { LogOut, Users, Plus, Copy, Check, Info, ShieldAlert, Settings, Trophy, Calendar, Clock } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
 import RenderSyncPanel from './RenderSyncPanel';
+import AdminAnalytics from './AdminAnalytics';
 
 function generatePAT() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -26,6 +27,7 @@ export default function Dashboard({ onLogout }) {
   const [studentClass, setStudentClass] = useState('9');
   const [school, setSchool] = useState('');
   const [area, setArea] = useState('');
+  const [initialSubscriptionDays, setInitialSubscriptionDays] = useState(30);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'students'), (snapshot) => {
@@ -38,6 +40,10 @@ export default function Dashboard({ onLogout }) {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     const pat = generatePAT();
+    const expiry = initialSubscriptionDays > 0 
+      ? (Date.now() + initialSubscriptionDays * 24 * 60 * 60 * 1000) 
+      : null;
+
     await addDoc(collection(db, 'students'), {
       name,
       class: studentClass,
@@ -45,10 +51,14 @@ export default function Dashboard({ onLogout }) {
       pat,
       device: null,
       status: 'active',
-      customMessage: ''
+      subscriptionExpiresAt: expiry,
+      customMessage: '',
+      totalVideoTime: 0,
+      totalNotesTime: 0,
+      totalScreenTime: 0
     });
     setShowAddModal(false);
-    setName(''); setSchool(''); setArea(''); setStudentClass('9');
+    setName(''); setSchool(''); setArea(''); setStudentClass('9'); setInitialSubscriptionDays(30);
   };
 
   const copyToClipboard = (pat) => {
@@ -57,7 +67,7 @@ export default function Dashboard({ onLogout }) {
     setTimeout(() => setCopiedPAT(null), 2000);
   };
 
-  const [activeTab, setActiveTab] = useState('students'); // 'students', 'library', 'sync'
+  const [activeTab, setActiveTab] = useState('students'); // 'students', 'analytics', 'library', 'sync'
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f3f4f6]">
@@ -75,6 +85,13 @@ export default function Dashboard({ onLogout }) {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'students' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
             >
               Students
+            </button>
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-[#1a1a1a] text-[#f59e0b]' : 'text-[#9ca3af] hover:text-white'}`}
+            >
+              <Trophy size={16} />
+              <span>Analytics & Leaderboard</span>
             </button>
             <button 
               onClick={() => setActiveTab('library')}
@@ -121,64 +138,112 @@ export default function Dashboard({ onLogout }) {
                 <th className="p-4 border-b border-[#262626]">Class</th>
                 <th className="p-4 border-b border-[#262626]">PAT Token</th>
                 <th className="p-4 border-b border-[#262626]">Device Info</th>
+                <th className="p-4 border-b border-[#262626]">Subscription</th>
                 <th className="p-4 border-b border-[#262626]">Status</th>
                 <th className="p-4 border-b border-[#262626]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {students.map((s) => (
-                <tr key={s.id} className="border-b border-[#262626] last:border-0 hover:bg-[#1a1a1a] transition-colors">
-                  <td className="p-4 font-medium">
-                    {s.name}
-                    <div className="text-xs text-[#9ca3af] font-normal">{s.personalDetails?.school} • {s.personalDetails?.area}</div>
-                  </td>
-                  <td className="p-4 text-[#9ca3af]">{s.class}</td>
-                  <td className="p-4">
-                    <div className="flex items-center space-x-2">
-                      <code className="bg-[#1a1a1a] border border-[#262626] px-2 py-1 rounded text-[#f59e0b] font-bold">{s.pat}</code>
-                      <button onClick={() => copyToClipboard(s.pat)} className="text-[#9ca3af] hover:text-[#f3f4f6]" title="Copy PAT">
-                        {copiedPAT === s.pat ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="p-4 text-sm">
-                    {s.device ? (
-                      <div className="flex items-start space-x-1 text-green-500">
-                        <Info size={16} className="mt-0.5" />
-                        <div>
-                          <div className="text-[#f3f4f6]">{s.device.model}</div>
-                          <div className="text-xs text-[#9ca3af] break-all w-32">{s.device.androidId}</div>
-                        </div>
+              {students.map((s) => {
+                const expiry = s.subscriptionExpiresAt 
+                  ? (typeof s.subscriptionExpiresAt === 'number' ? s.subscriptionExpiresAt : new Date(s.subscriptionExpiresAt).getTime())
+                  : null;
+                const diff = expiry ? expiry - Date.now() : null;
+                const isExpired = diff !== null && diff <= 0;
+                const days = diff !== null && diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
+                const hours = diff !== null && diff > 0 ? Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)) : 0;
+                const isUrgent = days < 3;
+
+                return (
+                  <tr key={s.id} className="border-b border-[#262626] last:border-0 hover:bg-[#1a1a1a] transition-colors">
+                    <td className="p-4 font-medium">
+                      {s.name}
+                      <div className="text-xs text-[#9ca3af] font-normal">{s.personalDetails?.school} • {s.personalDetails?.area}</div>
+                    </td>
+                    <td className="p-4 text-[#9ca3af]">{s.class}</td>
+                    <td className="p-4">
+                      <div className="flex items-center space-x-2">
+                        <code className="bg-[#1a1a1a] border border-[#262626] px-2 py-1 rounded text-[#f59e0b] font-bold">{s.pat}</code>
+                        <button onClick={() => copyToClipboard(s.pat)} className="text-[#9ca3af] hover:text-[#f3f4f6]" title="Copy PAT">
+                          {copiedPAT === s.pat ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                        </button>
                       </div>
-                    ) : (
-                      <span className="text-[#9ca3af] italic">Not logged in yet</span>
-                    )}
-                  </td>
-                  <td className="p-4">
-                    <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${s.status === 'active' ? 'bg-green-900/20 text-green-400 border-green-900/50' : 'bg-red-900/20 text-red-400 border-red-900/50'}`}>
-                      {s.status}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <button 
-                      onClick={() => setSelectedStudent(s)}
-                      className="flex items-center space-x-1 text-sm font-medium text-[#9ca3af] hover:text-[#f59e0b] bg-[#1a1a1a] border border-[#262626] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition"
-                    >
-                      <Settings size={16} />
-                      <span>Manage</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-4 text-sm">
+                      {s.device ? (
+                        <div className="flex items-start space-x-1 text-green-500">
+                          <Info size={16} className="mt-0.5" />
+                          <div>
+                            <div className="text-[#f3f4f6]">{s.device.model}</div>
+                            <div className="text-xs text-[#9ca3af] break-all w-32">{s.device.androidId}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[#9ca3af] italic">Not logged in yet</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      {s.status === 'revoked' ? (
+                        <span className="px-2.5 py-1 inline-flex text-xs font-semibold rounded-full border bg-red-900/20 text-red-400 border-red-900/50">
+                          Revoked
+                        </span>
+                      ) : !expiry ? (
+                        <span className="px-2.5 py-1 inline-flex text-xs font-semibold rounded-full border bg-emerald-900/20 text-emerald-400 border-emerald-900/50">
+                          Unlimited
+                        </span>
+                      ) : isExpired ? (
+                        <div className="flex flex-col">
+                          <span className="px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full border w-fit bg-red-900/20 text-red-400 border-red-900/50">
+                            Expired
+                          </span>
+                          <span className="text-[11px] text-[#9ca3af] mt-0.5">
+                            {new Date(expiry).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className={`px-2.5 py-0.5 inline-flex text-xs font-semibold rounded-full border w-fit ${isUrgent ? 'bg-amber-900/20 text-amber-400 border-amber-900/50' : 'bg-green-900/20 text-green-400 border-green-900/50'}`}>
+                            {days > 0 ? `${days}d ${hours}h left` : `${hours}h left`}
+                          </span>
+                          <span className="text-[11px] text-[#9ca3af] mt-0.5">
+                            {new Date(expiry).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${s.status === 'active' ? 'bg-green-900/20 text-green-400 border-green-900/50' : 'bg-red-900/20 text-red-400 border-red-900/50'}`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <button 
+                        onClick={() => setSelectedStudent(s)}
+                        className="flex items-center space-x-1 text-sm font-medium text-[#9ca3af] hover:text-[#f59e0b] bg-[#1a1a1a] border border-[#262626] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition"
+                      >
+                        <Settings size={16} />
+                        <span>Manage</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {students.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="p-8 text-center text-[#9ca3af]">No students found. Add one to get started!</td>
+                  <td colSpan="7" className="p-8 text-center text-[#9ca3af]">No students found. Add one to get started!</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
         </>
+        )}
+
+        {activeTab === 'analytics' && (
+          <AdminAnalytics 
+            students={students} 
+            onSelectStudent={(s) => setSelectedStudent(s)} 
+          />
         )}
 
         {activeTab === 'library' && (
@@ -205,6 +270,21 @@ export default function Dashboard({ onLogout }) {
                 <select value={studentClass} onChange={e => setStudentClass(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]">
                   <option value="9">Class 9</option>
                   <option value="10">Class 10</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Initial Subscription Duration</label>
+                <select 
+                  value={initialSubscriptionDays} 
+                  onChange={e => setInitialSubscriptionDays(Number(e.target.value))} 
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
+                >
+                  <option value={30}>30 Days (1 Month)</option>
+                  <option value={60}>60 Days (2 Months)</option>
+                  <option value={90}>90 Days (3 Months)</option>
+                  <option value={180}>180 Days (6 Months)</option>
+                  <option value={365}>365 Days (1 Year)</option>
+                  <option value={0}>Unlimited Access (Permanent)</option>
                 </select>
               </div>
               <div>
