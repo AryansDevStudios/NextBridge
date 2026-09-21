@@ -44,10 +44,10 @@ async function buildAndConsolidate() {
   await zipDirectory(path.join(STUDENT_APP_DIR, 'dist'), zipPath);
 
   // Create a version file based on app version and timestamp
-  const version = '1.9.12-' + Date.now().toString();
+  const version = '2.0.0-' + Date.now().toString();
   await fs.writeJson(path.join(buildcodePath, 'version.json'), {
     version: version,
-    appVersion: '1.9.12',
+    appVersion: '2.0.0',
     url: '/buildcode/update.zip',
     releaseDate: new Date().toISOString()
   });
