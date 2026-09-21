@@ -1525,7 +1525,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               </div>
               <div className="profile-detail-row">
                 <span className="profile-detail-label">App Version</span>
-                <span className="profile-detail-value">v2.4.9</span>
+                <span className="profile-detail-value">v2.5.0</span>
               </div>
             </div>
 
