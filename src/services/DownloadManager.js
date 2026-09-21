@@ -223,7 +223,8 @@ class DownloadManagerService {
   }
 
   /**
-   * Accurate segment query: fetches all segments via 25 concurrent HEAD requests
+   * Accurate segment query: fetches all variant manifests in parallel
+   * and runs a single-pass concurrent HEAD worker pool with continuous 0-100% global progress
    */
   async queryAccurateResolutionSizes(masterUrl, duration, onProgress) {
     let masterText = '';
@@ -233,7 +234,7 @@ class DownloadManagerService {
 
     const baseMasterUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
     const lines = masterText.split('\n');
-    const variants = [];
+    const rawVariants = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -248,30 +249,29 @@ class DownloadManagerService {
         let vUrl = lines[i + 1]?.trim();
         if (vUrl && !vUrl.startsWith('#')) {
           if (!vUrl.startsWith('http')) vUrl = baseMasterUrl + vUrl;
-          variants.push({ height, bandwidth, url: vUrl });
+          rawVariants.push({ height, bandwidth, url: vUrl });
         }
       }
     }
 
-    if (variants.length === 0) {
+    if (rawVariants.length === 0) {
       return [{
         height: 720,
         url: masterUrl,
         bandwidth: 1200000,
-        estimatedBytes: Math.round((1200000 / 8) * (duration || 3600)),
-        formattedSize: formatBytes(Math.round((1200000 / 8) * (duration || 3600)))
+        exactBytes: Math.round((1200000 / 8) * (duration || 3600)),
+        formattedSize: formatBytes(Math.round((1200000 / 8) * (duration || 3600))),
+        isEstimated: true
       }];
     }
 
-    variants.sort((a, b) => b.height - a.height);
+    rawVariants.sort((a, b) => b.height - a.height);
 
-    // Query each variant in sequence, using 25 concurrent HEAD requests per variant
-    const resolvedVariants = [];
-
-    for (const variant of variants) {
+    // 1. Concurrently fetch all variant manifests in parallel
+    const variantPlaylists = await Promise.all(rawVariants.map(async (variant) => {
       try {
         const vRes = await fetch(variant.url);
-        if (!vRes.ok) throw new Error('Variant fetch failed');
+        if (!vRes.ok) return { variant, segments: [] };
         const vText = await vRes.text();
         const vBase = variant.url.substring(0, variant.url.lastIndexOf('/') + 1);
         const segmentUrls = [];
@@ -282,82 +282,87 @@ class DownloadManagerService {
             segmentUrls.push(trimmed.startsWith('http') ? trimmed : vBase + trimmed);
           }
         }
+        return { variant, segments: segmentUrls };
+      } catch (e) {
+        return { variant, segments: [] };
+      }
+    }));
 
-        if (segmentUrls.length === 0) {
-          const est = Math.round((variant.bandwidth / 8) * (duration || 3600));
-          resolvedVariants.push({
-            ...variant,
-            exactBytes: est,
-            formattedSize: formatBytes(est),
-            isEstimated: true
-          });
-          continue;
-        }
+    // 2. Build a unified list of tasks across ALL streams
+    const allTasks = [];
+    variantPlaylists.forEach((vp, variantIndex) => {
+      vp.segments.forEach((segUrl) => {
+        allTasks.push({ variantIndex, segUrl });
+      });
+    });
 
-        let totalBytes = 0;
-        let completed = 0;
-        let failedHead = false;
+    const totalTasks = allTasks.length;
+    const variantBytes = new Array(variantPlaylists.length).fill(0);
+    const variantFailed = new Array(variantPlaylists.length).fill(false);
 
-        const workerPool = async (urls) => {
-          let idx = 0;
-          const runWorker = async () => {
-            while (idx < urls.length) {
-              const myIdx = idx++;
-              const segUrl = urls[myIdx];
-              try {
-                const headRes = await fetch(segUrl, { method: 'HEAD' });
-                const cl = headRes.headers.get('content-length');
-                if (cl) {
-                  totalBytes += parseInt(cl);
-                } else {
-                  failedHead = true;
-                }
-              } catch (e) {
-                failedHead = true;
-              }
-              completed++;
-              if (onProgress) {
-                onProgress({
-                  variantHeight: variant.height,
-                  completed,
-                  total: urls.length
-                });
-              }
-            }
-          };
-
-          const workers = [];
-          for (let w = 0; w < Math.min(this.queryConcurrency, urls.length); w++) {
-            workers.push(runWorker());
-          }
-          await Promise.all(workers);
-        };
-
-        await workerPool(segmentUrls);
-
-        if (failedHead || totalBytes === 0) {
-          totalBytes = Math.round((variant.bandwidth / 8) * (duration || 3600));
-        }
-
-        resolvedVariants.push({
-          ...variant,
-          exactBytes: totalBytes,
-          formattedSize: formatBytes(totalBytes),
-          isEstimated: failedHead,
-          segmentCount: segmentUrls.length
-        });
-      } catch (err) {
-        const est = Math.round((variant.bandwidth / 8) * (duration || 3600));
-        resolvedVariants.push({
-          ...variant,
+    if (totalTasks === 0) {
+      return variantPlaylists.map(vp => {
+        const est = Math.round((vp.variant.bandwidth / 8) * (duration || 3600));
+        return {
+          ...vp.variant,
           exactBytes: est,
           formattedSize: formatBytes(est),
           isEstimated: true
-        });
-      }
+        };
+      });
     }
 
-    return resolvedVariants;
+    // 3. Process all tasks in a single concurrent worker pool with global 0-100% progress
+    let taskIdx = 0;
+    let completedCount = 0;
+
+    const worker = async () => {
+      while (taskIdx < allTasks.length) {
+        const currentTask = allTasks[taskIdx++];
+        try {
+          const headRes = await fetch(currentTask.segUrl, { method: 'HEAD' });
+          const cl = headRes.headers.get('content-length');
+          if (cl) {
+            variantBytes[currentTask.variantIndex] += parseInt(cl);
+          } else {
+            variantFailed[currentTask.variantIndex] = true;
+          }
+        } catch (e) {
+          variantFailed[currentTask.variantIndex] = true;
+        }
+
+        completedCount++;
+        if (onProgress) {
+          onProgress({
+            completed: completedCount,
+            total: totalTasks
+          });
+        }
+      }
+    };
+
+    const workers = [];
+    const concurrency = Math.min(30, totalTasks);
+    for (let w = 0; w < concurrency; w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    // 4. Assemble resolved variants
+    return variantPlaylists.map((vp, idx) => {
+      let total = variantBytes[idx];
+      const isFailed = variantFailed[idx] || total === 0;
+      if (isFailed) {
+        total = Math.round((vp.variant.bandwidth / 8) * (duration || 3600));
+      }
+      return {
+        ...vp.variant,
+        exactBytes: total,
+        formattedSize: formatBytes(total),
+        isEstimated: isFailed,
+        segmentCount: vp.segments.length
+      };
+    });
   }
 
   enqueueDownload(item, variant) {
@@ -538,6 +543,162 @@ class DownloadManagerService {
 
     this.checkQueue();
     this.notify();
+  }
+
+  async downloadPdf(item) {
+    const strId = String(item.id);
+    const fileName = `document_${strId}.pdf`;
+    const folderDir = `downloads/${strId}`;
+    const filePath = `${folderDir}/${fileName}`;
+
+    const proxy = new NativeTaskProxy({
+      id: strId,
+      title: item.title || 'PDF Document',
+      quality: 'PDF',
+      percent: 10,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      status: 'downloading'
+    });
+    this.activeDownloads.set(strId, proxy);
+    this.notify();
+
+    try {
+      let sizeBytes = 0;
+      if (Capacitor.isNativePlatform()) {
+        await Filesystem.mkdir({
+          path: folderDir,
+          directory: Directory.Data,
+          recursive: true
+        }).catch(() => {});
+
+        const res = await fetch(item.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        sizeBytes = blob.size;
+
+        proxy.percent = 60;
+        proxy.downloadedBytes = sizeBytes;
+        proxy.totalBytes = sizeBytes;
+        this.notify();
+
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result;
+            const base64 = typeof result === 'string' && result.includes(',') ? result.split(',')[1] : result;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        await Filesystem.writeFile({
+          path: filePath,
+          data: base64Data,
+          directory: Directory.Data
+        });
+      } else {
+        const res = await fetch(item.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        sizeBytes = blob.size;
+      }
+
+      proxy.percent = 100;
+      proxy.status = 'completed';
+      this.activeDownloads.delete(strId);
+
+      const record = {
+        id: strId,
+        title: item.title,
+        type: 'pdf',
+        subjectName: item.subject_name || item.subjectName || 'Class Notes',
+        folderPath: item.folder_path || item.folderPath || '',
+        path: filePath,
+        url: item.url,
+        sizeBytes: sizeBytes,
+        formattedSize: formatBytes(sizeBytes),
+        downloadedAt: new Date().toISOString()
+      };
+
+      const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+      const updated = [record, ...existing.filter(d => String(d.id) !== strId)];
+      localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
+
+      if (Capacitor.isNativePlatform()) {
+        try {
+          let reg = [];
+          try {
+            const regFile = await Filesystem.readFile({
+              path: 'downloads/registry.json',
+              directory: Directory.Data,
+              encoding: 'utf8'
+            });
+            reg = JSON.parse(regFile.data || '[]');
+          } catch (e) {}
+          const filtered = reg.filter(r => String(r.id) !== strId);
+          filtered.unshift(record);
+          await Filesystem.writeFile({
+            path: 'downloads/registry.json',
+            data: JSON.stringify(filtered),
+            directory: Directory.Data,
+            encoding: 'utf8'
+          });
+        } catch (e) {
+          console.warn('[DownloadManager] Failed to update registry.json for PDF:', e);
+        }
+      }
+
+      this.notify();
+      return record;
+    } catch (err) {
+      console.error('[DownloadManager] downloadPdf error:', err);
+      this.activeDownloads.delete(strId);
+      this.notify();
+      throw err;
+    }
+  }
+
+  async openPdf(item) {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const DownloadService = registerPlugin('DownloadService');
+        await DownloadService.openPdf({ path: item.path || `downloads/${item.id}/document_${item.id}.pdf` });
+        return true;
+      } catch (e) {
+        console.warn('[DownloadManager] openPdf native intent failed, falling back to URL:', e);
+      }
+    }
+    if (item.url) {
+      window.open(item.url, '_blank');
+    }
+    return false;
+  }
+
+  isDownloaded(itemId) {
+    const strId = String(itemId);
+    try {
+      const local = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+      return local.some(d => String(d.id) === strId);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  isDownloading(itemId) {
+    const strId = String(itemId);
+    return this.activeDownloads.has(strId);
+  }
+
+  getDownloadedItem(itemId) {
+    const strId = String(itemId);
+    try {
+      const local = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+      return local.find(d => String(d.id) === strId) || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   checkQueue() {

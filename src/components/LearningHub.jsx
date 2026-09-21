@@ -57,6 +57,7 @@ const LearningHub = ({ user, onLogout }) => {
   const [playingVideo, setPlayingVideo] = useState(null);
   const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'downloads'
   const [downloadedLectures, setDownloadedLectures] = useState([]);
+  const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [offlineToast, setOfflineToast] = useState('');
   const [mgrState, setMgrState] = useState(downloadManager.getState());
@@ -75,6 +76,36 @@ const LearningHub = ({ user, onLogout }) => {
     return downloadedLectures.reduce((acc, l) => acc + (l.sizeBytes || 0), 0);
   }, [downloadedLectures]);
 
+  const normalizedDownloads = useMemo(() => {
+    return downloadedLectures.map(item => {
+      let sub = item.subjectName || 'General';
+      let folder = item.folderPath || '';
+      if (!folder && sub.includes('/')) {
+        const parts = sub.split('/');
+        sub = parts[0];
+        folder = parts.slice(1).join('/');
+      }
+      return {
+        ...item,
+        subjectName: sub,
+        folderPath: folder
+      };
+    });
+  }, [downloadedLectures]);
+
+  const downloadSubjectGroups = useMemo(() => {
+    const map = {};
+    normalizedDownloads.forEach(item => {
+      const sub = item.subjectName || 'General';
+      if (!map[sub]) {
+        map[sub] = { name: sub, items: [], totalBytes: 0 };
+      }
+      map[sub].items.push(item);
+      map[sub].totalBytes += (item.sizeBytes || 0);
+    });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  }, [normalizedDownloads]);
+
   const confirmDelete = async () => {
     if (!deleteModalItem) return;
     await downloadManager.deleteDownload(deleteModalItem.id);
@@ -89,11 +120,13 @@ const LearningHub = ({ user, onLogout }) => {
   const activeTabRef = useRef(activeTab);
   const searchQueryRef = useRef(searchQuery);
   const currentPathRef = useRef(currentPath);
+  const downloadPathRef = useRef(downloadPath);
 
   useEffect(() => { playingVideoRef.current = playingVideo; }, [playingVideo]);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   useEffect(() => { searchQueryRef.current = searchQuery; }, [searchQuery]);
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
+  useEffect(() => { downloadPathRef.current = downloadPath; }, [downloadPath]);
 
   // Load downloaded lectures from device registry
   const loadDownloadedLectures = async () => {
@@ -144,8 +177,12 @@ const LearningHub = ({ user, onLogout }) => {
             return;
           }
 
-          // 2. If in Downloads tab, return to courses
+          // 2. If in Downloads tab
           if (activeTabRef.current === 'downloads') {
+            if (downloadPathRef.current && downloadPathRef.current.length > 0) {
+              setDownloadPath(prev => prev.slice(0, -1));
+              return;
+            }
             setActiveTab('courses');
             return;
           }
@@ -268,10 +305,34 @@ const LearningHub = ({ user, onLogout }) => {
     setPlayingVideo(item);
   };
 
-  const handlePlayDownloaded = (item) => {
+  const handlePlayDownloaded = async (item) => {
     if (!Capacitor.isNativePlatform()) {
       window.history.pushState({ player: true }, '');
     }
+
+    if (item.type === 'pdf') {
+      let pdfUrl = item.url;
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const uriRes = await Filesystem.getUri({
+            path: item.path || `downloads/${item.id}/document_${item.id}.pdf`,
+            directory: Directory.Data
+          });
+          pdfUrl = Capacitor.convertFileSrc(uriRes.uri);
+        } catch (e) {
+          console.warn('Failed to resolve local PDF uri:', e);
+        }
+      }
+      setPlayingVideo({
+        id: item.id,
+        title: item.title,
+        type: 'pdf',
+        url: pdfUrl,
+        path: item.path
+      });
+      return;
+    }
+
     setPlayingVideo({
       id: item.id,
       title: item.title,
@@ -389,7 +450,11 @@ const LearningHub = ({ user, onLogout }) => {
         if (item.isHidden) return; // Hide locked content
 
         if (item.folder_path === targetPath) {
-          directChildren.push(item);
+          directChildren.push({
+            ...item,
+            subject_name: subject.subject_name,
+            subjectId: currentFolder.subjectId || subject.subject_id || subject.subject_name
+          });
         } else if (item.folder_path && item.folder_path.startsWith(targetPath)) {
           const remainingPath = targetPath === "" ? item.folder_path : item.folder_path.substring(targetPath.length + 1);
           const nextFolder = remainingPath.split('/')[0];
@@ -643,6 +708,48 @@ const LearningHub = ({ user, onLogout }) => {
             </div>
           )}
 
+          {/* Breadcrumbs inside Downloaded Tab when navigated into a subject/folder */}
+          {downloadPath.length > 0 && (
+            <div className="breadcrumbs" style={{ marginTop: '12px', marginBottom: '8px' }}>
+              <button 
+                onClick={() => setDownloadPath(prev => prev.slice(0, -1))}
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  color: 'var(--accent)', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: '2px 6px', 
+                  marginRight: '6px', 
+                  borderRadius: '4px' 
+                }}
+                title="Go Back"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              <span 
+                className="breadcrumb-item"
+                onClick={() => setDownloadPath([])}
+                style={{ cursor: 'pointer' }}
+              >
+                Downloaded
+              </span>
+              {downloadPath.map((crumb, idx) => (
+                <React.Fragment key={idx}>
+                  <ChevronRight size={14} className="breadcrumb-separator" />
+                  <span 
+                    className={`breadcrumb-item ${idx === downloadPath.length - 1 ? 'active' : ''}`}
+                    onClick={() => setDownloadPath(prev => prev.slice(0, idx + 1))}
+                    style={{ cursor: idx === downloadPath.length - 1 ? 'default' : 'pointer' }}
+                  >
+                    {crumb.title}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+
           <div className="list-container">
             {downloadedLectures.length === 0 && mgrState.active.length === 0 && mgrState.queued.length === 0 ? (
               <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
@@ -651,7 +758,7 @@ const LearningHub = ({ user, onLogout }) => {
                 </div>
                 <h3 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '8px', fontWeight: '600' }}>No Downloaded Lectures</h3>
                 <p style={{ color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: '1.5', fontSize: '0.875rem', marginBottom: '20px' }}>
-                  Lectures you download will be stored securely on your device for offline studying without internet.
+                  Lectures and notes you download will be stored securely on your device for offline studying without internet.
                 </p>
                 <button 
                   className="nav-tab-btn active"
@@ -661,75 +768,179 @@ const LearningHub = ({ user, onLogout }) => {
                   Browse Courses
                 </button>
               </div>
-            ) : (
-              downloadedLectures.map((item) => (
+            ) : downloadPath.length === 0 ? (
+              /* Root Level: Render only subjects that have downloaded content */
+              downloadSubjectGroups.map((group) => (
                 <div 
-                  key={item.id} 
-                  className="download-card"
-                  onClick={() => handlePlayDownloaded(item)}
-                  style={{ cursor: 'pointer' }}
+                  key={group.name}
+                  className="list-item"
+                  onClick={() => setDownloadPath([{ title: group.name, isRootSubject: true }])}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
-                    <div className="item-thumbnail-container" style={{ width: '100px', height: '60px', margin: 0 }}>
-                      {item.thumbnail ? (
-                        <img src={item.thumbnail} alt="" className="item-thumbnail" />
-                      ) : (
-                        <Video size={24} style={{ color: 'var(--accent)' }} />
+                  <div className="item-icon-container folder">
+                    <BookOpen size={24} />
+                  </div>
+                  <div className="item-details">
+                    <div className="item-title">{group.name}</div>
+                    <div className="item-meta">
+                      <span>{group.items.length} downloaded {group.items.length === 1 ? 'item' : 'items'}</span>
+                      {group.totalBytes > 0 && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
+                          <HardDrive size={12} />
+                          {formatBytes(group.totalBytes)}
+                        </span>
                       )}
                     </div>
-                    <div className="item-details" style={{ minWidth: 0 }}>
-                      <div className="item-title" style={{ fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {item.title}
-                      </div>
-                      <div className="item-meta" style={{ gap: '10px', fontSize: '0.8rem', flexWrap: 'wrap' }}>
-                        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{item.subjectName}</span>
-                        {item.quality && (
-                          <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
-                            {item.quality}
-                          </span>
-                        )}
-                        {item.sizeBytes > 0 && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8', fontWeight: 500 }}>
-                            <HardDrive size={12} />
-                            {formatBytes(item.sizeBytes)}
-                          </span>
-                        )}
-                        {item.duration > 0 && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Clock size={12} />
-                            {formatDuration(item.duration)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteModalItem(item);
-                      }}
-                      style={{ 
-                        background: 'rgba(239, 68, 68, 0.1)', 
-                        border: '1px solid rgba(239, 68, 68, 0.3)', 
-                        color: '#ef4444', 
-                        padding: '6px 10px', 
-                        borderRadius: '6px', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '0.75rem',
-                        fontWeight: 600
-                      }}
-                      title="Delete Download"
-                    >
-                      <Trash2 size={14} />
-                      <span>Delete</span>
-                    </button>
-                  </div>
+                  <ChevronRight size={20} style={{ color: '#6b7280', flexShrink: 0 }} />
                 </div>
               ))
+            ) : (
+              /* Sub-level: Render folders and files inside selected subject */
+              (() => {
+                const currentFolder = downloadPath[downloadPath.length - 1];
+                const rootSubject = downloadPath[0].title;
+                const subjectItems = normalizedDownloads.filter(d => d.subjectName === rootSubject);
+
+                let targetPath = "";
+                if (!currentFolder.isRootSubject) {
+                  targetPath = currentFolder.folder_path 
+                    ? `${currentFolder.folder_path}/${currentFolder.title}` 
+                    : currentFolder.title;
+                }
+
+                const directChildren = [];
+                const subfoldersMap = {};
+
+                subjectItems.forEach(item => {
+                  const fPath = item.folderPath || "";
+                  if (fPath === targetPath) {
+                    directChildren.push(item);
+                  } else if (fPath && (targetPath === "" || fPath.startsWith(targetPath + "/"))) {
+                    const remaining = targetPath === "" ? fPath : fPath.substring(targetPath.length + 1);
+                    const nextSegment = remaining.split('/')[0];
+                    if (nextSegment) {
+                      if (!subfoldersMap[nextSegment]) {
+                        subfoldersMap[nextSegment] = { count: 0, bytes: 0 };
+                      }
+                      subfoldersMap[nextSegment].count++;
+                      subfoldersMap[nextSegment].bytes += (item.sizeBytes || 0);
+                    }
+                  }
+                });
+
+                const subfolders = Object.entries(subfoldersMap).map(([title, data]) => ({
+                  title,
+                  ...data,
+                  isFolder: true
+                }));
+
+                return (
+                  <>
+                    {/* Subfolders */}
+                    {subfolders.map((folder) => (
+                      <div
+                        key={folder.title}
+                        className="list-item"
+                        onClick={() => setDownloadPath(prev => [...prev, { title: folder.title, folder_path: targetPath, isFolder: true }])}
+                      >
+                        <div className="item-icon-container folder">
+                          <Folder size={24} />
+                        </div>
+                        <div className="item-details">
+                          <div className="item-title">{folder.title}</div>
+                          <div className="item-meta">
+                            <span>{folder.count} {folder.count === 1 ? 'item' : 'items'}</span>
+                            {folder.bytes > 0 && (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
+                                <HardDrive size={12} />
+                                {formatBytes(folder.bytes)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight size={20} style={{ color: '#6b7280', flexShrink: 0 }} />
+                      </div>
+                    ))}
+
+                    {/* Direct Files (Videos & PDFs) */}
+                    {directChildren.map((item) => (
+                      <div 
+                        key={item.id} 
+                        className="download-card"
+                        onClick={() => handlePlayDownloaded(item)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
+                          <div className={item.type === 'video' && item.thumbnail ? "item-thumbnail-container" : `item-icon-container ${item.type || 'video'}`} style={{ width: '100px', height: '60px', margin: 0, flexShrink: 0 }}>
+                            {item.type === 'video' && item.thumbnail ? (
+                              <img src={item.thumbnail} alt="" className="item-thumbnail" />
+                            ) : item.type === 'pdf' ? (
+                              <FileText size={24} style={{ color: '#ef4444' }} />
+                            ) : (
+                              <Video size={24} style={{ color: 'var(--accent)' }} />
+                            )}
+                          </div>
+                          <div className="item-details" style={{ minWidth: 0 }}>
+                            <div className="item-title" style={{ fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.title}
+                            </div>
+                            <div className="item-meta" style={{ gap: '10px', fontSize: '0.8rem', flexWrap: 'wrap' }}>
+                              {item.type === 'pdf' ? (
+                                <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '1px 6px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
+                                  PDF Document
+                                </span>
+                              ) : (
+                                item.quality && (
+                                  <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
+                                    {item.quality}
+                                  </span>
+                                )
+                              )}
+                              {item.sizeBytes > 0 && (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8', fontWeight: 500 }}>
+                                  <HardDrive size={12} />
+                                  {formatBytes(item.sizeBytes)}
+                                </span>
+                              )}
+                              {item.type === 'video' && item.duration > 0 && (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Clock size={12} />
+                                  {formatDuration(item.duration)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteModalItem(item);
+                            }}
+                            style={{ 
+                              background: 'rgba(239, 68, 68, 0.1)', 
+                              border: '1px solid rgba(239, 68, 68, 0.3)', 
+                              color: '#ef4444', 
+                              padding: '6px 10px', 
+                              borderRadius: '6px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600
+                            }}
+                            title="Delete Download"
+                          >
+                            <Trash2 size={14} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()
             )}
           </div>
         </div>
@@ -855,6 +1066,60 @@ const LearningHub = ({ user, onLogout }) => {
                       </span>
                     </div>
                   </div>
+
+                  {item.type === 'pdf' && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (downloadManager.isDownloaded(item.id)) {
+                          handlePlayDownloaded(downloadManager.getDownloadedItem(item.id) || item);
+                        } else {
+                          try {
+                            await downloadManager.downloadPdf({
+                              ...item,
+                              subject_name: item.subject_name || (currentFolder && currentFolder.title) || 'Class Notes',
+                              folder_path: item.folder_path || ''
+                            });
+                          } catch (err) {
+                            alert('Failed to download PDF: ' + (err.message || 'Error'));
+                          }
+                        }
+                      }}
+                      style={{
+                        marginLeft: 'auto',
+                        padding: '6px 10px',
+                        background: downloadManager.isDownloaded(item.id) ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+                        border: '1px solid ' + (downloadManager.isDownloaded(item.id) ? 'rgba(74,222,128,0.3)' : 'rgba(255,255,255,0.15)'),
+                        borderRadius: '6px',
+                        color: downloadManager.isDownloaded(item.id) ? '#4ade80' : 'var(--text-primary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                      title={downloadManager.isDownloaded(item.id) ? 'Open downloaded PDF' : 'Download PDF for offline reading'}
+                    >
+                      {downloadManager.isDownloading(item.id) ? (
+                        <>
+                          <Loader2 size={13} className="spin-icon" />
+                          <span>Saving...</span>
+                        </>
+                      ) : downloadManager.isDownloaded(item.id) ? (
+                        <>
+                          <CheckCircle size={13} />
+                          <span>Saved</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download size={13} />
+                          <span>Download</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -905,7 +1170,7 @@ const LearningHub = ({ user, onLogout }) => {
               </div>
               <div className="profile-detail-row">
                 <span className="profile-detail-label">App Version</span>
-                <span className="profile-detail-value">v2.0.0</span>
+                <span className="profile-detail-value">v2.3.11</span>
               </div>
             </div>
 

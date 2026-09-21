@@ -8,7 +8,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
@@ -685,15 +685,39 @@ function VideoDownloader({ url, item, user }) {
   };
 
   if (viewState === 'analyzing') {
+    const percent = analysisProgress.total > 0 
+      ? Math.min(100, Math.round((analysisProgress.completed / analysisProgress.total) * 100))
+      : 0;
+
     return (
       <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6, padding: '10px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.825rem', color: 'var(--accent)', fontWeight: 600 }}>
-          <Loader2 size={16} className="spin-icon" />
-          <span>Calculating download sizes...</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.825rem', color: 'var(--accent)', fontWeight: 600 }}>
+            <Loader2 size={16} className="spin-icon" />
+            <span>Calculating download sizes...</span>
+          </div>
+          {analysisProgress.total > 0 && (
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)' }}>
+              {percent}%
+            </span>
+          )}
         </div>
         {analysisProgress.total > 0 && (
-          <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-            Checking available resolutions ({Math.round((analysisProgress.completed / Math.max(1, analysisProgress.total)) * 100)}%)...
+          <div style={{ width: '100%', marginTop: 2 }}>
+            <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+              <div 
+                style={{ 
+                  width: `${percent}%`, 
+                  height: '100%', 
+                  background: 'var(--accent)', 
+                  transition: 'width 0.15s ease-out' 
+                }} 
+              />
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Analyzing all quality streams</span>
+              <span>{analysisProgress.completed} / {analysisProgress.total}</span>
+            </div>
           </div>
         )}
       </div>
@@ -803,10 +827,28 @@ function formatDate(timestamp) {
 }
 
 const VideoPlayer = ({ item, onClose, user }) => {
+  const [isPdfDownloaded, setIsPdfDownloaded] = useState(() => downloadManager.isDownloaded(item.id));
+  const [isPdfDownloading, setIsPdfDownloading] = useState(() => downloadManager.isDownloading(item.id));
+  const [pdfDownloadError, setPdfDownloadError] = useState('');
+
   useEffect(() => {
-    if (item.type === 'pdf' && Capacitor.isNativePlatform()) {
-      // Explicitly allow screenshots on PDF files / notes as requested
-      PrivacyScreen.disable().catch(console.error);
+    if (item.type === 'pdf') {
+      if (Capacitor.isNativePlatform()) {
+        // Explicitly allow screenshots on PDF files / notes as requested
+        PrivacyScreen.disable().catch(console.error);
+      }
+
+      const unsub = downloadManager.subscribe(() => {
+        setIsPdfDownloaded(downloadManager.isDownloaded(item.id));
+        setIsPdfDownloading(downloadManager.isDownloading(item.id));
+      });
+
+      return () => {
+        unsub();
+        if (Capacitor.isNativePlatform()) {
+          PrivacyScreen.disable().catch(console.error);
+        }
+      };
     }
 
     return () => {
@@ -815,7 +857,21 @@ const VideoPlayer = ({ item, onClose, user }) => {
         PrivacyScreen.disable().catch(console.error);
       }
     };
-  }, [item.type]);
+  }, [item.type, item.id]);
+
+  const handleDownloadPdf = async () => {
+    setPdfDownloadError('');
+    try {
+      await downloadManager.downloadPdf(item);
+    } catch (err) {
+      setPdfDownloadError(err.message || 'Failed to download PDF');
+    }
+  };
+
+  const handleOpenExternalPdf = async () => {
+    const downloaded = downloadManager.getDownloadedItem(item.id);
+    await downloadManager.openPdf(downloaded || item);
+  };
 
   if (item.type === 'pdf') {
     return (
@@ -864,12 +920,73 @@ const VideoPlayer = ({ item, onClose, user }) => {
               {item.title}
             </h1>
           </div>
-          <button 
-            className="flex items-center gap-1.5 bg-[#262626] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#333]" 
-            onClick={onClose}
-          >
-            <X size={16} /> Close
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isPdfDownloaded ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 4, 
+                  fontSize: '0.75rem', 
+                  color: '#4ade80', 
+                  fontWeight: 600, 
+                  background: 'rgba(74,222,128,0.15)', 
+                  padding: '4px 8px', 
+                  borderRadius: 6 
+                }}>
+                  <CheckCircle size={13} /> Saved
+                </span>
+                {Capacitor.isNativePlatform() && (
+                  <button
+                    onClick={handleOpenExternalPdf}
+                    style={{ 
+                      background: 'rgba(255,255,255,0.1)', 
+                      border: 'none', 
+                      color: '#fff', 
+                      padding: '5px 9px', 
+                      borderRadius: 6, 
+                      fontSize: '0.75rem', 
+                      fontWeight: 600, 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 4, 
+                      cursor: 'pointer' 
+                    }}
+                    title="Open in System PDF Reader"
+                  >
+                    <ExternalLink size={13} /> Reader
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={handleDownloadPdf}
+                disabled={isPdfDownloading}
+                style={{ 
+                  background: 'var(--accent)', 
+                  border: 'none', 
+                  color: '#000', 
+                  padding: '5px 10px', 
+                  borderRadius: 6, 
+                  fontSize: '0.75rem', 
+                  fontWeight: 700, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 5, 
+                  cursor: isPdfDownloading ? 'default' : 'pointer' 
+                }}
+              >
+                {isPdfDownloading ? <Loader2 size={13} className="spin-icon" /> : <Download size={13} />}
+                <span>{isPdfDownloading ? 'Saving...' : 'Download PDF'}</span>
+              </button>
+            )}
+            <button 
+              className="flex items-center gap-1.5 bg-[#262626] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#333]" 
+              onClick={onClose}
+            >
+              <X size={16} /> Close
+            </button>
+          </div>
         </div>
         <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124' }}>
           <iframe 
