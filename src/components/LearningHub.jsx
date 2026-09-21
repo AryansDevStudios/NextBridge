@@ -906,6 +906,10 @@ const LearningHub = ({ user, onLogout }) => {
                 <span className="profile-detail-label">Offline Storage</span>
                 <span className="profile-detail-value">{downloadedLectures.length} files ({formatBytes(totalStorageBytes)})</span>
               </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">App Version</span>
+                <span className="profile-detail-value">v1.9.12</span>
+              </div>
             </div>
 
             <div style={{ marginTop: '24px' }}>
