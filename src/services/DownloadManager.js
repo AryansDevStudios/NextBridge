@@ -57,6 +57,20 @@ class DownloadManagerService {
       } catch (e) {
         console.warn('[DownloadManager] Failed to attach native action listener:', e);
       }
+
+      // Prompt notification permission on first launch for download status bar alerts
+      this.requestNotificationPermission().catch(() => {});
+    }
+  }
+
+  async requestNotificationPermission() {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      if (typeof DownloadService.requestPermissions === 'function') {
+        await DownloadService.requestPermissions();
+      }
+    } catch (e) {
+      console.warn('[DownloadManager] Notification permission request:', e);
     }
   }
 
@@ -238,6 +252,8 @@ class DownloadManagerService {
   }
 
   enqueueDownload(item, variant) {
+    this.requestNotificationPermission().catch(() => {});
+
     const existing = this.activeDownloads.get(String(item.id));
     if (existing) {
       if (existing.status === 'paused') {

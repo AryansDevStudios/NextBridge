@@ -4,7 +4,7 @@ import LearningHub from './components/LearningHub';
 import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, ExternalLink } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 
@@ -55,6 +55,14 @@ export default function App() {
 
       // 4. Validate or establish session with Firestore
       await checkAutoLogin();
+
+      // 5. Prompt notification permission on first launch for download alerts
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const DownloadService = registerPlugin('DownloadService');
+          DownloadService.requestPermissions().catch(() => {});
+        } catch (e) {}
+      }
     };
 
     init();
