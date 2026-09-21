@@ -2,6 +2,12 @@
   command = "npm run build:deploy"
   publish = "deploy_dist"
 
+# VITE_ADMIN_USERNAME value is "admin" — a common word that appears naturally
+# throughout component names, variable names, and UI text. It is not a secret.
+# The actual secret (VITE_ADMIN_PASSWORD_HASH) remains scanned normally.
+[context.production.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_ADMIN_USERNAME"
+
 [[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
