@@ -21,6 +21,76 @@
   margin: 0;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.5);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #f59e0b;
+}
+
+/* Custom scrollbar specifically for overlays, modals, and lists */
+.custom-scrollbar,
+.profile-modal-card,
+.storage-modal-card,
+.delete-modal-card,
+.modal-backdrop {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.35) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.profile-modal-card::-webkit-scrollbar,
+.storage-modal-card::-webkit-scrollbar,
+.delete-modal-card::-webkit-scrollbar,
+.modal-backdrop::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.profile-modal-card::-webkit-scrollbar-track,
+.storage-modal-card::-webkit-scrollbar-track,
+.delete-modal-card::-webkit-scrollbar-track,
+.modal-backdrop::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.profile-modal-card::-webkit-scrollbar-thumb,
+.storage-modal-card::-webkit-scrollbar-thumb,
+.delete-modal-card::-webkit-scrollbar-thumb,
+.modal-backdrop::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.profile-modal-card::-webkit-scrollbar-thumb:hover,
+.storage-modal-card::-webkit-scrollbar-thumb:hover,
+.delete-modal-card::-webkit-scrollbar-thumb:hover,
+.modal-backdrop::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
 }
 
 body {
@@ -839,14 +909,23 @@ textarea,
     padding: 16px;
   }
   
-  /* Settings popup mobile adjustments */
+  /* Settings popup mobile adjustments - flat edge-to-edge native view */
   .custom-settings-popup {
     position: fixed;
-    bottom: 64px;
-    right: 12px;
-    left: 12px;
+    bottom: 0;
+    right: 0;
+    left: 0;
     min-width: unset;
-    width: auto;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom: none;
+    background: rgba(14, 14, 14, 0.98);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 20px 16px max(16px, env(safe-area-inset-bottom, 16px));
+    box-shadow: 0 -10px 36px rgba(0, 0, 0, 0.85);
+    z-index: 10002;
   }
   
   /* Hide Plyr volume controls on mobile to maximize seek bar */
@@ -1167,14 +1246,15 @@ textarea,
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  animation: modalFadeIn 0.2s ease-out;
+  animation: modalFadeIn 0.18s ease-out;
 }
 
 @keyframes modalFadeIn {
@@ -1183,30 +1263,112 @@ textarea,
 }
 
 .profile-modal-card {
-  background: #181818;
+  background: #121212;
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: 12px;
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
   padding: 24px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.8);
+  animation: modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.storage-modal-card {
+  max-width: 520px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.blocked-modal-card {
+  max-width: 440px;
+  text-align: center;
 }
 
 .delete-modal-card {
-  background: #181818;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 16px;
+  background: #141414;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
   width: 100%;
   max-width: 400px;
   padding: 24px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.8);
+  animation: modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 @keyframes modalSlideUp {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    background: #0c0c0c;
+  }
+
+  .profile-modal-card {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 16px max(14px, env(safe-area-inset-right, 14px)) max(16px, env(safe-area-inset-bottom, 16px)) max(14px, env(safe-area-inset-left, 14px));
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    background: #0e0e0e;
+  }
+
+  .storage-modal-card {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 16px max(14px, env(safe-area-inset-right, 14px)) max(16px, env(safe-area-inset-bottom, 16px)) max(14px, env(safe-area-inset-left, 14px));
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    background: #0e0e0e;
+  }
+
+  .blocked-modal-card {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 24px 16px;
+    background: #0e0e0e;
+  }
+
+  .delete-modal-card {
+    width: 100vw;
+    max-width: 100vw;
+    margin-top: auto;
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 24px 16px max(16px, env(safe-area-inset-bottom, 16px));
+    background: #141414;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.8);
+  }
 }
 
 .profile-avatar-large {

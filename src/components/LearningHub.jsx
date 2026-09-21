@@ -1608,7 +1608,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {/* Student Profile & Support Modal */}
       {showProfileModal && (
         <div className="modal-backdrop" onClick={() => setShowProfileModal(false)}>
-          <div className="profile-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="profile-modal-card custom-scrollbar" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                 Student Profile
@@ -1744,7 +1744,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {/* Storage Breakdown Details Modal */}
       {showStorageModal && (
         <div className="modal-backdrop" onClick={() => setShowStorageModal(false)}>
-          <div className="profile-modal-card" style={{ maxWidth: '460px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+          <div className="profile-modal-card storage-modal-card custom-scrollbar" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '10px', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <HardDrive size={20} style={{ color: 'var(--accent)' }} />
@@ -1834,7 +1834,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Sorted by size</span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px', minHeight: '120px', maxHeight: '220px' }}>
+            <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px', minHeight: '120px' }}>
               {storageDetails.items.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: '0.85rem' }}>
                   No downloads stored on device
@@ -1924,7 +1924,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {/* Blocked Download Access Modal */}
       {blockedDownloadItem && (
         <div className="modal-backdrop" onClick={() => setBlockedDownloadItem(null)}>
-          <div className="profile-modal-card" style={{ maxWidth: '420px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+          <div className="profile-modal-card blocked-modal-card custom-scrollbar" onClick={(e) => e.stopPropagation()}>
             <div style={{
               width: '64px',
               height: '64px',

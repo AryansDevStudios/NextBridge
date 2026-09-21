@@ -529,10 +529,19 @@ export default function Dashboard({ onLogout }) {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#121212] border border-[#262626] rounded-xl shadow-2xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Add New Student</h2>
-            <form onSubmit={handleAddStudent} className="space-y-4">
+        <div className="fixed inset-0 bg-[#0a0a0a]/90 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-[#121212] border-0 sm:border border-[#262626] rounded-none sm:rounded-xl shadow-2xl p-4 sm:p-6 w-full h-full sm:h-auto sm:max-w-md overflow-y-auto custom-scrollbar flex flex-col justify-between">
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#262626] sm:border-0 sm:pb-0 sm:mb-4">
+              <h2 className="text-lg sm:text-xl font-bold">Add New Student</h2>
+              <button 
+                onClick={() => setShowAddModal(false)} 
+                className="text-[#9ca3af] hover:text-white p-1 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleAddStudent} className="space-y-4 flex-1 flex flex-col justify-between">
+              <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[#9ca3af] mb-1">Name</label>
                 <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
@@ -623,7 +632,8 @@ export default function Dashboard({ onLogout }) {
                 <label className="block text-sm font-medium text-[#9ca3af] mb-1">Area</label>
                 <input required type="text" value={area} onChange={e => setArea(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
               </div>
-              <div className="pt-4 flex justify-end space-x-3">
+              </div>
+              <div className="pt-4 flex justify-end space-x-3 border-t border-[#262626] sm:border-0 mt-4">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[#9ca3af] hover:text-[#f3f4f6]">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24]">Create Student</button>
               </div>

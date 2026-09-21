@@ -217,54 +217,57 @@ export default function StudentModal({ student, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 text-[#f3f4f6]">
-      <div className="bg-[#121212] border border-[#262626] rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[95vh] sm:max-h-[92vh]">
-        
-        {/* Header */}
-        <div className="flex justify-between items-center p-3 sm:p-6 border-b border-[#262626]">
-          <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#1a1a1a] border border-[#262626] flex items-center justify-center font-bold text-[#f59e0b] text-base sm:text-lg">
-              {student.name ? student.name.charAt(0).toUpperCase() : 'S'}
-            </div>
-            <div>
-              <h2 className="text-base sm:text-xl font-bold flex items-center space-x-2">
-                <span>{student.name}</span>
-                <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border ${subInfo.colorClass}`}>
-                  {subInfo.badge}
-                </span>
-              </h2>
-              <p className="text-xs sm:text-sm text-[#9ca3af]">PAT: <code className="text-[#f59e0b]">{student.pat}</code> | Class {student.class}</p>
-            </div>
+    <div className="fixed inset-0 bg-[#0c0c0c] z-50 text-[#f3f4f6] flex flex-col w-full h-full h-[100dvh] overflow-hidden">
+      {/* Header */}
+      <div className="flex justify-between items-center px-4 sm:px-8 py-3.5 sm:py-4 border-b border-[#262626] bg-[#141414] shrink-0">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#1a1a1a] border border-[#262626] flex items-center justify-center font-bold text-[#f59e0b] text-base sm:text-lg shrink-0">
+            {student.name ? student.name.charAt(0).toUpperCase() : 'S'}
           </div>
-          <button onClick={onClose} className="text-[#9ca3af] hover:text-[#ef4444] transition-colors p-1">
-            <X size={20} />
-          </button>
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-bold flex items-center gap-2 truncate">
+              <span className="truncate">{student.name}</span>
+              <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border shrink-0 ${subInfo.colorClass}`}>
+                {subInfo.badge}
+              </span>
+            </h2>
+            <p className="text-xs text-[#9ca3af] truncate">PAT: <code className="text-[#f59e0b] font-mono">{student.pat}</code> | Class {student.class}</p>
+          </div>
         </div>
+        <button 
+          onClick={onClose} 
+          className="text-[#9ca3af] hover:text-[#ef4444] transition-colors p-2 rounded-lg hover:bg-[#1f1f1f] border border-transparent hover:border-[#333] shrink-0"
+          title="Close Manage Panel"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-[#262626] px-3 sm:px-6 overflow-x-auto scrollbar-none">
-          <button 
-            className={`py-2 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'access' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
-            onClick={() => setActiveTab('access')}
-          >
-            Access & Subscription
-          </button>
-          <button 
-            className={`py-2 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
-            onClick={() => setActiveTab('profile')}
-          >
-            Edit Profile
-          </button>
-          <button 
-            className={`py-2 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
-            onClick={() => setActiveTab('logs')}
-          >
-            Device & Activity Logs
-          </button>
-        </div>
+      {/* Tabs */}
+      <div className="flex border-b border-[#262626] px-4 sm:px-8 bg-[#111111] shrink-0 overflow-x-auto scrollbar-none gap-2 sm:gap-6">
+        <button 
+          className={`py-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'access' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
+          onClick={() => setActiveTab('access')}
+        >
+          Access & Subscription
+        </button>
+        <button 
+          className={`py-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
+          onClick={() => setActiveTab('profile')}
+        >
+          Edit Profile
+        </button>
+        <button 
+          className={`py-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-[#f59e0b] text-[#f59e0b]' : 'border-transparent text-[#9ca3af] hover:text-[#f3f4f6]'}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          Device & Activity Logs
+        </button>
+      </div>
 
-        {/* Content */}
-        <div className="p-3 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-8">
+        <div className="max-w-4xl mx-auto w-full">
           {activeTab === 'access' && (
             <div className="space-y-6">
               
