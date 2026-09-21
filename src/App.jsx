@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { db } from './firebase';
 import LearningHub from './components/LearningHub';
+import AdminPanelView from './components/AdminPanelView';
 import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, onSnapshot, increment } from 'firebase/firestore';
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
@@ -8,6 +9,9 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, ExternalLink } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
+
+const ADMIN_KEY = '_nb_admin_mode';
+
 
 // CRITICAL: Notify Capgo immediately on module import that the app has booted
 CapacitorUpdater.notifyAppReady().catch(e => console.warn('[OTA] notifyAppReady module-level:', e));
@@ -17,7 +21,12 @@ export default function App() {
   const [updateMsg, setUpdateMsg] = useState('');
   const [user, setUser] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
-  
+
+  // Admin panel state — persisted across sessions by localStorage flag
+  const [showAdminPanel, setShowAdminPanel] = useState(() => {
+    try { return localStorage.getItem(ADMIN_KEY) === '1'; } catch { return false; }
+  });
+
   // Login Form State
   const [patInput, setPatInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -500,8 +509,28 @@ export default function App() {
     );
   }
 
+  if (showAdminPanel) {
+    return (
+      <AdminPanelView 
+        onExit={() => {
+          try { localStorage.setItem(ADMIN_KEY, '0'); } catch (_) {}
+          setShowAdminPanel(false);
+        }} 
+      />
+    );
+  }
+
   if (user) {
-    return <LearningHub user={user} onLogout={handleLogout} />;
+    return (
+      <LearningHub 
+        user={user} 
+        onLogout={handleLogout} 
+        onOpenAdmin={() => {
+          try { localStorage.setItem(ADMIN_KEY, '1'); } catch (_) {}
+          setShowAdminPanel(true);
+        }}
+      />
+    );
   }
 
   return (

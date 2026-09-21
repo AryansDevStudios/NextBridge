@@ -832,15 +832,27 @@ class DownloadManagerService {
       try {
         const strId = String(item.id);
         const relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
-        const uriResult = await Filesystem.getUri({
+
+        // Read the file as base64 — avoids the _capacitor_file_ URL scheme which
+        // the Capacitor WebView's localhost server cannot serve from internal storage
+        const result = await Filesystem.readFile({
           path: relPath,
           directory: Directory.Data
         });
-        if (uriResult && uriResult.uri) {
-          return Capacitor.convertFileSrc(uriResult.uri);
+
+        if (result && result.data) {
+          // Create an in-memory blob URL accessible to the WebView's PDF.js iframe
+          const byteChars = atob(result.data);
+          const byteNums = new Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) {
+            byteNums[i] = byteChars.charCodeAt(i);
+          }
+          const byteArr = new Uint8Array(byteNums);
+          const blob = new Blob([byteArr], { type: 'application/pdf' });
+          return URL.createObjectURL(blob);
         }
       } catch (e) {
-        console.warn('[DownloadManager] Failed to get local PDF URI, falling back to remote:', e);
+        console.warn('[DownloadManager] Failed to read local PDF as blob, falling back to remote:', e);
       }
     }
     return item.url || '';

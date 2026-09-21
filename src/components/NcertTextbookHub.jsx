@@ -79,7 +79,46 @@ export const NCERT_SUBJECTS = [
   }
 ];
 
-export default function NcertTextbookHub({ onOpenPdf, onBack }) {
+const RSA_CDN_BASE = 'https://cdn.jsdelivr.net/gh/AryansDevStudios/raw-files@main/RSAggrawalPDF/';
+
+const RSA_CHAPTERS = [
+  { n:  1, file: 'Ch01_Real_Numbers.pdf',                                   pages: 42,  title: 'Real Numbers' },
+  { n:  2, file: 'Ch02_Polynomials.pdf',                                    pages: 28,  title: 'Polynomials' },
+  { n:  3, file: 'Ch03_Linear_Equations_in_Two_Variables.pdf',              pages: 94,  title: 'Linear Equations in Two Variables' },
+  { n:  4, file: 'Ch04_Quadratic_Equations.pdf',                            pages: 79,  title: 'Quadratic Equations' },
+  { n:  5, file: 'Ch05_Arithmetic_Progression.pdf',                         pages: 53,  title: 'Arithmetic Progression' },
+  { n:  6, file: 'Ch06_Coordinate_Geometry.pdf',                            pages: 54,  title: 'Coordinate Geometry' },
+  { n:  7, file: 'Ch07_Triangles.pdf',                                      pages: 110, title: 'Triangles' },
+  { n:  8, file: 'Ch08_Circles.pdf',                                        pages: 51,  title: 'Circles' },
+  { n:  9, file: 'Ch09_Constructions.pdf',                                  pages: 16,  title: 'Constructions' },
+  { n: 10, file: 'Ch10_Trigonometric_Ratios.pdf',                           pages: 18,  title: 'Trigonometric Ratios' },
+  { n: 11, file: 'Ch11_T_Ratios_of_Some_Particular_Angles.pdf',             pages: 10,  title: 'T-Ratios of Some Particular Angles' },
+  { n: 12, file: 'Ch12_Trigonometric_Ratios_of_Complementary_Angles.pdf',  pages: 11,  title: 'Trigonometric Ratios of Complementary Angles' },
+  { n: 13, file: 'Ch13_Trigonometric_Identities.pdf',                       pages: 45,  title: 'Trigonometric Identities' },
+  { n: 14, file: 'Ch14_Heights_and_Distances.pdf',                          pages: 42,  title: 'Heights and Distances' },
+  { n: 15, file: 'Ch15_Perimeter_and_Area_of_Plan_Figuers.pdf',             pages: 24,  title: 'Perimeter and Area of Plan Figures' },
+  { n: 16, file: 'Ch16_Area_of_Circle_Sector_and_Segment.pdf',              pages: 64,  title: 'Area of Circle, Sector and Segment' },
+  { n: 17, file: 'Ch17_Volume_and_Surface_Areas_of_Solids.pdf',             pages: 84,  title: 'Volume and Surface Areas of Solids' },
+  { n: 18, file: 'Ch18_Mean_Median_Mode_of_Grouped_Data_Cumulative_Frequency_Graph_and_Ogive.pdf', pages: 61, title: 'Mean, Median, Mode & Cumulative Frequency' },
+  { n: 19, file: 'Ch19_Probability.pdf',                                    pages: 51,  title: 'Probability' }
+];
+
+// Synthetic book object for RS Aggarwal
+const RSA_BOOK = {
+  id: '__rsa__',
+  title: 'RS Aggarwal',
+  category: 'Mathematics',
+  chapters_count: RSA_CHAPTERS.length,
+  chapters: RSA_CHAPTERS.map(ch => ({
+    filename: ch.file,
+    title: ch.title,
+    pages: ch.pages,
+    url: RSA_CDN_BASE + ch.file,
+    _rsa: true
+  }))
+};
+
+export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false }) {
   const [allBooks, setAllBooks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -140,20 +179,28 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
 
   const getBookCoverUrl = (relPath) => {
     if (!relPath) return '';
+    if (relPath.startsWith('http')) return relPath;
     return CDN_BASE + relPath;
   };
 
   const getChapterPdfUrl = (relPath) => {
     if (!relPath) return '';
+    if (relPath.startsWith('http')) return relPath;
     return CDN_BASE + relPath;
   };
 
   const getZipUrl = (relPath) => {
     if (!relPath) return '';
+    if (relPath.startsWith('http')) return relPath;
     return GITHUB_RAW_BASE + relPath;
   };
 
   const getPillLabel = (chapter, idx) => {
+    if (chapter._rsa) {
+      const match = (chapter.filename || '').match(/Ch(\d{2})/i);
+      if (match) return match[1];
+      return idx < 9 ? `0${idx + 1}` : `${idx + 1}`;
+    }
     const fn = (chapter.filename || '').toLowerCase();
     if (fn.includes('pre') || fn.includes('pr')) return 'PR';
     if (fn.includes('ans') || fn.includes('an')) return 'AN';
@@ -168,19 +215,22 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
   };
 
   const handleOpenChapter = (chapter, book, subject) => {
-    const itemId = `ncert_${book.id}_${(chapter.filename || '').replace(/\.pdf$/i, '')}`;
+    const isRsa = chapter._rsa || book.id === '__rsa__';
+    const itemId = isRsa
+      ? `rsa_${(chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
+      : `ncert_${book.id}_${(chapter.filename || '').replace(/\.pdf$/i, '')}`;
     const url = getChapterPdfUrl(chapter.url);
     const item = {
       id: itemId,
-      title: `${book.title} - ${chapter.title}`,
+      title: isRsa ? `RS Aggarwal — ${chapter.title}` : `${book.title} - ${chapter.title}`,
       name: `${chapter.title}`,
       type: 'pdf',
       url: url,
-      source: 'ncert',
-      subject_name: subject?.name || book.category || 'NCERT',
+      source: isRsa ? 'rsa' : 'ncert',
+      subject_name: subject?.name || book.category || 'Mathematics',
       book_title: book.title,
       chapter_title: chapter.title,
-      folder_path: book.title
+      folder_path: isRsa ? 'RS Aggarwal' : book.title
     };
     if (onOpenPdf) {
       onOpenPdf(item);
@@ -189,24 +239,27 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
 
   const handleDownloadChapter = async (e, chapter, book, subject) => {
     e.stopPropagation();
-    const itemId = `ncert_${book.id}_${(chapter.filename || '').replace(/\.pdf$/i, '')}`;
+    const isRsa = chapter._rsa || book.id === '__rsa__';
+    const itemId = isRsa
+      ? `rsa_${(chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
+      : `ncert_${book.id}_${(chapter.filename || '').replace(/\.pdf$/i, '')}`;
     const url = getChapterPdfUrl(chapter.url);
     const item = {
       id: itemId,
-      title: `${book.title} - ${chapter.title}`,
+      title: isRsa ? `RS Aggarwal — ${chapter.title}` : `${book.title} - ${chapter.title}`,
       name: `${chapter.title}`,
       type: 'pdf',
       url: url,
-      source: 'ncert',
-      subject_name: subject?.name || book.category || 'NCERT',
+      source: isRsa ? 'rsa' : 'ncert',
+      subject_name: subject?.name || book.category || 'Mathematics',
       book_title: book.title,
       chapter_title: chapter.title,
-      folder_path: book.title
+      folder_path: isRsa ? 'RS Aggarwal' : book.title
     };
     try {
       await downloadManager.downloadPdf(item);
     } catch (err) {
-      console.error('Failed to download NCERT chapter:', err);
+      console.error('Failed to download chapter:', err);
     }
   };
 
@@ -231,20 +284,20 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
       color: '#f4f4f6',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif'
     }}>
-      {/* Top Header Bar */}
-      <div style={{
-        height: '54px',
-        background: '#101012',
-        borderBottom: '1px solid #24242b',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 18px',
-        flexShrink: 0,
-        zIndex: 10
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {(selectedBook || selectedSubject) && (
+      {/* Top Header Bar — only shown when drilling into a Subject or Book */}
+      {(selectedSubject || selectedBook) && (
+        <div style={{
+          height: '50px',
+          background: '#101012',
+          borderBottom: '1px solid #24242b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          flexShrink: 0,
+          zIndex: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
               onClick={() => {
                 if (selectedBook) setSelectedBook(null);
@@ -265,62 +318,58 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
             >
               <ArrowLeft size={16} />
             </button>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '6px',
-              background: '#1c1c22',
-              border: '1px solid #2e2e36',
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: '#6aa3ff'
-            }}>
-              NC
-            </div>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#f4f4f6', lineHeight: 1.2 }}>
-                {selectedBook ? selectedBook.title : (selectedSubject ? selectedSubject.name : 'NCERT Textbooks')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: '#1c1c22',
+                border: '1px solid #2e2e36',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#6aa3ff'
+              }}>
+                {selectedBook?.id === '__rsa__' ? 'RS' : 'TB'}
               </div>
-              <div style={{ fontSize: '11px', color: '#6b6b75', lineHeight: 1.2 }}>
-                {selectedBook ? `${selectedBook.chapters_count || selectedBook.chapters?.length || 0} Chapters • Solutions` : 'Official Class 10 Textbooks'}
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f4f4f6', lineHeight: 1.2 }}>
+                  {selectedBook ? selectedBook.title : selectedSubject.name}
+                </div>
+                <div style={{ fontSize: '11px', color: '#6b6b75', lineHeight: 1.2 }}>
+                  {selectedBook ? `${selectedBook.chapters_count || selectedBook.chapters?.length || 0} Chapters` : `${selectedSubject.name} Textbooks`}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Breadcrumb Info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#a0a0a8' }}>
-          <span 
-            onClick={() => { setSelectedSubject(null); setSelectedBook(null); }}
-            style={{ cursor: 'pointer', color: selectedSubject ? '#6aa3ff' : '#a0a0a8' }}
-          >
-            Subjects
-          </span>
-          {selectedSubject && (
-            <>
-              <ChevronRight size={13} style={{ color: '#4a4a52' }} />
-              <span 
-                onClick={() => setSelectedBook(null)}
-                style={{ cursor: selectedBook ? 'pointer' : 'default', color: selectedBook ? '#6aa3ff' : '#f4f4f6', fontWeight: selectedBook ? 400 : 600 }}
-              >
-                {selectedSubject.name}
-              </span>
-            </>
-          )}
-          {selectedBook && (
-            <>
-              <ChevronRight size={13} style={{ color: '#4a4a52' }} />
-              <span style={{ color: '#f4f4f6', fontWeight: 600 }}>
-                {selectedBook.title}
-              </span>
-            </>
-          )}
+          {/* Breadcrumb Info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#a0a0a8' }}>
+            <span 
+              onClick={() => { setSelectedSubject(null); setSelectedBook(null); }}
+              style={{ cursor: 'pointer', color: '#6aa3ff' }}
+            >
+              Subjects
+            </span>
+            <ChevronRight size={13} style={{ color: '#4a4a52' }} />
+            <span 
+              onClick={() => setSelectedBook(null)}
+              style={{ cursor: selectedBook ? 'pointer' : 'default', color: selectedBook ? '#6aa3ff' : '#f4f4f6', fontWeight: selectedBook ? 400 : 600 }}
+            >
+              {selectedSubject.name}
+            </span>
+            {selectedBook && (
+              <>
+                <ChevronRight size={13} style={{ color: '#4a4a52' }} />
+                <span style={{ color: '#f4f4f6', fontWeight: 600 }}>
+                  {selectedBook.title}
+                </span>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content Area */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 80px' }}>
@@ -360,7 +409,11 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
               }}>
                 {NCERT_SUBJECTS.map((subj) => {
                   const books = subj.bookIds.map(id => allBooks.find(b => b.id === id)).filter(Boolean);
-                  const totalChapters = books.reduce((sum, b) => sum + (b.chapters_count || b.chapters?.length || 0), 0);
+                  const isMath = subj.key === 'Mathematics';
+                  const extraBooks = (showRsAggarwal && isMath) ? 1 : 0;
+                  const totalBooksCount = books.length + extraBooks;
+                  const ncertChapters = books.reduce((sum, b) => sum + (b.chapters_count || b.chapters?.length || 0), 0);
+                  const totalChapters = ncertChapters + ((showRsAggarwal && isMath) ? RSA_CHAPTERS.length : 0);
 
                   return (
                     <div
@@ -413,7 +466,7 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
                             padding: '3px 9px',
                             borderRadius: '999px'
                           }}>
-                            {books.length} {books.length === 1 ? 'Book' : 'Books'}
+                            {totalBooksCount} {totalBooksCount === 1 ? 'Book' : 'Books'}
                           </span>
                         </div>
 
@@ -605,6 +658,125 @@ export default function NcertTextbookHub({ onOpenPdf, onBack }) {
                     </div>
                   );
                 })}
+
+                {/* RS Aggarwal Book Card in Mathematics Section */}
+                {showRsAggarwal && selectedSubject?.key === 'Mathematics' && (
+                  <div
+                    key="__rsa__"
+                    onClick={() => setSelectedBook(RSA_BOOK)}
+                    style={{
+                      background: '#101012',
+                      border: '1px solid #2e2e38',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      position: 'relative'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#15151a';
+                      e.currentTarget.style.borderColor = '#6aa3ff';
+                      e.currentTarget.style.transform = 'translateY(-3px)';
+                      e.currentTarget.style.boxShadow = '0 12px 28px -6px rgba(106, 163, 255, 0.2)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#101012';
+                      e.currentTarget.style.borderColor = '#2e2e38';
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                    }}
+                  >
+                    <div style={{
+                      padding: '24px 16px 20px',
+                      background: 'radial-gradient(circle at 50% 30%, #1c1c28 0%, #121217 100%)',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderBottom: '1px solid #24242b',
+                      minHeight: '210px'
+                    }}>
+                      <div style={{
+                        width: '125px',
+                        height: '175px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+                        border: '1px solid rgba(106, 163, 255, 0.3)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '12px',
+                        textAlign: 'center',
+                        boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.7)'
+                      }}>
+                        <div style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '10px',
+                          background: 'rgba(106, 163, 255, 0.15)',
+                          border: '1px solid rgba(106, 163, 255, 0.3)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          color: '#6aa3ff',
+                          fontWeight: 700,
+                          fontSize: '14px',
+                          marginBottom: '8px'
+                        }}>
+                          RS
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#f4f4f6', lineHeight: 1.2 }}>
+                          RS Aggarwal
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                          Class 10 Maths
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(106, 163, 255, 0.15)', color: '#6aa3ff', padding: '2px 6px', borderRadius: '4px' }}>
+                            REFERENCE
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '15px', fontWeight: 600, color: '#f4f4f6', marginBottom: '4px', lineHeight: 1.35 }}>
+                          RS Aggarwal Mathematics
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#a0a0a8', marginBottom: '14px' }}>
+                          {RSA_CHAPTERS.length} Chapters • Class 10
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #24242b' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSelectedBook(RSA_BOOK); }}
+                          style={{
+                            flex: 1,
+                            height: '34px',
+                            borderRadius: '6px',
+                            background: '#6aa3ff',
+                            color: '#0a0a0a',
+                            border: 'none',
+                            fontSize: '12.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <BookOpen size={14} />
+                          Open Book
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

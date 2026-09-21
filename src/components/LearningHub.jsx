@@ -29,7 +29,6 @@ import {
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
 import CbsePyqHub from './CbsePyqHub';
-import RsAggarwalHub from './RsAggarwalHub';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -53,13 +52,13 @@ function formatDate(timestamp) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const LearningHub = ({ user, onLogout }) => {
+const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]); // Array of folder objects
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'ncert' | 'rsa' | 'pyq' | 'downloads'
+  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'textbook' | 'pyq' | 'downloads'
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -68,6 +67,13 @@ const LearningHub = ({ user, onLogout }) => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [deleteModalItem, setDeleteModalItem] = useState(null);
+
+  // Admin panel 5s long-press on avatar
+  const adminHoldTimer = useRef(null);
+  const [adminHoldActive, setAdminHoldActive] = useState(false);
+
+  // Class 10 only for textbook content
+  const isClass10 = String(user?.class || user?.className || '').trim() === '10';
 
   // Subscribe to central download manager
   useEffect(() => {
@@ -384,23 +390,24 @@ const LearningHub = ({ user, onLogout }) => {
 
     if (item.type === 'pdf') {
       let pdfUrl = item.url;
-      if (Capacitor.isNativePlatform()) {
-        try {
-          const uriRes = await Filesystem.getUri({
-            path: item.path || `downloads/${item.id}/document_${item.id}.pdf`,
-            directory: Directory.Data
-          });
-          pdfUrl = Capacitor.convertFileSrc(uriRes.uri);
-        } catch (e) {
-          console.warn('Failed to resolve local PDF uri:', e);
+      try {
+        const localBlobOrRemote = await downloadManager.getPdfLocalUrl(item);
+        if (localBlobOrRemote) {
+          pdfUrl = localBlobOrRemote;
         }
+      } catch (e) {
+        console.warn('Failed to resolve local PDF uri:', e);
       }
       setPlayingVideo({
         id: item.id,
         title: item.title,
         type: 'pdf',
         url: pdfUrl,
-        path: item.path
+        path: item.path,
+        source: item.source,
+        subject_name: item.subject_name || item.subjectName,
+        book_title: item.book_title,
+        chapter_title: item.chapter_title
       });
       return;
     }
@@ -610,7 +617,7 @@ const LearningHub = ({ user, onLogout }) => {
             <span>NextBridge</span>
           </div>
 
-          {/* Compact Navigation Tabs */}
+          {/* Compact Navigation Tabs — horizontally scrollable */}
           <div className="nav-tabs">
             <button 
               className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
@@ -618,24 +625,22 @@ const LearningHub = ({ user, onLogout }) => {
             >
               Courses
             </button>
-            <button 
-              className={`nav-tab-btn ${activeTab === 'ncert' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('ncert'); setSearchQuery(''); }}
-            >
-              NCERT
-            </button>
-            <button 
-              className={`nav-tab-btn ${activeTab === 'rsa' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('rsa'); setSearchQuery(''); }}
-            >
-              RS Aggarwal
-            </button>
-            <button 
-              className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
-            >
-              PYQ
-            </button>
+            {isClass10 && (
+              <button 
+                className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
+              >
+                Textbook
+              </button>
+            )}
+            {isClass10 && (
+              <button 
+                className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
+              >
+                PYQ
+              </button>
+            )}
             <button 
               className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
               onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
@@ -657,8 +662,7 @@ const LearningHub = ({ user, onLogout }) => {
               className="search-input" 
               placeholder={
                 activeTab === 'courses' ? "Search courses..." : 
-                activeTab === 'ncert' ? "Search NCERT chapters..." : 
-                activeTab === 'rsa' ? "Search RS Aggarwal chapters..." :
+                activeTab === 'textbook' ? "Search textbooks..." : 
                 activeTab === 'pyq' ? "Search PYQs..." : 
                 "Search downloads..."
               } 
@@ -688,11 +692,31 @@ const LearningHub = ({ user, onLogout }) => {
               <span>{subInfo.badge}</span>
             </div>
           )}
+          {/* Avatar button — long-press 5s to unlock admin panel */}
           <button 
             className="student-avatar-btn" 
             onClick={() => setShowProfileModal(true)}
+            onPointerDown={() => {
+              adminHoldTimer.current = setTimeout(() => {
+                setAdminHoldActive(false);
+                if (onOpenAdmin) onOpenAdmin();
+              }, 5000);
+              setAdminHoldActive(true);
+            }}
+            onPointerUp={() => {
+              clearTimeout(adminHoldTimer.current);
+              setAdminHoldActive(false);
+            }}
+            onPointerLeave={() => {
+              clearTimeout(adminHoldTimer.current);
+              setAdminHoldActive(false);
+            }}
             title="Student Profile & Support"
             aria-label="Student Profile"
+            style={{
+              outline: adminHoldActive ? '2px solid rgba(106,163,255,0.6)' : 'none',
+              transition: 'outline 0.2s ease'
+            }}
           >
             <span className="student-avatar-text">
               {user?.name ? user.name.slice(0, 2).toUpperCase() : 'ST'}
@@ -701,11 +725,11 @@ const LearningHub = ({ user, onLogout }) => {
         </div>
       </nav>
 
-
-      {/* NCERT TEXTBOOKS TAB */}
-      {activeTab === 'ncert' && (
+      {/* TEXTBOOK TAB (Class 10 only) */}
+      {activeTab === 'textbook' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <NcertTextbookHub
+            showRsAggarwal={true}
             onOpenPdf={(item) => {
               if (!Capacitor.isNativePlatform()) {
                 window.history.pushState({ player: true }, '');
@@ -716,24 +740,10 @@ const LearningHub = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* CBSE PYQ TAB */}
-      {activeTab === 'pyq' && (
+      {/* CBSE PYQ TAB (Class 10 only) */}
+      {activeTab === 'pyq' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <CbsePyqHub
-            onOpenPdf={(item) => {
-              if (!Capacitor.isNativePlatform()) {
-                window.history.pushState({ player: true }, '');
-              }
-              setPlayingVideo(item);
-            }}
-          />
-        </div>
-      )}
-
-      {/* RS AGGARWAL TAB */}
-      {activeTab === 'rsa' && (
-        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <RsAggarwalHub
             onOpenPdf={(item) => {
               if (!Capacitor.isNativePlatform()) {
                 window.history.pushState({ player: true }, '');

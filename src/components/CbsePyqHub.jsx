@@ -319,106 +319,108 @@ export default function CbsePyqHub({ onOpenPdf, onBack }) {
       color: '#ffffff',
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-      {/* Top Navigation Bar */}
-      <div style={{
-        height: '56px',
-        background: 'rgba(15, 15, 15, 0.85)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 16px',
-        flexShrink: 0,
-        zIndex: 10
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {currentPath && (
-            <button
-              onClick={() => {
-                const parts = currentPath.split('/');
-                parts.pop();
-                setCurrentPath(parts.join('/'));
-              }}
-              style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#fff',
-                padding: '6px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-              title="Go Back"
-            >
-              <ArrowLeft size={16} />
-            </button>
-          )}
+      {/* Top Navigation Bar — only shown when drilling down into directories or searching */}
+      {(Boolean(currentPath) || Boolean(searchQuery)) && (
+        <div style={{
+          height: '50px',
+          background: 'rgba(15, 15, 15, 0.95)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          flexShrink: 0,
+          zIndex: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {currentPath && (
+              <button
+                onClick={() => {
+                  const parts = currentPath.split('/');
+                  parts.pop();
+                  setCurrentPath(parts.join('/'));
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#fff',
+                  padding: '6px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Go Back"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Layers size={20} color="#6366f1" />
-            <div style={{ fontSize: '15px', fontWeight: 700, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              CBSE PYQ Archive
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layers size={18} color="#6aa3ff" />
+              <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#f4f4f6' }}>
+                {currentPath.split('/').pop() || 'CBSE PYQs'}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Search Bar */}
-        <div style={{ flex: 1, maxWidth: '420px', margin: '0 16px', position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#a0a0a0' }} />
-          <input
-            type="text"
-            placeholder="Search subjects, years (e.g. Science 2019)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              height: '34px',
-              padding: '0 12px 0 32px',
-              background: 'rgba(128, 128, 128, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '6px',
-              color: '#fff',
-              fontSize: '12px',
-              outline: 'none'
-            }}
-          />
-        </div>
+          {/* Search Bar */}
+          <div style={{ flex: 1, maxWidth: '320px', margin: '0 12px', position: 'relative' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#a0a0a0' }} />
+            <input
+              type="text"
+              placeholder="Search PYQs..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                height: '32px',
+                padding: '0 12px 0 30px',
+                background: 'rgba(128, 128, 128, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '12px',
+                outline: 'none'
+              }}
+            />
+          </div>
 
-        {/* View Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            onClick={() => { setCurrentPath(''); setSearchQuery(''); }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#a0a0a0',
-              padding: '6px',
-              cursor: 'pointer',
-              borderRadius: '6px'
-            }}
-            title="Home"
-          >
-            <Home size={17} />
-          </button>
-          <button
-            onClick={toggleViewMode}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#a0a0a0',
-              padding: '6px',
-              cursor: 'pointer',
-              borderRadius: '6px'
-            }}
-            title="Toggle View"
-          >
-            {viewMode === 'grid' ? <List size={17} /> : <LayoutGrid size={17} />}
-          </button>
+          {/* View Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={() => { setCurrentPath(''); setSearchQuery(''); }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#a0a0a0',
+                padding: '6px',
+                cursor: 'pointer',
+                borderRadius: '6px'
+              }}
+              title="Home"
+            >
+              <Home size={17} />
+            </button>
+            <button
+              onClick={toggleViewMode}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#a0a0a0',
+                padding: '6px',
+                cursor: 'pointer',
+                borderRadius: '6px'
+              }}
+              title="Toggle View"
+            >
+              {viewMode === 'grid' ? <List size={17} /> : <LayoutGrid size={17} />}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Container */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 18px 80px' }}>
