@@ -603,7 +603,7 @@ function VideoDownloader({ url, item, user }) {
       <div className="download-active-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isPaused ? '#f59e0b' : '#38bdf8' }}>
-            {isQueued ? 'Queued (Waiting for slot)' : isPaused ? 'Download Paused' : `Downloading (${currentTask.quality}) • 16 streams`}
+            {isQueued ? 'Queued (Waiting for slot)' : isPaused ? 'Download Paused' : `Downloading (${currentTask.quality})`}
           </span>
           <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontFamily: 'monospace' }}>
             {currentTask.formattedDownloaded} / {currentTask.formattedTotal}
@@ -689,11 +689,11 @@ function VideoDownloader({ url, item, user }) {
       <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6, padding: '10px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.825rem', color: 'var(--accent)', fontWeight: 600 }}>
           <Loader2 size={16} className="spin-icon" />
-          <span>Querying accurate sizes (50 concurrent streams)...</span>
+          <span>Calculating download sizes...</span>
         </div>
         {analysisProgress.total > 0 && (
           <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-            Analyzed {analysisProgress.completed} / {analysisProgress.total} video chunks
+            Checking available resolutions ({Math.round((analysisProgress.completed / Math.max(1, analysisProgress.total)) * 100)}%)...
           </div>
         )}
       </div>
@@ -750,7 +750,7 @@ function VideoDownloader({ url, item, user }) {
               }
             }}
           >
-            Start Download (16 Streams)
+            Start Download
           </button>
           <button 
             onClick={() => setViewState('idle')}

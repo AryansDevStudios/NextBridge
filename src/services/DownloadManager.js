@@ -38,8 +38,8 @@ class DownloadManagerService {
     this.queuedDownloads = []; // array of items waiting for slot
     this.listeners = new Set();
     this.maxConcurrentVideos = 3;
-    this.fetchConcurrency = 16;
-    this.queryConcurrency = 50;
+    this.fetchConcurrency = 8;
+    this.queryConcurrency = 25;
     this.wakeLock = null;
 
     // Listen for notification tray actions (pause, resume, cancel)

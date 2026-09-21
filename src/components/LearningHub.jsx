@@ -572,7 +572,7 @@ const LearningHub = ({ user, onLogout }) => {
                               {task.quality}
                             </span>
                             <span style={{ color: isPaused ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
-                              {isPaused ? 'Paused' : 'Downloading (16 streams)'}
+                              {isPaused ? 'Paused' : 'Downloading'}
                             </span>
                           </div>
                         </div>
