@@ -7,6 +7,7 @@ import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, ExternalLink } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
+import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 
 // CRITICAL: Notify Capgo immediately on module import that the app has booted
 CapacitorUpdater.notifyAppReady().catch(e => console.warn('[OTA] notifyAppReady module-level:', e));
@@ -58,6 +59,9 @@ export default function App() {
 
       // 5. Prompt notification permission on first launch for download alerts
       if (Capacitor.isNativePlatform()) {
+        try {
+          PrivacyScreen.disable().catch(() => {});
+        } catch (e) {}
         try {
           const DownloadService = registerPlugin('DownloadService');
           DownloadService.requestPermissions().catch(() => {});

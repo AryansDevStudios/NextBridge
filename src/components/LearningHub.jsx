@@ -29,6 +29,7 @@ import VideoPlayer from './VideoPlayer';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -139,7 +140,7 @@ const LearningHub = ({ user, onLogout }) => {
               document.exitFullscreen().catch(() => {});
               return;
             }
-            setPlayingVideo(null);
+            closeVideo();
             return;
           }
 
@@ -298,6 +299,9 @@ const LearningHub = ({ user, onLogout }) => {
   };
 
   const closeVideo = () => {
+    if (Capacitor.isNativePlatform()) {
+      PrivacyScreen.disable().catch(() => {});
+    }
     setPlayingVideo(null);
   };
 

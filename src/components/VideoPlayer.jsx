@@ -805,9 +805,16 @@ function formatDate(timestamp) {
 const VideoPlayer = ({ item, onClose, user }) => {
   useEffect(() => {
     if (item.type === 'pdf' && Capacitor.isNativePlatform()) {
-      // Explicitly allow screenshots on PDF files as requested
+      // Explicitly allow screenshots on PDF files / notes as requested
       PrivacyScreen.disable().catch(console.error);
     }
+
+    return () => {
+      // Whenever leaving the player, guarantee PrivacyScreen is disabled
+      if (Capacitor.isNativePlatform()) {
+        PrivacyScreen.disable().catch(console.error);
+      }
+    };
   }, [item.type]);
 
   if (item.type === 'pdf') {
