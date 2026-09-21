@@ -45,7 +45,7 @@ async function buildAndConsolidate() {
 
   // Create a version file based on app version and timestamp
   const pkg = await fs.readJson(path.join(STUDENT_APP_DIR, 'package.json'));
-  const currentAppVersion = pkg.version || '2.5.0';
+  const currentAppVersion = pkg.version || '2.6.2';
   const version = `${currentAppVersion}-${Date.now()}`;
   await fs.writeJson(path.join(buildcodePath, 'version.json'), {
     version: version,
