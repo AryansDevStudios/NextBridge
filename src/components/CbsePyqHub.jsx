@@ -13,7 +13,8 @@ import {
   Check, 
   Loader2, 
   ArrowLeft,
-  Layers
+  Layers,
+  Lock
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
 
@@ -21,7 +22,7 @@ const PYQ_INDEX_URL = 'https://class10pyq.netlify.app/file-index.json';
 const CDN_PYQ_BASE = 'https://cdn.jsdelivr.net/gh/code-verse-star/CBSE_PYQ@main/public';
 const RAW_PYQ_BASE = 'https://github.com/code-verse-star/CBSE_PYQ/raw/main/public';
 
-export default function CbsePyqHub({ onOpenPdf, onBack }) {
+export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false }) {
   const [files, setFiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPath, setCurrentPath] = useState('');
@@ -166,6 +167,7 @@ export default function CbsePyqHub({ onOpenPdf, onBack }) {
 
   const handleDownloadItem = async (e, item, isMS = false) => {
     e.stopPropagation();
+    if (isLocked) return;
     const docItem = formatPyqItem(item, isMS);
     try {
       await downloadManager.downloadPdf(docItem);
@@ -253,39 +255,57 @@ export default function CbsePyqHub({ onOpenPdf, onBack }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                 {item.type === 'file' ? (
                   <>
-                    <button
-                      onClick={(e) => handleDownloadItem(e, item, isMS)}
-                      disabled={isDownloading || isDownloaded}
-                      title={isDownloaded ? 'Downloaded to App' : isDownloading ? 'Downloading...' : 'Download to App for Offline Reading'}
-                      style={{
-                        width: '32px',
-                        height: '32px',
+                    {isLocked ? (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 8px',
                         borderRadius: '6px',
-                        background: isDownloaded ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255, 255, 255, 0.06)',
-                        border: `1px solid ${isDownloaded ? 'rgba(74, 222, 128, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-                        color: isDownloaded ? '#4ade80' : isDownloading ? '#f59e0b' : '#a0a0a0',
-                        display: 'grid',
-                        placeItems: 'center',
-                        cursor: (isDownloading || isDownloaded) ? 'default' : 'pointer'
-                      }}
-                    >
-                      {isDownloading ? (
-                        <Loader2 size={15} className="spin-icon" />
-                      ) : isDownloaded ? (
-                        <Check size={15} />
-                      ) : (
-                        <Download size={15} />
-                      )}
-                    </button>
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        color: '#f59e0b',
+                        fontSize: '0.72rem',
+                        fontWeight: 600
+                      }}>
+                        <Lock size={12} />
+                        <span>Locked</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => handleDownloadItem(e, item, isMS)}
+                        disabled={isDownloading || isDownloaded}
+                        title={isDownloaded ? 'Downloaded to App' : isDownloading ? 'Downloading...' : 'Download to App for Offline Reading'}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          background: isDownloaded ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255, 255, 255, 0.06)',
+                          border: `1px solid ${isDownloaded ? 'rgba(74, 222, 128, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                          color: isDownloaded ? '#4ade80' : isDownloading ? '#f59e0b' : '#a0a0a0',
+                          display: 'grid',
+                          placeItems: 'center',
+                          cursor: (isDownloading || isDownloaded) ? 'default' : 'pointer'
+                        }}
+                      >
+                        {isDownloading ? (
+                          <Loader2 size={15} className="spin-icon" />
+                        ) : isDownloaded ? (
+                          <Check size={15} />
+                        ) : (
+                          <Download size={15} />
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleItemClick(item, isMS)}
                       style={{
                         height: '32px',
                         padding: '0 12px',
                         borderRadius: '6px',
-                        background: isMS ? '#22c55e' : '#6366f1',
-                        border: 'none',
-                        color: '#fff',
+                        background: isLocked ? 'rgba(255, 255, 255, 0.08)' : (isMS ? '#22c55e' : '#6366f1'),
+                        border: isLocked ? '1px solid rgba(255, 255, 255, 0.15)' : 'none',
+                        color: isLocked ? '#e2e8f0' : '#fff',
                         fontSize: '12px',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -294,8 +314,8 @@ export default function CbsePyqHub({ onOpenPdf, onBack }) {
                         gap: '4px'
                       }}
                     >
-                      <FileText size={13} />
-                      Open
+                      {isLocked ? <Lock size={12} style={{ color: '#f59e0b' }} /> : <FileText size={13} />}
+                      {isLocked ? 'Upgrade' : 'Open'}
                     </button>
                   </>
                 ) : (

@@ -407,6 +407,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   };
 
   const handlePlayVideo = (item) => {
+    if (!allowedSections.courses) {
+      setBlockedDownloadItem({ item, section: 'courses' });
+      return;
+    }
+
     if (!isOnline) {
       // Check if downloaded
       const isDownloaded = downloadedLectures.some(d => String(d.id) === String(item.id));
@@ -754,8 +759,8 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             {subInfo.badge && (
               <div 
                 onClick={() => setShowProfileModal(true)}
+                className="hidden sm:flex"
                 style={{
-                  display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
                   fontSize: '0.72rem',
@@ -808,22 +813,22 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs — full width, no horizontal scroll */}
+        {/* Navigation Tabs — compact, full width, zero horizontal scroll */}
         <div className="nav-tabs">
           <button 
             className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
             onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
           >
-            <span>Courses</span>
-            {!allowedSections.courses && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+            <span className="tab-text">Courses</span>
+            {!allowedSections.courses && <Lock size={10} className="tab-lock-icon" />}
           </button>
           {isClass10 && (
             <button 
               className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
               onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
             >
-              <span>Textbook</span>
-              {!allowedSections.textbooks && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+              <span className="tab-text">Textbook</span>
+              {!allowedSections.textbooks && <Lock size={10} className="tab-lock-icon" />}
             </button>
           )}
           {isClass10 && (
@@ -831,16 +836,15 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
               onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
             >
-              <span>PYQ</span>
-              {!allowedSections.pyqs && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+              <span className="tab-text">PYQ</span>
+              {!allowedSections.pyqs && <Lock size={10} className="tab-lock-icon" />}
             </button>
           )}
           <button 
             className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
             onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
           >
-            <HardDriveDownload size={13} />
-            <span>Downloaded</span>
+            <span className="tab-text">Downloads</span>
             {downloadedLectures.length > 0 && (
               <span className="badge-count">{downloadedLectures.length}</span>
             )}
@@ -850,39 +854,41 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
       {/* TEXTBOOK TAB (Class 10 only) */}
       {activeTab === 'textbook' && isClass10 && (
-        !allowedSections.textbooks ? (
-          renderLockedSection('NCERT Textbooks', 'NCERT and reference textbook solutions are locked for your account. Please contact the administrator to unlock textbook access.')
-        ) : (
-          <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <NcertTextbookHub
-              showRsAggarwal={true}
-              onOpenPdf={(item) => {
-                if (!Capacitor.isNativePlatform()) {
-                  window.history.pushState({ player: true }, '');
-                }
-                setPlayingVideo(item);
-              }}
-            />
-          </div>
-        )
+        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <NcertTextbookHub
+            showRsAggarwal={true}
+            isLocked={!allowedSections.textbooks}
+            onOpenPdf={(item) => {
+              if (!allowedSections.textbooks) {
+                setBlockedDownloadItem({ item: { title: item.title || item.name || 'NCERT Textbook Chapter', ...item }, section: 'textbooks' });
+                return;
+              }
+              if (!Capacitor.isNativePlatform()) {
+                window.history.pushState({ player: true }, '');
+              }
+              setPlayingVideo(item);
+            }}
+          />
+        </div>
       )}
 
       {/* CBSE PYQ TAB (Class 10 only) */}
       {activeTab === 'pyq' && isClass10 && (
-        !allowedSections.pyqs ? (
-          renderLockedSection('CBSE PYQ Hub', 'CBSE Past Year Questions and chapterwise papers are locked for your account. Contact the administrator to unlock the PYQ section.')
-        ) : (
-          <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <CbsePyqHub
-              onOpenPdf={(item) => {
-                if (!Capacitor.isNativePlatform()) {
-                  window.history.pushState({ player: true }, '');
-                }
-                setPlayingVideo(item);
-              }}
-            />
-          </div>
-        )
+        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <CbsePyqHub
+            isLocked={!allowedSections.pyqs}
+            onOpenPdf={(item) => {
+              if (!allowedSections.pyqs) {
+                setBlockedDownloadItem({ item: { title: item.name || item.title || 'CBSE PYQ Paper', ...item }, section: 'pyqs' });
+                return;
+              }
+              if (!Capacitor.isNativePlatform()) {
+                window.history.pushState({ player: true }, '');
+              }
+              setPlayingVideo(item);
+            }}
+          />
+        </div>
       )}
 
       {/* DOWNLOADED TAB VIEW */}
@@ -1422,10 +1428,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
       {/* COURSES TAB VIEW */}
       {activeTab === 'courses' && (
-        !allowedSections.courses ? (
-          renderLockedSection('Course Lectures & Notes', 'Lectures and batch materials are locked for your account. Upgrade your subscription plan with the admin to get access.')
-        ) : (
-          <div className="main-content pb-24">
+        <div className="main-content pb-24">
           {/* Breadcrumbs with Back Arrow */}
           {!searchQuery && (
             <div className="breadcrumbs">
@@ -1544,7 +1547,27 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                     </div>
                   </div>
 
-                  {item.type === 'pdf' && (
+                  {!allowedSections.courses && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      color: '#f59e0b',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      marginLeft: 'auto',
+                      flexShrink: 0
+                    }}>
+                      <Lock size={12} />
+                      <span>Locked</span>
+                    </div>
+                  )}
+
+                  {item.type === 'pdf' && allowedSections.courses && (
                     <button
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -1602,7 +1625,6 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             })}
           </div>
         </div>
-        )
       )}
 
       {/* Student Profile & Support Modal */}

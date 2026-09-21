@@ -11,7 +11,8 @@ import {
   ChevronRight,
   ExternalLink,
   Smartphone,
-  BookMarked
+  BookMarked,
+  Lock
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
 
@@ -118,7 +119,7 @@ const RSA_BOOK = {
   }))
 };
 
-export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false }) {
+export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false, isLocked = false }) {
   const [allBooks, setAllBooks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -904,30 +905,48 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
 
                         {/* Actions */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                          <button
-                            onClick={(e) => handleDownloadChapter(e, ch, selectedBook, selectedSubject)}
-                            disabled={isDownloading || isDownloaded}
-                            title={isDownloaded ? 'Downloaded to App' : isDownloading ? 'Downloading...' : 'Download for Offline Reading'}
-                            style={{
-                              width: '32px',
-                              height: '32px',
+                          {isLocked ? (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 8px',
                               borderRadius: '6px',
-                              background: isDownloaded ? 'rgba(74, 222, 128, 0.1)' : '#1c1c22',
-                              border: `1px solid ${isDownloaded ? 'rgba(74, 222, 128, 0.3)' : '#2e2e36'}`,
-                              color: isDownloaded ? '#4ade80' : isDownloading ? '#f59e0b' : '#a0a0a8',
-                              display: 'grid',
-                              placeItems: 'center',
-                              cursor: (isDownloading || isDownloaded) ? 'default' : 'pointer'
-                            }}
-                          >
-                            {isDownloading ? (
-                              <Loader2 size={15} className="spin-icon" />
-                            ) : isDownloaded ? (
-                              <Check size={15} />
-                            ) : (
-                              <Download size={15} />
-                            )}
-                          </button>
+                              background: 'rgba(245, 158, 11, 0.12)',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              color: '#f59e0b',
+                              fontSize: '0.72rem',
+                              fontWeight: 600
+                            }}>
+                              <Lock size={12} />
+                              <span>Locked</span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={(e) => handleDownloadChapter(e, ch, selectedBook, selectedSubject)}
+                              disabled={isDownloading || isDownloaded}
+                              title={isDownloaded ? 'Downloaded to App' : isDownloading ? 'Downloading...' : 'Download for Offline Reading'}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '6px',
+                                background: isDownloaded ? 'rgba(74, 222, 128, 0.1)' : '#1c1c22',
+                                border: `1px solid ${isDownloaded ? 'rgba(74, 222, 128, 0.3)' : '#2e2e36'}`,
+                                color: isDownloaded ? '#4ade80' : isDownloading ? '#f59e0b' : '#a0a0a8',
+                                display: 'grid',
+                                placeItems: 'center',
+                                cursor: (isDownloading || isDownloaded) ? 'default' : 'pointer'
+                              }}
+                            >
+                              {isDownloading ? (
+                                <Loader2 size={15} className="spin-icon" />
+                              ) : isDownloaded ? (
+                                <Check size={15} />
+                              ) : (
+                                <Download size={15} />
+                              )}
+                            </button>
+                          )}
 
                           <button
                             onClick={() => handleOpenChapter(ch, selectedBook, selectedSubject)}
