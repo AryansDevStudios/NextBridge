@@ -29,6 +29,7 @@ import {
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
 import CbsePyqHub from './CbsePyqHub';
+import RsAggarwalHub from './RsAggarwalHub';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -58,7 +59,7 @@ const LearningHub = ({ user, onLogout }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'ncert' | 'pyq' | 'downloads'
+  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'ncert' | 'rsa' | 'pyq' | 'downloads'
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -624,6 +625,12 @@ const LearningHub = ({ user, onLogout }) => {
               NCERT
             </button>
             <button 
+              className={`nav-tab-btn ${activeTab === 'rsa' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('rsa'); setSearchQuery(''); }}
+            >
+              RS Aggarwal
+            </button>
+            <button 
               className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
               onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
             >
@@ -651,6 +658,7 @@ const LearningHub = ({ user, onLogout }) => {
               placeholder={
                 activeTab === 'courses' ? "Search courses..." : 
                 activeTab === 'ncert' ? "Search NCERT chapters..." : 
+                activeTab === 'rsa' ? "Search RS Aggarwal chapters..." :
                 activeTab === 'pyq' ? "Search PYQs..." : 
                 "Search downloads..."
               } 
@@ -712,6 +720,20 @@ const LearningHub = ({ user, onLogout }) => {
       {activeTab === 'pyq' && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <CbsePyqHub
+            onOpenPdf={(item) => {
+              if (!Capacitor.isNativePlatform()) {
+                window.history.pushState({ player: true }, '');
+              }
+              setPlayingVideo(item);
+            }}
+          />
+        </div>
+      )}
+
+      {/* RS AGGARWAL TAB */}
+      {activeTab === 'rsa' && (
+        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <RsAggarwalHub
             onOpenPdf={(item) => {
               if (!Capacitor.isNativePlatform()) {
                 window.history.pushState({ player: true }, '');

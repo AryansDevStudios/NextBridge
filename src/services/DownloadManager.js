@@ -72,6 +72,13 @@ export function getDescriptivePdfFileName(item) {
     return `${parts.join('_')}.pdf`;
   }
 
+  // --- RS Aggarwal items: RS_Aggarwal_Chapter_Mathematics ---
+  if (item.source === 'rsa') {
+    const chapter = sanitize(item.chapter_title || item.name || item.title || '');
+    const parts = ['RS_Aggarwal', chapter, 'Mathematics'].filter(Boolean);
+    return `${parts.join('_')}.pdf`;
+  }
+
   // --- Regular course notes / lectures ---
   let rawTitle = (item.title || item.name || 'Notes').trim();
   rawTitle = rawTitle.replace(/\.pdf$/i, '');
@@ -117,13 +124,16 @@ export function parseDownloadSubjectAndFolder(item) {
   let subject = (item.subject_name || item.subjectName || '').trim();
   let folder = (item.folder_path || item.folderPath || '').trim();
 
-  // If source is ncert or pyq
+  // If source is ncert or pyq or rsa
   if (item.source === 'ncert' || subject.startsWith('NCERT:')) {
     if (!subject.startsWith('NCERT:')) subject = `NCERT: ${subject}`;
     if (!folder) folder = item.book_title || 'Textbooks';
   } else if (item.source === 'pyq' || subject.startsWith('CBSE PYQ:')) {
     if (!subject.startsWith('CBSE PYQ:')) subject = `CBSE PYQ: ${subject}`;
     if (!folder) folder = 'Question Papers';
+  } else if (item.source === 'rsa') {
+    subject = 'Mathematics';
+    folder = 'RS Aggarwal';
   } else {
     // If subject contains slashes (e.g. "Social Science/Lectures" or "Social Science/History/Chapter 1")
     if (subject.includes('/')) {
