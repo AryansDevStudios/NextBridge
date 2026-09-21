@@ -36,25 +36,43 @@ function HlsPlayer({ url, item, user }) {
 
   useEffect(() => {
     const checkOffline = async () => {
-      try {
-        const m3u8Path = `downloads/${item.id}/index.m3u8`;
-        const stat = await Filesystem.stat({ path: m3u8Path, directory: Directory.Data });
-        if (stat) {
-          const uriInfo = await Filesystem.getUri({ path: m3u8Path, directory: Directory.Data });
-          setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
-          setIsReady(true);
-          return;
-        }
-      } catch (e) {}
+      // ── Native path ──────────────────────────────────────────────────────
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const m3u8Path = `downloads/${item.id}/index.m3u8`;
+          const stat = await Filesystem.stat({ path: m3u8Path, directory: Directory.Data });
+          if (stat) {
+            const uriInfo = await Filesystem.getUri({ path: m3u8Path, directory: Directory.Data });
+            setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
+            setIsReady(true);
+            return;
+          }
+        } catch (e) {}
 
+        try {
+          const mp4Path = `downloads/${item.id}/video.mp4`;
+          const statMp4 = await Filesystem.stat({ path: mp4Path, directory: Directory.Data });
+          if (statMp4) {
+            const uriInfo = await Filesystem.getUri({ path: mp4Path, directory: Directory.Data });
+            setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
+            setIsReady(true);
+            return;
+          }
+        } catch (e) {}
+
+        setIsReady(true);
+        return;
+      }
+
+      // ── Web path — use Service Worker /sw-hls/ URL ─────────────────────
+      // Check if a sw-playlist URL was stored in the download record
       try {
-        const mp4Path = `downloads/${item.id}/video.mp4`;
-        const statMp4 = await Filesystem.stat({ path: mp4Path, directory: Directory.Data });
-        if (statMp4) {
-          const uriInfo = await Filesystem.getUri({ path: mp4Path, directory: Directory.Data });
-          setOfflineUrl(Capacitor.convertFileSrc(uriInfo.uri));
-          setIsReady(true);
-          return;
+        const downloaded = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+        const record = downloaded.find(d => String(d.id) === String(item.id));
+        if (record) {
+          // Use sw_index.m3u8 served by SW; fall back to swPlaylistUrl if present
+          const swUrl = record.swPlaylistUrl || `/sw-hls/${item.id}/index.m3u8`;
+          setOfflineUrl(swUrl);
         }
       } catch (e) {}
 

@@ -667,6 +667,8 @@ class DownloadManagerService {
       const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
       const updated = existing.filter(d => String(d.id) !== strId);
       const { subject, folder } = parseDownloadSubjectAndFolder(task.item);
+      // swPlaylistUrl: served by the Service Worker from IndexedDB on web
+      const swPlaylistUrl = `/sw-hls/${strId}/index.m3u8`;
       updated.unshift({
         id: task.item.id,
         title: task.item.title,
@@ -678,7 +680,8 @@ class DownloadManagerService {
         path: `downloads/${task.item.id}`,
         quality: `${task.variant.height}p`,
         sizeBytes: task.downloadedBytes || task.totalBytes,
-        formattedSize: formatBytes(task.downloadedBytes || task.totalBytes)
+        formattedSize: formatBytes(task.downloadedBytes || task.totalBytes),
+        swPlaylistUrl,
       });
       localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
     } catch (e) {
@@ -1208,12 +1211,33 @@ class DownloadTask {
   async finishDownload() {
     const baseDir = `downloads/${this.item.id}`;
 
+    // 1. Write local index.m3u8 (segment_N.ts filenames — used by native)
     await Filesystem.writeFile({
       path: `${baseDir}/index.m3u8`,
       data: this.modifiedPlaylist.join('\n'),
       directory: Directory.Data,
       encoding: 'utf8'
     });
+
+    // 2. On web: also write a SW-served playlist where each segment URL is
+    //    /sw-hls/{itemId}/segment_N.ts so the Service Worker can intercept and
+    //    serve them from IndexedDB (Capacitor Filesystem web adapter storage).
+    if (!Capacitor.isNativePlatform()) {
+      const swPlaylist = this.modifiedPlaylist.map(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          // Replace bare segment filename with SW-served absolute path
+          return `/sw-hls/${this.item.id}/${trimmed}`;
+        }
+        return line;
+      });
+      await Filesystem.writeFile({
+        path: `${baseDir}/sw_index.m3u8`,
+        data: swPlaylist.join('\n'),
+        directory: Directory.Data,
+        encoding: 'utf8'
+      });
+    }
 
     this.percent = 100;
     this.status = 'done';

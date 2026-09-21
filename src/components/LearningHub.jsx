@@ -412,11 +412,17 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       return;
     }
 
+    // For web: use the Service-Worker–served playlist URL.
+    // For native: use the bare relative path (Capacitor localhost serves it).
+    const videoUrl = Capacitor.isNativePlatform()
+      ? `downloads/${item.id}/index.m3u8`
+      : (item.swPlaylistUrl || `/sw-hls/${item.id}/index.m3u8`);
+
     setPlayingVideo({
       id: item.id,
       title: item.title,
       type: 'video',
-      url: `downloads/${item.id}/index.m3u8`,
+      url: videoUrl,
       duration: item.duration,
       thumbnail: item.thumbnail
     });
