@@ -3,7 +3,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   root: resolve(__dirname, 'shell'),
-  publicDir: resolve(__dirname, 'public'),
+  publicDir: resolve(__dirname, 'shell/public'),
   build: {
     outDir: resolve(__dirname, 'shell_dist'),
     emptyOutDir: true,
