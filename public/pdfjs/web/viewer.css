@@ -38,6 +38,10 @@
   forced-color-adjust: none;
   transform-origin: 0 0;
   z-index: 2;
+  /* Disable text selection to prevent Android native context menu */
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
 }
 
 .textLayer :is(span, br) {
