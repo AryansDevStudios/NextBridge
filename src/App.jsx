@@ -151,9 +151,11 @@ export default function App() {
         const elapsed = Math.floor((Date.now() - sessionStartTime.current) / 1000);
         if (elapsed >= 5) {
           sessionStartTime.current = Date.now();
+          const todayKey = new Date().toISOString().slice(0, 10);
           updateDoc(doc(db, 'students', user.id), {
             lastActive: new Date().toISOString(),
-            totalScreenTime: increment(elapsed)
+            totalScreenTime: increment(elapsed),
+            [`dailyScreenTime.${todayKey}`]: increment(elapsed)
           }).catch(() => {});
         }
       }

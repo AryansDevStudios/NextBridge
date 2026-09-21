@@ -491,9 +491,11 @@ function HlsPlayer({ url, item, user }) {
           timestamp: new Date().toISOString()
         }).catch(() => {});
 
+        const todayKey = new Date().toISOString().slice(0, 10);
         updateDoc(doc(db, 'students', user.id), {
           totalVideoTime: increment(durationSecs),
           lastActive: new Date().toISOString(),
+          [`dailyVideoTime.${todayKey}`]: increment(durationSecs),
           [`videoStats.${cleanVidId}.title`]: item.title || 'Unknown Video',
           [`videoStats.${cleanVidId}.subjectName`]: item.subject_name || item.subjectName || '',
           [`videoStats.${cleanVidId}.watchTimeSecs`]: increment(durationSecs),
@@ -920,9 +922,11 @@ const VideoPlayer = ({ item, onClose, user }) => {
             timestamp: new Date().toISOString()
           }).catch(() => {});
 
+          const todayKey = new Date().toISOString().slice(0, 10);
           updateDoc(doc(db, 'students', user.id), {
             totalNotesTime: increment(elapsedSecs),
             lastActive: new Date().toISOString(),
+            [`dailyNotesTime.${todayKey}`]: increment(elapsedSecs),
             [`notesStats.${cleanDocId}.title`]: item.title || 'Study Material / Notes',
             [`notesStats.${cleanDocId}.subjectName`]: item.subject_name || item.subjectName || '',
             [`notesStats.${cleanDocId}.readTimeSecs`]: increment(elapsedSecs),

@@ -11,20 +11,17 @@ import {
   Search, 
   ChevronDown, 
   ChevronUp, 
-  Eye
+  Eye,
+  Calendar
 } from 'lucide-react';
+import { formatDuration, getStudentTimeForPeriod } from '../utils/timeFormat';
 
 function formatSecondsToHMS(seconds) {
-  if (!seconds || isNaN(seconds) || seconds <= 0) return '0m';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  return formatDuration(seconds, { compact: true });
 }
 
 export default function AdminAnalytics({ students, onSelectStudent }) {
+  const [selectedPeriod, setSelectedPeriod] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
   const [selectedClass, setSelectedClass] = useState('all'); // 'all', '9', '10'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSubTab, setActiveSubTab] = useState('leaderboard'); // 'leaderboard', 'comparison', 'videos', 'notes', 'classes'
@@ -33,9 +30,17 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
   const [expandedNoteId, setExpandedNoteId] = useState(null);
   const [leaderboardSort, setLeaderboardSort] = useState('videoTime'); // 'videoTime', 'notesTime', 'screenTime', 'totalStudy'
 
+  // Enrich students with dynamic period stats
+  const studentsWithPeriodStats = useMemo(() => {
+    return students.map(s => ({
+      ...s,
+      periodStats: getStudentTimeForPeriod(s, selectedPeriod)
+    }));
+  }, [students, selectedPeriod]);
+
   // Filter students by class & search
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
+    return studentsWithPeriodStats.filter(s => {
       const matchClass = selectedClass === 'all' || String(s.class) === String(selectedClass);
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q || 
@@ -45,24 +50,28 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
         (s.pat || '').toLowerCase().includes(q);
       return matchClass && matchSearch;
     });
-  }, [students, selectedClass, searchQuery]);
+  }, [studentsWithPeriodStats, selectedClass, searchQuery]);
 
-  // Overall Global KPI Metrics
+  // Overall Global KPI Metrics for selected period
   const kpis = useMemo(() => {
     let totalVideoSecs = 0;
     let totalNotesSecs = 0;
     let totalScreenSecs = 0;
     let activeSubs = 0;
+    let periodActiveStudents = 0;
     const now = Date.now();
 
-    students.forEach(s => {
-      totalVideoSecs += (s.totalVideoTime || 0);
-      totalNotesSecs += (s.totalNotesTime || 0);
-      totalScreenSecs += (s.totalScreenTime || 0);
+    studentsWithPeriodStats.forEach(s => {
+      totalVideoSecs += (s.periodStats.videoTime || 0);
+      totalNotesSecs += (s.periodStats.notesTime || 0);
+      totalScreenSecs += (s.periodStats.screenTime || 0);
 
       const expiry = s.subscriptionExpiresAt ? new Date(s.subscriptionExpiresAt).getTime() : null;
       if (s.status === 'active' && (!expiry || expiry > now)) {
         activeSubs++;
+      }
+      if ((s.periodStats.screenTime || 0) > 0 || (s.periodStats.studyTime || 0) > 0) {
+        periodActiveStudents++;
       }
     });
 
@@ -71,26 +80,26 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
       totalNotesSecs,
       totalScreenSecs,
       totalStudents: students.length,
-      activeSubs,
-      activeRate: students.length > 0 ? Math.round((activeSubs / students.length) * 100) : 0
+      activeSubs: selectedPeriod === 'all' ? activeSubs : periodActiveStudents,
+      activeRate: students.length > 0 
+        ? Math.round(((selectedPeriod === 'all' ? activeSubs : periodActiveStudents) / students.length) * 100) 
+        : 0
     };
-  }, [students]);
+  }, [studentsWithPeriodStats, students.length, selectedPeriod]);
 
-  // Sorted Leaderboard
+  // Sorted Leaderboard based on selected period
   const rankedStudents = useMemo(() => {
     return [...filteredStudents].sort((a, b) => {
       if (leaderboardSort === 'videoTime') {
-        return (b.totalVideoTime || 0) - (a.totalVideoTime || 0);
+        return (b.periodStats.videoTime || 0) - (a.periodStats.videoTime || 0);
       }
       if (leaderboardSort === 'notesTime') {
-        return (b.totalNotesTime || 0) - (a.totalNotesTime || 0);
+        return (b.periodStats.notesTime || 0) - (a.periodStats.notesTime || 0);
       }
       if (leaderboardSort === 'screenTime') {
-        return (b.totalScreenTime || 0) - (a.totalScreenTime || 0);
+        return (b.periodStats.screenTime || 0) - (a.periodStats.screenTime || 0);
       }
-      const studyA = (a.totalVideoTime || 0) + (a.totalNotesTime || 0);
-      const studyB = (b.totalVideoTime || 0) + (b.totalNotesTime || 0);
-      return studyB - studyA;
+      return (b.periodStats.studyTime || 0) - (a.periodStats.studyTime || 0);
     });
   }, [filteredStudents, leaderboardSort]);
 
@@ -158,21 +167,21 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
     return Object.values(map).sort((a, b) => b.totalReadSecs - a.totalReadSecs);
   }, [students]);
 
-  // Class Comparison Breakdown
+  // Class Comparison Breakdown for selected period
   const classComparison = useMemo(() => {
     const classes = { '9': { video: 0, notes: 0, screen: 0, count: 0 }, '10': { video: 0, notes: 0, screen: 0, count: 0 } };
-    students.forEach(s => {
+    studentsWithPeriodStats.forEach(s => {
       const cls = String(s.class || '9');
       if (classes[cls]) {
         classes[cls].count++;
-        classes[cls].video += (s.totalVideoTime || 0);
-        classes[cls].notes += (s.totalNotesTime || 0);
-        classes[cls].screen += (s.totalScreenTime || 0);
+        classes[cls].video += (s.periodStats?.videoTime || 0);
+        classes[cls].notes += (s.periodStats?.notesTime || 0);
+        classes[cls].screen += (s.periodStats?.screenTime || 0);
       }
     });
 
     return classes;
-  }, [students]);
+  }, [studentsWithPeriodStats]);
 
   // Toggle student in comparison dock
   const toggleCompareStudent = (id) => {
@@ -189,8 +198,8 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
   };
 
   const comparedStudents = useMemo(() => {
-    return students.filter(s => comparedStudentIds.includes(s.id));
-  }, [students, comparedStudentIds]);
+    return studentsWithPeriodStats.filter(s => comparedStudentIds.includes(s.id));
+  }, [studentsWithPeriodStats, comparedStudentIds]);
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -203,47 +212,67 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
               <span>Learning Analytics & Leaderboard</span>
             </h1>
             <p className="text-xs sm:text-sm text-[#9ca3af] mt-0.5">
-              Compare watch times, study durations, lecture performance, and engagement.
+              Compare watch times, study durations, lecture performance, and engagement across time periods.
             </p>
           </div>
 
-          {/* Sub-tabs */}
-          <div className="flex bg-[#121212] p-1 rounded-xl border border-[#262626] overflow-x-auto scrollbar-none w-full md:w-auto">
-            <button
-              onClick={() => setActiveSubTab('leaderboard')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'leaderboard' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
-            >
-              <Trophy size={13} />
-              <span>Leaderboard</span>
-            </button>
-            <button
-              onClick={() => setActiveSubTab('comparison')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'comparison' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
-            >
-              <Users size={13} />
-              <span>Compare ({comparedStudentIds.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveSubTab('videos')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'videos' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
-            >
-              <Video size={13} />
-              <span>Videos</span>
-            </button>
-            <button
-              onClick={() => setActiveSubTab('notes')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'notes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
-            >
-              <FileText size={13} />
-              <span>Notes</span>
-            </button>
-            <button
-              onClick={() => setActiveSubTab('classes')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'classes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
-            >
-              <BarChart2 size={13} />
-              <span>Classes</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-start md:justify-end">
+            {/* Time Period Selector */}
+            <div className="flex items-center gap-2 bg-[#121212] border border-[#262626] rounded-xl px-3 py-1.5 text-xs text-[#f3f4f6]">
+              <Calendar size={14} className="text-[#f59e0b] shrink-0" />
+              <span className="text-[#9ca3af] font-medium hidden sm:inline">Period:</span>
+              <select
+                value={selectedPeriod}
+                onChange={e => setSelectedPeriod(e.target.value)}
+                aria-label="Filter analytics by time period"
+                className="bg-transparent border-none text-[#f59e0b] font-bold text-xs focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="all" className="bg-[#1a1a1a] text-white">All Time (Lifetime)</option>
+                <option value="today" className="bg-[#1a1a1a] text-white">Today (Day View)</option>
+                <option value="yesterday" className="bg-[#1a1a1a] text-white">Yesterday</option>
+                <option value="week" className="bg-[#1a1a1a] text-white">This Week (Last 7 Days)</option>
+                <option value="month" className="bg-[#1a1a1a] text-white">This Month (Last 30 Days)</option>
+              </select>
+            </div>
+
+            {/* Sub-tabs */}
+            <div className="flex bg-[#121212] p-1 rounded-xl border border-[#262626] overflow-x-auto scrollbar-none">
+              <button
+                onClick={() => setActiveSubTab('leaderboard')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'leaderboard' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <Trophy size={13} />
+                <span>Leaderboard</span>
+              </button>
+              <button
+                onClick={() => setActiveSubTab('comparison')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'comparison' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <Users size={13} />
+                <span>Compare ({comparedStudentIds.length})</span>
+              </button>
+              <button
+                onClick={() => setActiveSubTab('videos')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'videos' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <Video size={13} />
+                <span>Videos</span>
+              </button>
+              <button
+                onClick={() => setActiveSubTab('notes')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'notes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <FileText size={13} />
+                <span>Notes</span>
+              </button>
+              <button
+                onClick={() => setActiveSubTab('classes')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'classes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <BarChart2 size={13} />
+                <span>Classes</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -365,15 +394,15 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                 <div className="mt-4 pt-4 border-t border-[#262626] w-full grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">Video</div>
-                    <div className="font-bold text-[#f59e0b]">{formatSecondsToHMS(rankedStudents[1].totalVideoTime)}</div>
+                    <div className="font-bold text-[#f59e0b]">{formatSecondsToHMS(rankedStudents[1].periodStats?.videoTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">Notes</div>
-                    <div className="font-bold text-[#38bdf8]">{formatSecondsToHMS(rankedStudents[1].totalNotesTime)}</div>
+                    <div className="font-bold text-[#38bdf8]">{formatSecondsToHMS(rankedStudents[1].periodStats?.notesTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">App</div>
-                    <div className="font-bold text-[#4ade80]">{formatSecondsToHMS(rankedStudents[1].totalScreenTime)}</div>
+                    <div className="font-bold text-[#4ade80]">{formatSecondsToHMS(rankedStudents[1].periodStats?.screenTime)}</div>
                   </div>
                 </div>
               </div>
@@ -391,15 +420,15 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                 <div className="mt-4 pt-4 border-t border-[#262626] w-full grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase font-bold">Video</div>
-                    <div className="font-extrabold text-[#f59e0b] text-sm">{formatSecondsToHMS(rankedStudents[0].totalVideoTime)}</div>
+                    <div className="font-extrabold text-[#f59e0b] text-sm">{formatSecondsToHMS(rankedStudents[0].periodStats?.videoTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase font-bold">Notes</div>
-                    <div className="font-extrabold text-[#38bdf8] text-sm">{formatSecondsToHMS(rankedStudents[0].totalNotesTime)}</div>
+                    <div className="font-extrabold text-[#38bdf8] text-sm">{formatSecondsToHMS(rankedStudents[0].periodStats?.notesTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase font-bold">App Time</div>
-                    <div className="font-extrabold text-[#4ade80] text-sm">{formatSecondsToHMS(rankedStudents[0].totalScreenTime)}</div>
+                    <div className="font-extrabold text-[#4ade80] text-sm">{formatSecondsToHMS(rankedStudents[0].periodStats?.screenTime)}</div>
                   </div>
                 </div>
               </div>
@@ -417,15 +446,15 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                 <div className="mt-4 pt-4 border-t border-[#262626] w-full grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">Video</div>
-                    <div className="font-bold text-[#f59e0b]">{formatSecondsToHMS(rankedStudents[2].totalVideoTime)}</div>
+                    <div className="font-bold text-[#f59e0b]">{formatSecondsToHMS(rankedStudents[2].periodStats?.videoTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">Notes</div>
-                    <div className="font-bold text-[#38bdf8]">{formatSecondsToHMS(rankedStudents[2].totalNotesTime)}</div>
+                    <div className="font-bold text-[#38bdf8]">{formatSecondsToHMS(rankedStudents[2].periodStats?.notesTime)}</div>
                   </div>
                   <div>
                     <div className="text-[#9ca3af] text-[10px] uppercase">App</div>
-                    <div className="font-bold text-[#4ade80]">{formatSecondsToHMS(rankedStudents[2].totalScreenTime)}</div>
+                    <div className="font-bold text-[#4ade80]">{formatSecondsToHMS(rankedStudents[2].periodStats?.screenTime)}</div>
                   </div>
                 </div>
               </div>
@@ -469,13 +498,13 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                       </td>
                       <td className="p-4 text-[#9ca3af] font-medium">Class {s.class}</td>
                       <td className="p-4 font-semibold text-[#f59e0b]">
-                        {formatSecondsToHMS(s.totalVideoTime)}
+                        {formatSecondsToHMS(s.periodStats?.videoTime)}
                       </td>
                       <td className="p-4 font-semibold text-[#38bdf8]">
-                        {formatSecondsToHMS(s.totalNotesTime)}
+                        {formatSecondsToHMS(s.periodStats?.notesTime)}
                       </td>
                       <td className="p-4 font-semibold text-[#4ade80]">
-                        {formatSecondsToHMS(s.totalScreenTime)}
+                        {formatSecondsToHMS(s.periodStats?.screenTime)}
                       </td>
                       <td className="p-4">
                         <button
@@ -540,7 +569,7 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {comparedStudents.map(s => {
-                const totalStudy = (s.totalVideoTime || 0) + (s.totalNotesTime || 0);
+                const totalStudy = (s.periodStats?.videoTime || 0) + (s.periodStats?.notesTime || 0);
                 const videosCount = s.videoStats ? Object.keys(s.videoStats).length : 0;
                 const notesCount = s.notesStats ? Object.keys(s.notesStats).length : 0;
 
@@ -565,12 +594,12 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                       <div>
                         <div className="flex justify-between text-xs mb-1">
                           <span className="text-[#9ca3af] flex items-center gap-1"><Video size={12} className="text-[#f59e0b]" /> Video Time</span>
-                          <span className="font-bold text-[#f59e0b]">{formatSecondsToHMS(s.totalVideoTime)}</span>
+                          <span className="font-bold text-[#f59e0b]">{formatSecondsToHMS(s.periodStats?.videoTime)}</span>
                         </div>
                         <div className="w-full bg-[#1a1a1a] h-2 rounded-full overflow-hidden">
                           <div
                             className="bg-[#f59e0b] h-full rounded-full"
-                            style={{ width: `${Math.min(100, Math.round(((s.totalVideoTime || 0) / (kpis.totalVideoSecs || 1)) * 100 * (students.length || 1)))}%` }}
+                            style={{ width: `${Math.min(100, Math.round(((s.periodStats?.videoTime || 0) / (kpis.totalVideoSecs || 1)) * 100 * (students.length || 1)))}%` }}
                           />
                         </div>
                         <div className="text-[10px] text-[#9ca3af] mt-0.5">{videosCount} distinct videos watched</div>
@@ -580,12 +609,12 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                       <div>
                         <div className="flex justify-between text-xs mb-1">
                           <span className="text-[#9ca3af] flex items-center gap-1"><FileText size={12} className="text-[#38bdf8]" /> Notes Time</span>
-                          <span className="font-bold text-[#38bdf8]">{formatSecondsToHMS(s.totalNotesTime)}</span>
+                          <span className="font-bold text-[#38bdf8]">{formatSecondsToHMS(s.periodStats?.notesTime)}</span>
                         </div>
                         <div className="w-full bg-[#1a1a1a] h-2 rounded-full overflow-hidden">
                           <div
                             className="bg-[#38bdf8] h-full rounded-full"
-                            style={{ width: `${Math.min(100, Math.round(((s.totalNotesTime || 0) / (kpis.totalNotesSecs || 1)) * 100 * (students.length || 1)))}%` }}
+                            style={{ width: `${Math.min(100, Math.round(((s.periodStats?.notesTime || 0) / (kpis.totalNotesSecs || 1)) * 100 * (students.length || 1)))}%` }}
                           />
                         </div>
                         <div className="text-[10px] text-[#9ca3af] mt-0.5">{notesCount} notes/documents accessed</div>
@@ -595,12 +624,12 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
                       <div>
                         <div className="flex justify-between text-xs mb-1">
                           <span className="text-[#9ca3af] flex items-center gap-1"><Clock size={12} className="text-[#4ade80]" /> App Screen Time</span>
-                          <span className="font-bold text-[#4ade80]">{formatSecondsToHMS(s.totalScreenTime)}</span>
+                          <span className="font-bold text-[#4ade80]">{formatSecondsToHMS(s.periodStats?.screenTime)}</span>
                         </div>
                         <div className="w-full bg-[#1a1a1a] h-2 rounded-full overflow-hidden">
                           <div
                             className="bg-[#4ade80] h-full rounded-full"
-                            style={{ width: `${Math.min(100, Math.round(((s.totalScreenTime || 0) / (kpis.totalScreenSecs || 1)) * 100 * (students.length || 1)))}%` }}
+                            style={{ width: `${Math.min(100, Math.round(((s.periodStats?.screenTime || 0) / (kpis.totalScreenSecs || 1)) * 100 * (students.length || 1)))}%` }}
                           />
                         </div>
                       </div>

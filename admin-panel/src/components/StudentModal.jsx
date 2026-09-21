@@ -13,8 +13,13 @@ import {
   CheckCircle2, 
   Zap, 
   RotateCcw, 
-  Infinity as InfinityIcon 
+  Infinity as InfinityIcon,
+  BarChart2,
+  Video,
+  FileText,
+  Filter
 } from 'lucide-react';
+import { formatDuration, getStudentTimeForPeriod, getLast7DaysBreakdown } from '../utils/timeFormat';
 
 function toDateTimeLocalString(timestamp) {
   if (!timestamp) return '';
@@ -58,6 +63,39 @@ export default function StudentModal({ student, onClose }) {
   
   // Device State
   const [currentDevice, setCurrentDevice] = useState(student.device);
+
+  // Analytics & Logs State
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('today'); // 'today', 'week', 'all'
+  const [logFilter, setLogFilter] = useState('all'); // 'all', 'watch', 'notes', 'login', 'download'
+
+  // Period stats calculation for this individual student
+  const periodStats = useMemo(() => {
+    return getStudentTimeForPeriod(student, analyticsPeriod);
+  }, [student, analyticsPeriod]);
+
+  // 7-day usage breakdown for bar chart
+  const sevenDaysBreakdown = useMemo(() => {
+    return getLast7DaysBreakdown(student);
+  }, [student]);
+
+  // Filtered logs based on logFilter and analyticsPeriod
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      if (logFilter !== 'all' && log.type !== logFilter) {
+        if (logFilter === 'login' && log.type && log.type !== 'login') return false;
+        if (logFilter !== 'login' && log.type !== logFilter) return false;
+      }
+      if (analyticsPeriod === 'today') {
+        const todayKey = new Date().toISOString().slice(0, 10);
+        return (log.timestamp || '').slice(0, 10) === todayKey;
+      }
+      if (analyticsPeriod === 'week') {
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        return (log.timestamp || '') >= weekAgo;
+      }
+      return true;
+    });
+  }, [logs, logFilter, analyticsPeriod]);
 
   // Remaining subscription info calculation
   const subInfo = useMemo(() => {
@@ -565,50 +603,189 @@ export default function StudentModal({ student, onClose }) {
                 )}
               </div>
 
-              {/* Analytics Summary */}
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
-                    <p className="text-xs text-[#9ca3af] uppercase tracking-wider mb-1">Total Screen Time</p>
-                    <p className="text-xl font-bold text-[#4ade80]">
-                       {student.totalScreenTime ? Math.floor(student.totalScreenTime / 60) + ' mins' : '0 mins'}
+              {/* Analytics Header & Time Period Selector */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-1">
+                <div>
+                  <h3 className="text-sm font-bold text-[#f3f4f6] flex items-center space-x-2">
+                    <BarChart2 size={16} className="text-[#f59e0b]" />
+                    <span>App Usage & Activity</span>
+                  </h3>
+                  <p className="text-xs text-[#9ca3af]">Track screen time and learning engagement across time periods.</p>
+                </div>
+                <div className="flex items-center space-x-2 bg-[#141414] border border-[#262626] rounded-lg px-2.5 py-1 text-xs text-[#f3f4f6]">
+                  <Calendar size={13} className="text-[#f59e0b]" />
+                  <span className="text-[#9ca3af]">Period:</span>
+                  <select
+                    value={analyticsPeriod}
+                    onChange={(e) => setAnalyticsPeriod(e.target.value)}
+                    aria-label="Filter analytics by time period"
+                    className="bg-transparent border-none text-[#f3f4f6] font-semibold text-xs focus:outline-none cursor-pointer pr-1"
+                  >
+                    <option value="today" className="bg-[#1a1a1a] text-white">Today (Day View)</option>
+                    <option value="week" className="bg-[#1a1a1a] text-white">This Week (Last 7 Days)</option>
+                    <option value="all" className="bg-[#1a1a1a] text-white">All Time (Lifetime)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Analytics Summary Cards (Hours & Minutes) */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                 <div className="bg-[#1a1a1a] p-3.5 rounded-xl border border-[#262626]">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-[#9ca3af] uppercase tracking-wider font-semibold">Screen Time</p>
+                      <Clock size={13} className="text-[#4ade80]" />
+                    </div>
+                    <p className="text-lg sm:text-xl font-bold text-[#4ade80]">
+                       {formatDuration(periodStats.screenTime)}
+                    </p>
+                    <p className="text-[11px] text-[#6b7280] mt-0.5">
+                       {Math.floor(periodStats.screenTime / 60)} mins total
                     </p>
                  </div>
-                 <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
-                    <p className="text-xs text-[#9ca3af] uppercase tracking-wider mb-1">Last Active</p>
-                    <p className="text-sm font-medium text-[#f3f4f6]">
-                       {student.lastActive ? new Date(student.lastActive).toLocaleString() : 'Never'}
+
+                 <div className="bg-[#1a1a1a] p-3.5 rounded-xl border border-[#262626]">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-[#9ca3af] uppercase tracking-wider font-semibold">Video Watched</p>
+                      <Video size={13} className="text-blue-400" />
+                    </div>
+                    <p className="text-lg sm:text-xl font-bold text-blue-400">
+                       {formatDuration(periodStats.videoTime)}
+                    </p>
+                    <p className="text-[11px] text-[#6b7280] mt-0.5">
+                       {Math.floor(periodStats.videoTime / 60)} mins total
+                    </p>
+                 </div>
+
+                 <div className="bg-[#1a1a1a] p-3.5 rounded-xl border border-[#262626]">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-[#9ca3af] uppercase tracking-wider font-semibold">Notes & Books</p>
+                      <FileText size={13} className="text-purple-400" />
+                    </div>
+                    <p className="text-lg sm:text-xl font-bold text-purple-400">
+                       {formatDuration(periodStats.notesTime)}
+                    </p>
+                    <p className="text-[11px] text-[#6b7280] mt-0.5">
+                       {Math.floor(periodStats.notesTime / 60)} mins total
+                    </p>
+                 </div>
+
+                 <div className="bg-[#1a1a1a] p-3.5 rounded-xl border border-[#262626]">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-[#9ca3af] uppercase tracking-wider font-semibold">Last Active</p>
+                      <Zap size={13} className="text-[#f59e0b]" />
+                    </div>
+                    <p className="text-xs sm:text-sm font-semibold text-[#f3f4f6] truncate">
+                       {student.lastActive ? new Date(student.lastActive).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                    </p>
+                    <p className="text-[11px] text-[#6b7280] mt-0.5">
+                       Study: {formatDuration(periodStats.studyTime)}
                     </p>
                  </div>
               </div>
 
-              {/* Login Logs */}
+              {/* 7-Day Usage Visual Bar Chart */}
+              <div className="bg-[#1a1a1a] p-4 rounded-xl border border-[#262626]">
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="text-xs font-bold text-[#f3f4f6] uppercase tracking-wider flex items-center space-x-1.5">
+                    <BarChart2 size={13} className="text-[#4ade80]" />
+                    <span>7-Day App Activity Trend</span>
+                  </h4>
+                  <span className="text-[11px] text-[#6b7280]">Daily Screen Time</span>
+                </div>
+                
+                {(() => {
+                  const maxSecs = Math.max(...sevenDaysBreakdown.map(d => d.screenSecs), 1800);
+                  return (
+                    <div className="grid grid-cols-7 gap-1.5 sm:gap-2 pt-4 pb-1 items-end h-28 border-b border-[#262626]">
+                      {sevenDaysBreakdown.map((day, idx) => {
+                        const heightPct = Math.max(6, Math.min(100, Math.round((day.screenSecs / maxSecs) * 100)));
+                        const isNonZero = day.screenSecs > 0;
+                        return (
+                          <div key={idx} className="flex flex-col items-center h-full justify-end group relative">
+                            <span className="text-[10px] font-mono text-[#9ca3af] mb-1 group-hover:text-white transition-colors">
+                              {isNonZero ? formatDuration(day.screenSecs, { compact: true }) : '-'}
+                            </span>
+                            <div className="w-full bg-[#121212] rounded-t-md h-full flex items-end overflow-hidden">
+                              <div 
+                                style={{ height: `${heightPct}%` }}
+                                className={`w-full rounded-t-sm transition-all duration-300 ${
+                                  day.isToday 
+                                    ? 'bg-gradient-to-t from-[#22c55e] to-[#4ade80]' 
+                                    : (isNonZero ? 'bg-gradient-to-t from-[#0284c7] to-[#38bdf8]' : 'bg-[#262626]')
+                                }`}
+                              />
+                            </div>
+                            <span className={`text-[10px] sm:text-[11px] mt-1.5 truncate ${day.isToday ? 'font-bold text-[#4ade80]' : 'text-[#6b7280]'}`}>
+                              {day.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Activity Timeline with Filter */}
               <div>
-                <h3 className="text-sm font-bold text-[#f3f4f6] mb-3 flex items-center space-x-2">
-                  <Clock size={16} className="text-[#f59e0b]" /> <span>Activity Timeline</span>
-                </h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                  <h3 className="text-sm font-bold text-[#f3f4f6] flex items-center space-x-2">
+                    <Clock size={16} className="text-[#f59e0b]" /> 
+                    <span>Activity Timeline</span>
+                    <span className="text-xs font-normal text-[#6b7280]">({filteredLogs.length} events)</span>
+                  </h3>
+
+                  <div className="flex items-center space-x-1.5 bg-[#141414] border border-[#262626] rounded-lg px-2 py-1 text-xs">
+                    <Filter size={12} className="text-[#9ca3af]" />
+                    <select
+                      value={logFilter}
+                      onChange={(e) => setLogFilter(e.target.value)}
+                      aria-label="Filter activity timeline by type"
+                      className="bg-transparent border-none text-[#f3f4f6] text-xs focus:outline-none cursor-pointer"
+                    >
+                      <option value="all" className="bg-[#1a1a1a] text-white">All Events</option>
+                      <option value="watch" className="bg-[#1a1a1a] text-white">Video Watched</option>
+                      <option value="notes" className="bg-[#1a1a1a] text-white">Notes / Books Read</option>
+                      <option value="login" className="bg-[#1a1a1a] text-white">Logins</option>
+                      <option value="download" className="bg-[#1a1a1a] text-white">Downloads</option>
+                    </select>
+                  </div>
+                </div>
+
                 {loadingLogs ? (
-                  <p className="text-sm text-[#9ca3af] text-center py-4">Loading logs...</p>
-                ) : logs.length > 0 ? (
-                  <div className="space-y-3">
-                    {logs.map(log => (
-                      <div key={log.id} className="bg-[#1a1a1a] border border-[#262626] p-3 rounded-lg flex justify-between items-center text-sm">
-                        <div>
-                          <p className="font-medium text-[#f3f4f6] flex items-center space-x-2">
-                             {log.type === 'watch' && <span className="text-blue-400 bg-blue-900/20 px-2 py-0.5 rounded text-xs font-bold">WATCHED</span>}
-                             {log.type === 'download' && <span className="text-green-400 bg-green-900/20 px-2 py-0.5 rounded text-xs font-bold">DOWNLOADED</span>}
-                             {(!log.type || log.type === 'login') && <span className="text-[#f59e0b] bg-[#f59e0b]/20 px-2 py-0.5 rounded text-xs font-bold">LOGIN</span>}
-                             <span>{log.videoTitle || 'App Login'}</span>
+                  <p className="text-sm text-[#9ca3af] text-center py-4">Loading activity logs...</p>
+                ) : filteredLogs.length > 0 ? (
+                  <div className="space-y-2.5 max-h-80 overflow-y-auto custom-scrollbar pr-1">
+                    {filteredLogs.map(log => (
+                      <div key={log.id} className="bg-[#1a1a1a] border border-[#262626] p-3 rounded-lg flex justify-between items-center text-sm hover:border-[#3b3b3b] transition-colors">
+                        <div className="min-w-0 pr-3">
+                          <p className="font-medium text-[#f3f4f6] flex items-center space-x-2 truncate">
+                             {log.type === 'watch' && <span className="text-blue-400 bg-blue-900/20 px-2 py-0.5 rounded text-xs font-bold shrink-0">WATCHED</span>}
+                             {log.type === 'notes' && <span className="text-purple-400 bg-purple-900/20 px-2 py-0.5 rounded text-xs font-bold shrink-0">READ</span>}
+                             {log.type === 'download' && <span className="text-green-400 bg-green-900/20 px-2 py-0.5 rounded text-xs font-bold shrink-0">DOWNLOADED</span>}
+                             {(!log.type || log.type === 'login') && <span className="text-[#f59e0b] bg-[#f59e0b]/20 px-2 py-0.5 rounded text-xs font-bold shrink-0">LOGIN</span>}
+                             <span className="truncate">{log.videoTitle || log.noteTitle || (log.type === 'login' ? 'App Login' : 'Study Action')}</span>
                           </p>
-                          <p className="text-xs text-[#9ca3af] mt-1">{new Date(log.timestamp).toLocaleString()}</p>
+                          <div className="flex items-center gap-2 text-xs text-[#6b7280] mt-1">
+                            <span>{new Date(log.timestamp).toLocaleString()}</span>
+                            {log.subjectName && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[#9ca3af]">{log.subjectName}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-xs font-mono text-[#f59e0b] bg-[#121212] border border-[#262626] px-2 py-1 rounded">
-                          {log.durationSecs ? `${Math.floor(log.durationSecs / 60)}m ${log.durationSecs % 60}s` : (log.device?.model || 'Device')}
+                        <span className="text-xs font-mono text-[#f59e0b] bg-[#121212] border border-[#262626] px-2 py-1 rounded shrink-0">
+                          {log.durationSecs ? formatDuration(log.durationSecs, { compact: true, showSeconds: true }) : (log.device?.model || 'Device')}
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-[#9ca3af] text-center py-4 border border-dashed border-[#262626] rounded-lg bg-[#1a1a1a]">No activity records found.</p>
+                  <p className="text-sm text-[#9ca3af] text-center py-6 border border-dashed border-[#262626] rounded-lg bg-[#1a1a1a]">
+                    No activity records found for this filter.
+                  </p>
                 )}
               </div>
             </div>
