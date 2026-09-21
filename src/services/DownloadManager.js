@@ -676,6 +676,163 @@ class DownloadManagerService {
     return false;
   }
 
+  async getPdfLocalUrl(item) {
+    if (!item) return '';
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const strId = String(item.id);
+        const relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
+        const uriResult = await Filesystem.getUri({
+          path: relPath,
+          directory: Directory.Data
+        });
+        if (uriResult && uriResult.uri) {
+          return Capacitor.convertFileSrc(uriResult.uri);
+        }
+      } catch (e) {
+        console.warn('[DownloadManager] Failed to get local PDF URI, falling back to remote:', e);
+      }
+    }
+    return item.url || '';
+  }
+
+  async saveToDevice(item) {
+    const strId = String(item.id);
+    const cleanTitle = (item.title || 'Document').replace(/[\\/:*?"<>|]/g, '_').trim();
+    const fileName = cleanTitle.toLowerCase().endsWith('.pdf') ? cleanTitle : `${cleanTitle}.pdf`;
+
+    if (Capacitor.isNativePlatform()) {
+      let relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
+      const isLocallySaved = this.isDownloaded(strId);
+      if (!isLocallySaved) {
+        await this.downloadPdf(item);
+        relPath = `downloads/${strId}/document_${strId}.pdf`;
+      }
+      return await DownloadService.saveToDeviceDownloads({
+        path: relPath,
+        fileName: fileName
+      });
+    } else {
+      try {
+        const res = await fetch(item.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        return { success: true };
+      } catch (e) {
+        console.warn('[DownloadManager] Web saveToDevice fallback to direct open:', e);
+        const a = document.createElement('a');
+        a.href = item.url;
+        a.download = fileName;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return { success: true };
+      }
+    }
+  }
+
+  async sharePdf(item) {
+    const strId = String(item.id);
+    const cleanTitle = (item.title || 'Document').replace(/[\\/:*?"<>|]/g, '_').trim();
+
+    if (Capacitor.isNativePlatform()) {
+      let relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
+      const isLocallySaved = this.isDownloaded(strId);
+      if (!isLocallySaved) {
+        await this.downloadPdf(item);
+        relPath = `downloads/${strId}/document_${strId}.pdf`;
+      }
+      return await DownloadService.sharePdf({
+        path: relPath,
+        title: item.title || 'Study Notes'
+      });
+    } else {
+      try {
+        if (navigator.share) {
+          const res = await fetch(item.url);
+          const blob = await res.blob();
+          const file = new File([blob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: item.title || 'Study Notes',
+              files: [file]
+            });
+            return true;
+          } else {
+            await navigator.share({
+              title: item.title || 'Study Notes',
+              url: item.url
+            });
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('[DownloadManager] Web share failed:', e);
+      }
+      if (item.url) {
+        window.open(item.url, '_blank');
+      }
+      return false;
+    }
+  }
+
+  getStorageDetails() {
+    try {
+      const items = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+      let videoCount = 0;
+      let videoSizeBytes = 0;
+      let pdfCount = 0;
+      let pdfSizeBytes = 0;
+
+      items.forEach(item => {
+        const size = Number(item.sizeBytes) || 0;
+        if (item.type === 'pdf') {
+          pdfCount++;
+          pdfSizeBytes += size;
+        } else {
+          videoCount++;
+          videoSizeBytes += size;
+        }
+      });
+
+      const totalSizeBytes = videoSizeBytes + pdfSizeBytes;
+      return {
+        totalItems: items.length,
+        totalSizeBytes,
+        formattedTotalSize: formatBytes(totalSizeBytes),
+        videoCount,
+        videoSizeBytes,
+        formattedVideoSize: formatBytes(videoSizeBytes),
+        pdfCount,
+        pdfSizeBytes,
+        formattedPdfSize: formatBytes(pdfSizeBytes),
+        items
+      };
+    } catch (e) {
+      return {
+        totalItems: 0,
+        totalSizeBytes: 0,
+        formattedTotalSize: '0 B',
+        videoCount: 0,
+        videoSizeBytes: 0,
+        formattedVideoSize: '0 B',
+        pdfCount: 0,
+        pdfSizeBytes: 0,
+        formattedPdfSize: '0 B',
+        items: []
+      };
+    }
+  }
+
   isDownloaded(itemId) {
     const strId = String(itemId);
     try {

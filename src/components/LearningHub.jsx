@@ -23,7 +23,10 @@ import {
   AlertTriangle,
   HardDrive,
   Loader2,
-  Send
+  Send,
+  FolderTree,
+  List,
+  PieChart
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -62,7 +65,15 @@ const LearningHub = ({ user, onLogout }) => {
   const [offlineToast, setOfflineToast] = useState('');
   const [mgrState, setMgrState] = useState(downloadManager.getState());
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showStorageModal, setShowStorageModal] = useState(false);
   const [deleteModalItem, setDeleteModalItem] = useState(null);
+  const [downloadFilter, setDownloadFilter] = useState('all'); // 'all' | 'video' | 'pdf'
+  const [downloadViewMode, setDownloadViewMode] = useState(() => localStorage.getItem('downloaded_view_mode') || 'folders');
+
+  const handleSetViewMode = (mode) => {
+    setDownloadViewMode(mode);
+    localStorage.setItem('downloaded_view_mode', mode);
+  };
 
   // Subscribe to central download manager
   useEffect(() => {
@@ -74,6 +85,10 @@ const LearningHub = ({ user, onLogout }) => {
 
   const totalStorageBytes = useMemo(() => {
     return downloadedLectures.reduce((acc, l) => acc + (l.sizeBytes || 0), 0);
+  }, [downloadedLectures]);
+
+  const storageDetails = useMemo(() => {
+    return downloadManager.getStorageDetails();
   }, [downloadedLectures]);
 
   const normalizedDownloads = useMemo(() => {
@@ -93,9 +108,18 @@ const LearningHub = ({ user, onLogout }) => {
     });
   }, [downloadedLectures]);
 
+  const filteredNormalizedDownloads = useMemo(() => {
+    return normalizedDownloads.filter(item => {
+      if (downloadFilter === 'all') return true;
+      if (downloadFilter === 'video') return item.type !== 'pdf';
+      if (downloadFilter === 'pdf') return item.type === 'pdf';
+      return true;
+    });
+  }, [normalizedDownloads, downloadFilter]);
+
   const downloadSubjectGroups = useMemo(() => {
     const map = {};
-    normalizedDownloads.forEach(item => {
+    filteredNormalizedDownloads.forEach(item => {
       const sub = item.subjectName || 'General';
       if (!map[sub]) {
         map[sub] = { name: sub, items: [], totalBytes: 0 };
@@ -104,7 +128,16 @@ const LearningHub = ({ user, onLogout }) => {
       map[sub].totalBytes += (item.sizeBytes || 0);
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [normalizedDownloads]);
+  }, [filteredNormalizedDownloads]);
+
+  const flatFilteredItems = useMemo(() => {
+    let list = filteredNormalizedDownloads;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(item => (item.title || '').toLowerCase().includes(q) || (item.subjectName || '').toLowerCase().includes(q));
+    }
+    return list;
+  }, [filteredNormalizedDownloads, searchQuery]);
 
   const confirmDelete = async () => {
     if (!deleteModalItem) return;
@@ -556,18 +589,16 @@ const LearningHub = ({ user, onLogout }) => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          {activeTab === 'courses' && (
-            <div className="search-container">
-              <Search size={16} className="search-icon" />
-              <input 
-                type="text" 
-                className="search-input" 
-                placeholder="Search..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          )}
+          <div className="search-container">
+            <Search size={16} className="search-icon" />
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder={activeTab === 'courses' ? "Search courses..." : "Search downloads..."} 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
           <button 
             className="student-avatar-btn" 
             onClick={() => setShowProfileModal(true)}
@@ -584,7 +615,7 @@ const LearningHub = ({ user, onLogout }) => {
       {/* DOWNLOADED TAB VIEW */}
       {activeTab === 'downloads' && (
         <div className="main-content pb-24">
-          <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button 
                 onClick={() => setActiveTab('courses')}
@@ -602,14 +633,158 @@ const LearningHub = ({ user, onLogout }) => {
               >
                 <ArrowLeft size={18} />
               </button>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Downloaded Lectures</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Downloaded Content</span>
               <span className="badge-count">{downloadedLectures.length}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--accent)', background: 'rgba(245, 158, 11, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
-              <HardDrive size={14} />
-              <span>{formatBytes(totalStorageBytes)} Device Storage</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--accent)', background: 'rgba(245, 158, 11, 0.1)', padding: '5px 10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                <HardDrive size={14} />
+                <span>{storageDetails.formattedTotalSize} Storage</span>
+              </div>
+              <button
+                onClick={() => setShowStorageModal(true)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: 'var(--text-primary)',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+                title="View detailed storage breakdown"
+              >
+                <PieChart size={13} style={{ color: 'var(--accent)' }} />
+                <span>Details</span>
+              </button>
             </div>
           </div>
+
+          {/* Filter Tabs and View Mode (Folders vs All Files) */}
+          {downloadedLectures.length > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              gap: '10px', 
+              marginBottom: '16px', 
+              flexWrap: 'wrap',
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)'
+            }}>
+              {/* Filter Pills */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setDownloadFilter('all')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: downloadFilter === 'all' ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                    color: downloadFilter === 'all' ? '#000' : 'var(--text-secondary)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  All ({downloadedLectures.length})
+                </button>
+                <button
+                  onClick={() => setDownloadFilter('video')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: downloadFilter === 'video' ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                    color: downloadFilter === 'video' ? '#000' : 'var(--text-secondary)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <Video size={12} />
+                  <span>Videos ({storageDetails.videoCount})</span>
+                </button>
+                <button
+                  onClick={() => setDownloadFilter('pdf')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: downloadFilter === 'pdf' ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                    color: downloadFilter === 'pdf' ? '#000' : 'var(--text-secondary)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <FileText size={12} />
+                  <span>Notes & PDFs ({storageDetails.pdfCount})</span>
+                </button>
+              </div>
+
+              {/* View Mode Toggle: Folders vs All Files */}
+              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.35)', padding: '2px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <button
+                  onClick={() => handleSetViewMode('folders')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 9px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: downloadViewMode === 'folders' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                    color: downloadViewMode === 'folders' ? '#fff' : '#9ca3af',
+                    transition: 'all 0.15s'
+                  }}
+                  title="Folder Hierarchy View"
+                >
+                  <FolderTree size={13} />
+                  <span>Folders</span>
+                </button>
+                <button
+                  onClick={() => handleSetViewMode('flat')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 9px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: downloadViewMode === 'flat' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                    color: downloadViewMode === 'flat' ? '#fff' : '#9ca3af',
+                    transition: 'all 0.15s'
+                  }}
+                  title="Flat All Files View"
+                >
+                  <List size={13} />
+                  <span>All Files</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Active & Queued Downloads Panel */}
           {(mgrState.active.length > 0 || mgrState.queued.length > 0) && (
@@ -708,8 +883,8 @@ const LearningHub = ({ user, onLogout }) => {
             </div>
           )}
 
-          {/* Breadcrumbs inside Downloaded Tab when navigated into a subject/folder */}
-          {downloadPath.length > 0 && (
+          {/* Breadcrumbs inside Downloaded Tab when navigated into a subject/folder (Folder mode only) */}
+          {downloadViewMode === 'folders' && downloadPath.length > 0 && (
             <div className="breadcrumbs" style={{ marginTop: '12px', marginBottom: '8px' }}>
               <button 
                 onClick={() => setDownloadPath(prev => prev.slice(0, -1))}
@@ -756,7 +931,7 @@ const LearningHub = ({ user, onLogout }) => {
                 <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '18px', borderRadius: '50%', marginBottom: '16px', color: 'var(--accent)' }}>
                   <HardDriveDownload size={36} />
                 </div>
-                <h3 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '8px', fontWeight: '600' }}>No Downloaded Lectures</h3>
+                <h3 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '8px', fontWeight: '600' }}>No Downloaded Content</h3>
                 <p style={{ color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: '1.5', fontSize: '0.875rem', marginBottom: '20px' }}>
                   Lectures and notes you download will be stored securely on your device for offline studying without internet.
                 </p>
@@ -768,38 +943,136 @@ const LearningHub = ({ user, onLogout }) => {
                   Browse Courses
                 </button>
               </div>
-            ) : downloadPath.length === 0 ? (
-              /* Root Level: Render only subjects that have downloaded content */
-              downloadSubjectGroups.map((group) => (
-                <div 
-                  key={group.name}
-                  className="list-item"
-                  onClick={() => setDownloadPath([{ title: group.name, isRootSubject: true }])}
-                >
-                  <div className="item-icon-container folder">
-                    <BookOpen size={24} />
-                  </div>
-                  <div className="item-details">
-                    <div className="item-title">{group.name}</div>
-                    <div className="item-meta">
-                      <span>{group.items.length} downloaded {group.items.length === 1 ? 'item' : 'items'}</span>
-                      {group.totalBytes > 0 && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
-                          <HardDrive size={12} />
-                          {formatBytes(group.totalBytes)}
-                        </span>
-                      )}
+            ) : downloadViewMode === 'flat' ? (
+              /* Flat List Mode: Render all downloaded items filtered */
+              flatFilteredItems.length === 0 ? (
+                <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
+                  <FileText size={32} style={{ margin: '0 auto 12px', opacity: 0.5, color: 'var(--accent)' }} />
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>No matching downloaded items</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Try selecting a different filter tab above or clearing search.</p>
+                </div>
+              ) : (
+                flatFilteredItems.map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="download-card"
+                    onClick={() => handlePlayDownloaded(item)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
+                      <div className={item.type === 'video' && item.thumbnail ? "item-thumbnail-container" : `item-icon-container ${item.type || 'video'}`} style={{ width: '100px', height: '60px', margin: 0, flexShrink: 0 }}>
+                        {item.type === 'video' && item.thumbnail ? (
+                          <img src={item.thumbnail} alt="" className="item-thumbnail" />
+                        ) : item.type === 'pdf' ? (
+                          <FileText size={24} style={{ color: '#ef4444' }} />
+                        ) : (
+                          <Video size={24} style={{ color: 'var(--accent)' }} />
+                        )}
+                      </div>
+                      <div className="item-details" style={{ minWidth: 0 }}>
+                        <div className="item-title" style={{ fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.title}
+                        </div>
+                        <div className="item-meta" style={{ gap: '8px', fontSize: '0.78rem', flexWrap: 'wrap', marginTop: '3px' }}>
+                          {item.subjectName && (
+                            <span style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#d1d5db', padding: '1px 7px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 500 }}>
+                              {item.subjectName}
+                            </span>
+                          )}
+                          {item.type === 'pdf' ? (
+                            <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '1px 6px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 600 }}>
+                              PDF Document
+                            </span>
+                          ) : (
+                            item.quality && (
+                              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 600 }}>
+                                {item.quality}
+                              </span>
+                            )
+                          )}
+                          {item.sizeBytes > 0 && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 3, color: '#38bdf8', fontWeight: 500 }}>
+                              <HardDrive size={11} />
+                              {formatBytes(item.sizeBytes)}
+                            </span>
+                          )}
+                          {item.type === 'video' && item.duration > 0 && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <Clock size={11} />
+                              {formatDuration(item.duration)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteModalItem(item);
+                        }}
+                        style={{ 
+                          background: 'rgba(239, 68, 68, 0.1)', 
+                          border: '1px solid rgba(239, 68, 68, 0.3)', 
+                          color: '#ef4444', 
+                          padding: '6px 10px', 
+                          borderRadius: '6px', 
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600
+                        }}
+                        title="Delete Download"
+                      >
+                        <Trash2 size={14} />
+                        <span>Delete</span>
+                      </button>
                     </div>
                   </div>
-                  <ChevronRight size={20} style={{ color: '#6b7280', flexShrink: 0 }} />
+                ))
+              )
+            ) : downloadPath.length === 0 ? (
+              /* Root Level: Render only subjects that have downloaded content */
+              downloadSubjectGroups.length === 0 ? (
+                <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
+                  <FileText size={32} style={{ margin: '0 auto 12px', opacity: 0.5, color: 'var(--accent)' }} />
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>No items match your filter</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Try selecting a different filter tab above.</p>
                 </div>
-              ))
+              ) : (
+                downloadSubjectGroups.map((group) => (
+                  <div 
+                    key={group.name}
+                    className="list-item"
+                    onClick={() => setDownloadPath([{ title: group.name, isRootSubject: true }])}
+                  >
+                    <div className="item-icon-container folder">
+                      <BookOpen size={24} />
+                    </div>
+                    <div className="item-details">
+                      <div className="item-title">{group.name}</div>
+                      <div className="item-meta">
+                        <span>{group.items.length} downloaded {group.items.length === 1 ? 'item' : 'items'}</span>
+                        {group.totalBytes > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
+                            <HardDrive size={12} />
+                            {formatBytes(group.totalBytes)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight size={20} style={{ color: '#6b7280', flexShrink: 0 }} />
+                  </div>
+                ))
+              )
             ) : (
               /* Sub-level: Render folders and files inside selected subject */
               (() => {
                 const currentFolder = downloadPath[downloadPath.length - 1];
                 const rootSubject = downloadPath[0].title;
-                const subjectItems = normalizedDownloads.filter(d => d.subjectName === rootSubject);
+                const subjectItems = filteredNormalizedDownloads.filter(d => d.subjectName === rootSubject);
 
                 let targetPath = "";
                 if (!currentFolder.isRootSubject) {
@@ -1164,13 +1437,33 @@ const LearningHub = ({ user, onLogout }) => {
                 <span className="profile-detail-label">Device Status</span>
                 <span className="profile-detail-value" style={{ color: '#4ade80' }}>● Bound & Verified</span>
               </div>
-              <div className="profile-detail-row">
+              <div className="profile-detail-row" style={{ alignItems: 'center' }}>
                 <span className="profile-detail-label">Offline Storage</span>
-                <span className="profile-detail-value">{downloadedLectures.length} files ({formatBytes(totalStorageBytes)})</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="profile-detail-value">{downloadedLectures.length} files ({formatBytes(totalStorageBytes)})</span>
+                  <button 
+                    onClick={() => {
+                      setShowProfileModal(false);
+                      setShowStorageModal(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      color: 'var(--accent)',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Details
+                  </button>
+                </div>
               </div>
               <div className="profile-detail-row">
                 <span className="profile-detail-label">App Version</span>
-                <span className="profile-detail-value">v2.3.11</span>
+                <span className="profile-detail-value">v2.4.9</span>
               </div>
             </div>
 
@@ -1186,6 +1479,186 @@ const LearningHub = ({ user, onLogout }) => {
               <div style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: '8px' }}>
                 Support, token queries & device transfer: @nextbridge19
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Storage Breakdown Details Modal */}
+      {showStorageModal && (
+        <div className="modal-backdrop" onClick={() => setShowStorageModal(false)}>
+          <div className="profile-modal-card" style={{ maxWidth: '460px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '10px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HardDrive size={20} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Storage Details
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowStorageModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Total Storage Overview */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Total Storage Used</span>
+                <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent)' }}>
+                  {storageDetails.formattedTotalSize}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: '10px' }}>
+                {storageDetails.totalItems} total downloaded {storageDetails.totalItems === 1 ? 'item' : 'items'} saved on device
+              </div>
+
+              {/* Proportional visual bar */}
+              <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                {storageDetails.totalSizeBytes > 0 && (
+                  <>
+                    <div 
+                      style={{ 
+                        width: `${(storageDetails.videoSizeBytes / storageDetails.totalSizeBytes) * 100}%`, 
+                        background: '#f59e0b',
+                        transition: 'width 0.3s'
+                      }} 
+                      title={`Videos: ${storageDetails.formattedVideoSize}`}
+                    />
+                    <div 
+                      style={{ 
+                        width: `${(storageDetails.pdfSizeBytes / storageDetails.totalSizeBytes) * 100}%`, 
+                        background: '#ef4444',
+                        transition: 'width 0.3s'
+                      }} 
+                      title={`Notes & PDFs: ${storageDetails.formattedPdfSize}`}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Cards for Videos & Notes breakdown */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)', marginBottom: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                  <Video size={14} />
+                  <span>Videos</span>
+                </div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {storageDetails.formattedVideoSize}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '2px' }}>
+                  {storageDetails.videoCount} {storageDetails.videoCount === 1 ? 'video' : 'videos'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444', marginBottom: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+                  <FileText size={14} />
+                  <span>Notes & PDFs</span>
+                </div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {storageDetails.formattedPdfSize}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '2px' }}>
+                  {storageDetails.pdfCount} {storageDetails.pdfCount === 1 ? 'document' : 'documents'}
+                </div>
+              </div>
+            </div>
+
+            {/* Items list sorted by size */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Downloaded Files ({storageDetails.items.length})
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Sorted by size</span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px', minHeight: '120px', maxHeight: '220px' }}>
+              {storageDetails.items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: '0.85rem' }}>
+                  No downloads stored on device
+                </div>
+              ) : (
+                [...storageDetails.items]
+                  .sort((a, b) => (Number(b.sizeBytes) || 0) - (Number(a.sizeBytes) || 0))
+                  .map(item => (
+                    <div 
+                      key={item.id} 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: '8px 10px', 
+                        background: 'rgba(255,255,255,0.02)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '8px',
+                        gap: '8px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                        {item.type === 'pdf' ? (
+                          <FileText size={16} style={{ color: '#ef4444', flexShrink: 0 }} />
+                        ) : (
+                          <Video size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                        )}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.title}
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>
+                            {item.subjectName || 'General'}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8' }}>
+                          {item.formattedSize || formatBytes(item.sizeBytes || 0)}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setShowStorageModal(false);
+                            setDeleteModalItem(item);
+                          }}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: 'none',
+                            color: '#ef4444',
+                            borderRadius: '4px',
+                            padding: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                          title="Delete file"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+
+            <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowStorageModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid var(--border-color)',
+                  color: '#fff',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
@@ -1246,7 +1719,7 @@ const LearningHub = ({ user, onLogout }) => {
                 }}
               >
                 <Trash2 size={15} />
-                <span>Delete Video</span>
+                <span>Delete</span>
               </button>
             </div>
           </div>

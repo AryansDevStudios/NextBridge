@@ -8,7 +8,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink, Share2, ChevronDown, HardDrive, Smartphone, Check } from 'lucide-react';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
@@ -830,6 +830,16 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [isPdfDownloaded, setIsPdfDownloaded] = useState(() => downloadManager.isDownloaded(item.id));
   const [isPdfDownloading, setIsPdfDownloading] = useState(() => downloadManager.isDownloading(item.id));
   const [pdfDownloadError, setPdfDownloadError] = useState('');
+  const [resolvedPdfUrl, setResolvedPdfUrl] = useState(item.url || '');
+  const [showPdfDownloadMenu, setShowPdfDownloadMenu] = useState(false);
+  const [isSavingToDevice, setIsSavingToDevice] = useState(false);
+  const [isSharingPdf, setIsSharingPdf] = useState(false);
+  const [pdfActionToast, setPdfActionToast] = useState('');
+
+  const showToast = (msg) => {
+    setPdfActionToast(msg);
+    setTimeout(() => setPdfActionToast(''), 3500);
+  };
 
   useEffect(() => {
     if (item.type === 'pdf') {
@@ -838,12 +848,27 @@ const VideoPlayer = ({ item, onClose, user }) => {
         PrivacyScreen.disable().catch(console.error);
       }
 
+      let isMounted = true;
+      const syncPdfUrl = async () => {
+        try {
+          const localUrl = await downloadManager.getPdfLocalUrl(item);
+          if (isMounted && localUrl) {
+            setResolvedPdfUrl(localUrl);
+          }
+        } catch (e) {
+          if (isMounted) setResolvedPdfUrl(item.url || '');
+        }
+      };
+      syncPdfUrl();
+
       const unsub = downloadManager.subscribe(() => {
         setIsPdfDownloaded(downloadManager.isDownloaded(item.id));
         setIsPdfDownloading(downloadManager.isDownloading(item.id));
+        syncPdfUrl();
       });
 
       return () => {
+        isMounted = false;
         unsub();
         if (Capacitor.isNativePlatform()) {
           PrivacyScreen.disable().catch(console.error);
@@ -857,14 +882,42 @@ const VideoPlayer = ({ item, onClose, user }) => {
         PrivacyScreen.disable().catch(console.error);
       }
     };
-  }, [item.type, item.id]);
+  }, [item.type, item.id, isPdfDownloaded]);
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdfToApp = async () => {
+    setShowPdfDownloadMenu(false);
     setPdfDownloadError('');
     try {
       await downloadManager.downloadPdf(item);
+      showToast('Saved to App for offline reading!');
     } catch (err) {
       setPdfDownloadError(err.message || 'Failed to download PDF');
+    }
+  };
+
+  const handleSavePdfToDevice = async () => {
+    setShowPdfDownloadMenu(false);
+    setIsSavingToDevice(true);
+    setPdfDownloadError('');
+    try {
+      await downloadManager.saveToDevice(item);
+      showToast('Saved to device Downloads folder!');
+    } catch (err) {
+      setPdfDownloadError(err.message || 'Failed to save to device');
+    } finally {
+      setIsSavingToDevice(false);
+    }
+  };
+
+  const handleSharePdf = async () => {
+    setIsSharingPdf(true);
+    setPdfDownloadError('');
+    try {
+      await downloadManager.sharePdf(item);
+    } catch (err) {
+      setPdfDownloadError(err.message || 'Failed to share PDF');
+    } finally {
+      setIsSharingPdf(false);
     }
   };
 
@@ -889,6 +942,32 @@ const VideoPlayer = ({ item, onClose, user }) => {
           overflow: 'hidden'
         }}
       >
+        {/* PDF Toast Notice */}
+        {pdfActionToast && (
+          <div style={{
+            position: 'absolute',
+            top: '56px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(24, 24, 27, 0.95)',
+            border: '1px solid #38bdf8',
+            color: '#fff',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            zIndex: 10005,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            pointerEvents: 'none'
+          }}>
+            <CheckCircle size={15} style={{ color: '#38bdf8' }} />
+            <span>{pdfActionToast}</span>
+          </div>
+        )}
+
         <div style={{ 
           padding: '10px 16px', 
           background: '#181818', 
@@ -920,66 +999,174 @@ const VideoPlayer = ({ item, onClose, user }) => {
               {item.title}
             </h1>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isPdfDownloaded ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ 
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+            {/* Share Button */}
+            <button
+              onClick={handleSharePdf}
+              disabled={isSharingPdf}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#f3f4f6',
+                padding: '6px 11px',
+                borderRadius: 6,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                cursor: isSharingPdf ? 'default' : 'pointer'
+              }}
+              title="Share PDF via WhatsApp, Telegram, etc."
+            >
+              {isSharingPdf ? <Loader2 size={13} className="spin-icon" /> : <Share2 size={13} />}
+              <span>{isSharingPdf ? 'Sharing...' : 'Share'}</span>
+            </button>
+
+            {/* Download Dropdown Container */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowPdfDownloadMenu(prev => !prev)}
+                disabled={isPdfDownloading || isSavingToDevice}
+                style={{
+                  background: isPdfDownloaded ? 'rgba(74,222,128,0.15)' : 'var(--accent)',
+                  border: isPdfDownloaded ? '1px solid rgba(74,222,128,0.3)' : 'none',
+                  color: isPdfDownloaded ? '#4ade80' : '#000',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  cursor: (isPdfDownloading || isSavingToDevice) ? 'default' : 'pointer'
+                }}
+              >
+                {isPdfDownloading || isSavingToDevice ? (
+                  <Loader2 size={13} className="spin-icon" />
+                ) : isPdfDownloaded ? (
+                  <CheckCircle size={13} />
+                ) : (
+                  <Download size={13} />
+                )}
+                <span>
+                  {isPdfDownloading ? 'Saving...' : isSavingToDevice ? 'Exporting...' : isPdfDownloaded ? 'Saved' : 'Download'}
+                </span>
+                <ChevronDown size={12} style={{ opacity: 0.8 }} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {showPdfDownloadMenu && (
+                <>
+                  <div 
+                    style={{ position: 'fixed', inset: 0, zIndex: 10000 }} 
+                    onClick={() => setShowPdfDownloadMenu(false)} 
+                  />
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '6px',
+                      width: '210px',
+                      background: '#1f1f23',
+                      border: '1px solid #383838',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.7)',
+                      padding: '6px',
+                      zIndex: 10001,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}
+                  >
+                    <button
+                      onClick={handleDownloadPdfToApp}
+                      disabled={isPdfDownloading}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '9px',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontWeight: 500,
+                        cursor: isPdfDownloading ? 'default' : 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#2d2d30'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <Smartphone size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600 }}>{isPdfDownloaded ? 'Downloaded to App' : 'Download to App'}</span>
+                        <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Offline reading in app</span>
+                      </div>
+                      {isPdfDownloaded && <Check size={14} style={{ color: '#4ade80', marginLeft: 'auto' }} />}
+                    </button>
+
+                    <button
+                      onClick={handleSavePdfToDevice}
+                      disabled={isSavingToDevice}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '9px',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        fontWeight: 500,
+                        cursor: isSavingToDevice ? 'default' : 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#2d2d30'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <HardDrive size={15} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600 }}>Save to Device</span>
+                        <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Public Downloads folder</span>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* External Reader Button (if downloaded) */}
+            {isPdfDownloaded && Capacitor.isNativePlatform() && (
+              <button
+                onClick={handleOpenExternalPdf}
+                style={{ 
+                  background: 'rgba(255,255,255,0.1)', 
+                  border: 'none', 
+                  color: '#fff', 
+                  padding: '6px 9px', 
+                  borderRadius: 6, 
+                  fontSize: '0.75rem', 
+                  fontWeight: 600, 
                   display: 'flex', 
                   alignItems: 'center', 
                   gap: 4, 
-                  fontSize: '0.75rem', 
-                  color: '#4ade80', 
-                  fontWeight: 600, 
-                  background: 'rgba(74,222,128,0.15)', 
-                  padding: '4px 8px', 
-                  borderRadius: 6 
-                }}>
-                  <CheckCircle size={13} /> Saved
-                </span>
-                {Capacitor.isNativePlatform() && (
-                  <button
-                    onClick={handleOpenExternalPdf}
-                    style={{ 
-                      background: 'rgba(255,255,255,0.1)', 
-                      border: 'none', 
-                      color: '#fff', 
-                      padding: '5px 9px', 
-                      borderRadius: 6, 
-                      fontSize: '0.75rem', 
-                      fontWeight: 600, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 4, 
-                      cursor: 'pointer' 
-                    }}
-                    title="Open in System PDF Reader"
-                  >
-                    <ExternalLink size={13} /> Reader
-                  </button>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={handleDownloadPdf}
-                disabled={isPdfDownloading}
-                style={{ 
-                  background: 'var(--accent)', 
-                  border: 'none', 
-                  color: '#000', 
-                  padding: '5px 10px', 
-                  borderRadius: 6, 
-                  fontSize: '0.75rem', 
-                  fontWeight: 700, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 5, 
-                  cursor: isPdfDownloading ? 'default' : 'pointer' 
+                  cursor: 'pointer' 
                 }}
+                title="Open in System PDF Reader"
               >
-                {isPdfDownloading ? <Loader2 size={13} className="spin-icon" /> : <Download size={13} />}
-                <span>{isPdfDownloading ? 'Saving...' : 'Download PDF'}</span>
+                <ExternalLink size={13} /> Reader
               </button>
             )}
+
             <button 
               className="flex items-center gap-1.5 bg-[#262626] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#333]" 
               onClick={onClose}
@@ -988,9 +1175,11 @@ const VideoPlayer = ({ item, onClose, user }) => {
             </button>
           </div>
         </div>
+
+        {/* Local Mozilla PDF.js viewer */}
         <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124' }}>
           <iframe 
-            src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(item.url)}#zoom=page-width`} 
+            src={`${window.location.origin || ''}/pdfjs/web/viewer.html?file=${encodeURIComponent(resolvedPdfUrl || item.url)}#zoom=page-width`} 
             style={{ 
               position: 'absolute',
               top: 0,
