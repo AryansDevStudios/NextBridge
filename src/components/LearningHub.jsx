@@ -76,15 +76,7 @@ const LearningHub = ({ user, onLogout }) => {
 
   const confirmDelete = async () => {
     if (!deleteModalItem) return;
-    try {
-      await Filesystem.rmdir({
-        path: `downloads/${deleteModalItem.id}`,
-        directory: Directory.Data,
-        recursive: true
-      });
-    } catch (err) {
-      console.warn('Failed to delete download folder:', err);
-    }
+    await downloadManager.deleteDownload(deleteModalItem.id);
     const updated = downloadedLectures.filter(d => String(d.id) !== String(deleteModalItem.id));
     setDownloadedLectures(updated);
     localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
@@ -103,7 +95,8 @@ const LearningHub = ({ user, onLogout }) => {
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
 
   // Load downloaded lectures from device registry
-  const loadDownloadedLectures = () => {
+  const loadDownloadedLectures = async () => {
+    await downloadManager.syncCompletedFromRegistry();
     try {
       const raw = localStorage.getItem('downloaded_lectures');
       if (raw) {

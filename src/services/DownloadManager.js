@@ -14,6 +14,7 @@ export function formatBytes(bytes, decimals = 1) {
 
 export function formatSpeed(bytesPerSec) {
   if (!bytesPerSec || bytesPerSec <= 0) return '0 KB/s';
+  if (typeof bytesPerSec === 'string') return bytesPerSec;
   if (bytesPerSec >= 1024 * 1024) {
     return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
   }
@@ -22,6 +23,7 @@ export function formatSpeed(bytesPerSec) {
 
 export function formatTimeRemaining(seconds) {
   if (!seconds || !isFinite(seconds) || seconds <= 0) return '';
+  if (typeof seconds === 'string') return seconds;
   const s = Math.round(seconds);
   if (s < 60) return `${s}s remaining`;
   const m = Math.floor(s / 60);
@@ -32,19 +34,68 @@ export function formatTimeRemaining(seconds) {
   return `${h}h ${remMin}m remaining`;
 }
 
+class NativeTaskProxy {
+  constructor(data) {
+    this.id = String(data.id);
+    this.title = data.title || 'Lecture';
+    this.quality = data.quality || '720p';
+    this.percent = data.percent || 0;
+    this.downloadedBytes = data.downloadedBytes || 0;
+    this.totalBytes = data.totalBytes || 0;
+    this.speed = data.speed || '0 KB/s';
+    this.eta = data.eta || 'calculating...';
+    this.status = data.status || 'downloading';
+  }
+
+  update(data) {
+    if (data.percent !== undefined) this.percent = data.percent;
+    if (data.downloadedBytes !== undefined) this.downloadedBytes = data.downloadedBytes;
+    if (data.totalBytes !== undefined) this.totalBytes = data.totalBytes;
+    if (data.speed !== undefined) this.speed = data.speed;
+    if (data.eta !== undefined) this.eta = data.eta;
+    if (data.status !== undefined) this.status = data.status;
+  }
+
+  toPublicState() {
+    return {
+      id: this.id,
+      title: this.title,
+      quality: this.quality,
+      percent: this.percent,
+      downloadedBytes: this.downloadedBytes,
+      totalBytes: this.totalBytes,
+      formattedDownloaded: formatBytes(this.downloadedBytes),
+      formattedTotal: formatBytes(this.totalBytes),
+      speed: formatSpeed(this.speed),
+      eta: formatTimeRemaining(this.eta),
+      status: this.status
+    };
+  }
+}
+
 class DownloadManagerService {
   constructor() {
-    this.activeDownloads = new Map(); // id -> DownloadTask
-    this.queuedDownloads = []; // array of items waiting for slot
+    this.activeDownloads = new Map(); // id -> DownloadTask or NativeTaskProxy
+    this.queuedDownloads = []; // items waiting for slot
     this.listeners = new Set();
     this.maxConcurrentVideos = 3;
     this.fetchConcurrency = 8;
     this.queryConcurrency = 25;
     this.wakeLock = null;
 
-    // Listen for notification tray actions (pause, resume, cancel)
     if (Capacitor.isNativePlatform()) {
+      // 1. Listen for native background download progress events
       try {
+        DownloadService.addListener('downloadProgress', (data) => {
+          this.handleNativeProgress(data);
+        });
+
+        // 2. Listen for native completion events
+        DownloadService.addListener('downloadCompleted', (data) => {
+          this.handleNativeCompleted(data);
+        });
+
+        // 3. Listen for notification actions
         DownloadService.addListener('downloadAction', ({ action, downloadId }) => {
           if (action === 'pause') {
             this.pauseDownload(downloadId);
@@ -55,12 +106,72 @@ class DownloadManagerService {
           }
         });
       } catch (e) {
-        console.warn('[DownloadManager] Failed to attach native action listener:', e);
+        console.warn('[DownloadManager] Failed to attach native listeners:', e);
       }
 
-      // Prompt notification permission on first launch for download status bar alerts
+      // Prompt notification permission on first launch
       this.requestNotificationPermission().catch(() => {});
+
+      // Sync any running tasks (e.g. if app was swiped from recents and reopened!)
+      this.syncFromNativeService();
     }
+  }
+
+  async syncFromNativeService() {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const res = await DownloadService.getActiveTasks();
+      if (res && res.tasks && Array.isArray(res.tasks)) {
+        res.tasks.forEach(t => {
+          this.handleNativeProgress(t);
+        });
+      }
+      await this.syncCompletedFromRegistry();
+    } catch (e) {
+      console.warn('[DownloadManager] syncFromNativeService error:', e);
+    }
+  }
+
+  async syncCompletedFromRegistry() {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const res = await DownloadService.getCompletedDownloads();
+      if (res && res.downloads && Array.isArray(res.downloads)) {
+        const local = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+        const map = new Map();
+        local.forEach(item => map.set(String(item.id), item));
+        res.downloads.forEach(item => map.set(String(item.id), item));
+        const merged = Array.from(map.values()).sort((a, b) => {
+          const tA = new Date(a.downloadedAt || 0).getTime();
+          const tB = new Date(b.downloadedAt || 0).getTime();
+          return tB - tA;
+        });
+        localStorage.setItem('downloaded_lectures', JSON.stringify(merged));
+      }
+    } catch (e) {
+      console.warn('[DownloadManager] syncCompletedFromRegistry error:', e);
+    }
+  }
+
+  handleNativeProgress(data) {
+    if (!data || !data.id) return;
+    const strId = String(data.id);
+    let task = this.activeDownloads.get(strId);
+    if (!task) {
+      task = new NativeTaskProxy(data);
+      this.activeDownloads.set(strId, task);
+    } else {
+      task.update(data);
+    }
+    this.notify();
+  }
+
+  handleNativeCompleted(data) {
+    if (!data || !data.id) return;
+    const strId = String(data.id);
+    this.activeDownloads.delete(strId);
+    this.syncCompletedFromRegistry().catch(() => {});
+    this.notify();
   }
 
   async requestNotificationPermission() {
@@ -70,7 +181,7 @@ class DownloadManagerService {
         await DownloadService.requestPermissions();
       }
     } catch (e) {
-      console.warn('[DownloadManager] Notification permission request:', e);
+      console.warn('[DownloadManager] Notification permission request error:', e);
     }
   }
 
@@ -83,7 +194,6 @@ class DownloadManagerService {
   notify() {
     const state = this.getState();
     this.listeners.forEach(fn => fn(state));
-    this.syncNativeNotification();
   }
 
   getState() {
@@ -113,7 +223,7 @@ class DownloadManagerService {
   }
 
   /**
-   * Accurate segment query: fetches all segments via 50 concurrent HEAD requests
+   * Accurate segment query: fetches all segments via 25 concurrent HEAD requests
    */
   async queryAccurateResolutionSizes(masterUrl, duration, onProgress) {
     let masterText = '';
@@ -155,7 +265,7 @@ class DownloadManagerService {
 
     variants.sort((a, b) => b.height - a.height);
 
-    // Query each variant in sequence, using 50 concurrent HEAD requests per variant
+    // Query each variant in sequence, using 25 concurrent HEAD requests per variant
     const resolvedVariants = [];
 
     for (const variant of variants) {
@@ -184,7 +294,6 @@ class DownloadManagerService {
           continue;
         }
 
-        // Query segments using 50 concurrency
         let totalBytes = 0;
         let completed = 0;
         let failedHead = false;
@@ -253,24 +362,56 @@ class DownloadManagerService {
 
   enqueueDownload(item, variant) {
     this.requestNotificationPermission().catch(() => {});
+    const strId = String(item.id);
 
-    const existing = this.activeDownloads.get(String(item.id));
+    const existing = this.activeDownloads.get(strId);
     if (existing) {
       if (existing.status === 'paused') {
-        this.resumeDownload(item.id);
+        this.resumeDownload(strId);
       }
       return;
     }
 
-    // Check if already queued
-    if (this.queuedDownloads.some(q => String(q.item.id) === String(item.id))) {
+    if (Capacitor.isNativePlatform()) {
+      // 1. Dispatch native foreground download service (stays alive even if swiped from recents!)
+      DownloadService.startDownload({
+        id: strId,
+        title: item.title || 'Lecture',
+        subjectName: item.unified_path || item.folder_path || 'Class Lecture',
+        folderPath: item.folder_path || '',
+        duration: item.duration || 0,
+        thumbnail: item.thumbnail || '',
+        quality: `${variant.height}p`,
+        playlistUrl: variant.url,
+        totalBytes: variant.exactBytes || Math.round((variant.bandwidth / 8) * (item.duration || 3600))
+      }).catch(err => {
+        console.error('[DownloadManager] Native startDownload failed:', err);
+      });
+
+      // 2. Setup local proxy task immediately for smooth UI reaction
+      const proxy = new NativeTaskProxy({
+        id: strId,
+        title: item.title,
+        quality: `${variant.height}p`,
+        percent: 0,
+        downloadedBytes: 0,
+        totalBytes: variant.exactBytes || Math.round((variant.bandwidth / 8) * (item.duration || 3600)),
+        status: 'downloading'
+      });
+      this.activeDownloads.set(strId, proxy);
+      this.acquireWakeLock();
+      this.notify();
+      return;
+    }
+
+    // Web Fallback
+    if (this.queuedDownloads.some(q => String(q.item.id) === strId)) {
       return;
     }
 
     const task = new DownloadTask(this, item, variant);
-
     if (this.activeDownloads.size < this.maxConcurrentVideos) {
-      this.activeDownloads.set(String(item.id), task);
+      this.activeDownloads.set(strId, task);
       this.acquireWakeLock();
       task.start();
     } else {
@@ -281,16 +422,38 @@ class DownloadManagerService {
   }
 
   pauseDownload(itemId) {
-    const task = this.activeDownloads.get(String(itemId));
-    if (task) {
+    const strId = String(itemId);
+    if (Capacitor.isNativePlatform()) {
+      DownloadService.pauseDownload({ id: strId }).catch(() => {});
+      const task = this.activeDownloads.get(strId);
+      if (task) {
+        task.status = 'paused';
+        this.notify();
+      }
+      return;
+    }
+
+    const task = this.activeDownloads.get(strId);
+    if (task && typeof task.pause === 'function') {
       task.pause();
       this.notify();
     }
   }
 
   resumeDownload(itemId) {
-    const task = this.activeDownloads.get(String(itemId));
-    if (task) {
+    const strId = String(itemId);
+    if (Capacitor.isNativePlatform()) {
+      DownloadService.resumeDownload({ id: strId }).catch(() => {});
+      const task = this.activeDownloads.get(strId);
+      if (task) {
+        task.status = 'downloading';
+        this.notify();
+      }
+      return;
+    }
+
+    const task = this.activeDownloads.get(strId);
+    if (task && typeof task.resume === 'function') {
       this.acquireWakeLock();
       task.resume();
       this.notify();
@@ -299,15 +462,21 @@ class DownloadManagerService {
 
   async cancelDownload(itemId) {
     const strId = String(itemId);
+    if (Capacitor.isNativePlatform()) {
+      DownloadService.cancelDownload({ id: strId }).catch(() => {});
+      this.activeDownloads.delete(strId);
+      this.notify();
+      return;
+    }
+
     const task = this.activeDownloads.get(strId);
-    if (task) {
+    if (task && typeof task.cancel === 'function') {
       task.cancel();
       this.activeDownloads.delete(strId);
     } else {
       this.queuedDownloads = this.queuedDownloads.filter(q => String(q.item.id) !== strId);
     }
 
-    // Clean disk files
     try {
       await Filesystem.rmdir({
         path: `downloads/${strId}`,
@@ -320,11 +489,32 @@ class DownloadManagerService {
     this.notify();
   }
 
+  async deleteDownload(itemId) {
+    const strId = String(itemId);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await DownloadService.deleteDownload({ id: strId });
+      } catch (e) {}
+    }
+
+    try {
+      await Filesystem.rmdir({
+        path: `downloads/${strId}`,
+        directory: Directory.Data,
+        recursive: true
+      });
+    } catch (e) {}
+
+    const local = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+    const updated = local.filter(d => String(d.id) !== strId);
+    localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
+    this.notify();
+  }
+
   onTaskCompleted(itemId, task) {
     const strId = String(itemId);
     this.activeDownloads.delete(strId);
 
-    // Save to download registry
     try {
       const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
       const updated = existing.filter(d => String(d.id) !== strId);
@@ -360,95 +550,38 @@ class DownloadManagerService {
 
     if (this.activeDownloads.size === 0) {
       this.releaseWakeLock();
-      this.stopNativeNotification();
     }
-  }
-
-  syncNativeNotification() {
-    if (!Capacitor.isNativePlatform()) return;
-
-    if (this.activeDownloads.size === 0) {
-      this.stopNativeNotification();
-      return;
-    }
-
-    // Aggregate summary for notification
-    const tasks = Array.from(this.activeDownloads.values());
-    const first = tasks[0];
-    const totalSpeed = tasks.reduce((sum, t) => sum + (t.status === 'downloading' ? t.speedBytesPerSec : 0), 0);
-    const totalDownloaded = tasks.reduce((sum, t) => sum + t.downloadedBytes, 0);
-    const totalSize = tasks.reduce((sum, t) => sum + t.totalBytes, 0);
-    const overallPercent = totalSize > 0 ? Math.round((totalDownloaded / totalSize) * 100) : 0;
-    const isAllPaused = tasks.every(t => t.status === 'paused');
-
-    let title = tasks.length === 1 
-      ? `Downloading: ${first.item.title}`
-      : `Downloading ${tasks.length} Videos (${overallPercent}%)`;
-
-    let subtext = `${formatBytes(totalDownloaded)} / ${formatBytes(totalSize)}`;
-    if (totalSpeed > 0 && !isAllPaused) {
-      subtext += ` • ${formatSpeed(totalSpeed)}`;
-      const remainingBytes = Math.max(0, totalSize - totalDownloaded);
-      const eta = remainingBytes / totalSpeed;
-      if (eta > 0) subtext += ` • ${formatTimeRemaining(eta)}`;
-    } else if (isAllPaused) {
-      subtext += ' • Paused';
-    }
-
-    try {
-      DownloadService.updateProgress({
-        title,
-        subtext,
-        progress: overallPercent,
-        isPaused: isAllPaused,
-        downloadId: String(first.item.id)
-      }).catch(() => {
-        // Fallback to start if not started
-        DownloadService.startDownload({
-          title,
-          subtext,
-          progress: overallPercent,
-          isPaused: isAllPaused,
-          downloadId: String(first.item.id)
-        }).catch(() => {});
-      });
-    } catch (e) {}
-  }
-
-  stopNativeNotification() {
-    if (!Capacitor.isNativePlatform()) return;
-    try {
-      DownloadService.stopDownload().catch(() => {});
-    } catch (e) {}
   }
 }
 
+/**
+ * Web / Browser Fallback Task
+ */
 class DownloadTask {
   constructor(manager, item, variant) {
     this.manager = manager;
     this.item = item;
     this.variant = variant;
-    this.status = 'queued'; // queued | downloading | paused | done | error
+    this.status = 'queued';
     this.downloadedBytes = 0;
     this.totalBytes = variant.exactBytes || Math.round((variant.bandwidth / 8) * (item.duration || 3600));
     this.speedBytesPerSec = 0;
     this.etaSeconds = 0;
     this.percent = 0;
-    this.completedSegments = new Set();
-    this.allSegments = [];
-    this.modifiedPlaylist = [];
     this.abortController = null;
-    this.speedInterval = null;
+    this.allSegments = [];
+    this.completedSegments = new Set();
+    this.modifiedPlaylist = [];
     this.lastBytes = 0;
+    this.lastTime = Date.now();
+    this.speedInterval = null;
   }
 
   toPublicState() {
     return {
       id: this.item.id,
       title: this.item.title,
-      thumbnail: this.item.thumbnail,
       quality: `${this.variant.height}p`,
-      status: this.status,
       percent: this.percent,
       downloadedBytes: this.downloadedBytes,
       totalBytes: this.totalBytes,
@@ -456,9 +589,35 @@ class DownloadTask {
       formattedTotal: formatBytes(this.totalBytes),
       speed: formatSpeed(this.speedBytesPerSec),
       eta: formatTimeRemaining(this.etaSeconds),
-      completedChunks: this.completedSegments.size,
-      totalChunks: this.allSegments.length
+      status: this.status
     };
+  }
+
+  startSpeedTracker() {
+    this.lastTime = Date.now();
+    this.lastBytes = this.downloadedBytes;
+    this.speedInterval = setInterval(() => {
+      const now = Date.now();
+      const timeDiff = (now - this.lastTime) / 1000;
+      if (timeDiff >= 1) {
+        const bytesDiff = this.downloadedBytes - this.lastBytes;
+        this.speedBytesPerSec = Math.max(0, Math.round(bytesDiff / timeDiff));
+        const rem = Math.max(0, this.totalBytes - this.downloadedBytes);
+        this.etaSeconds = this.speedBytesPerSec > 0 ? rem / this.speedBytesPerSec : 0;
+        this.lastTime = now;
+        this.lastBytes = this.downloadedBytes;
+        this.manager.notify();
+      }
+    }, 1000);
+  }
+
+  stopSpeedTracker() {
+    if (this.speedInterval) {
+      clearInterval(this.speedInterval);
+      this.speedInterval = null;
+    }
+    this.speedBytesPerSec = 0;
+    this.etaSeconds = 0;
   }
 
   async start() {
@@ -470,46 +629,40 @@ class DownloadTask {
       const baseDir = `downloads/${this.item.id}`;
       await Filesystem.mkdir({ path: baseDir, directory: Directory.Data, recursive: true });
 
-      // Fetch variant playlist if not already fetched
-      if (this.allSegments.length === 0) {
-        const vRes = await fetch(this.variant.url, { signal: this.abortController.signal });
-        const vText = await vRes.text();
-        const vBase = this.variant.url.substring(0, this.variant.url.lastIndexOf('/') + 1);
-        const lines = vText.split('\n');
+      const res = await fetch(this.variant.url, { signal: this.abortController.signal });
+      if (!res.ok) throw new Error('Variant playlist fetch failed');
+      const text = await res.text();
 
-        let segIdx = 0;
-        this.modifiedPlaylist = [];
-        this.allSegments = [];
+      const basePrefix = this.variant.url.substring(0, this.variant.url.lastIndexOf('/') + 1);
+      const lines = text.split('\n');
+      this.allSegments = [];
+      this.modifiedPlaylist = [];
+      let segIdx = 0;
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          if (trimmed.startsWith('#')) {
-            this.modifiedPlaylist.push(trimmed);
-          } else {
-            const localName = `seg_${segIdx}.ts`;
-            this.modifiedPlaylist.push(localName);
-            const fullUrl = trimmed.startsWith('http') ? trimmed : vBase + trimmed;
-            this.allSegments.push({ url: fullUrl, localName, index: segIdx });
-            segIdx++;
-          }
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const segUrl = trimmed.startsWith('http') ? trimmed : basePrefix + trimmed;
+          const localName = `segment_${segIdx}.ts`;
+          this.allSegments.push({ url: segUrl, localName, index: segIdx });
+          this.modifiedPlaylist.push(localName);
+          segIdx++;
+        } else {
+          this.modifiedPlaylist.push(line);
         }
       }
 
-      await this.runParallelDownload();
+      await this.downloadSegmentsInParallel();
     } catch (err) {
-      if (err.name === 'AbortError' || this.status === 'paused') {
-        // Expected during pause or cancel
-        return;
-      }
-      console.error(`[DownloadTask ${this.item.id}] Error:`, err);
+      if (this.abortController?.signal.aborted) return;
+      console.error('[DownloadTask] Failed:', err);
       this.status = 'error';
       this.stopSpeedTracker();
       this.manager.notify();
     }
   }
 
-  async runParallelDownload() {
+  async downloadSegmentsInParallel() {
     const baseDir = `downloads/${this.item.id}`;
     const pending = this.allSegments.filter(s => !this.completedSegments.has(s.index));
 
@@ -529,7 +682,6 @@ class DownloadTask {
         const seg = pending[myIdx];
 
         try {
-          // Download segment file directly to Directory.Data
           const res = await fetch(seg.url, { signal });
           const blob = await res.blob();
           const buffer = await blob.arrayBuffer();
@@ -549,7 +701,6 @@ class DownloadTask {
           this.manager.notify();
         } catch (e) {
           if (signal.aborted || this.status === 'paused') return;
-          // Retry once
           try {
             await Filesystem.downloadFile({
               url: seg.url,
@@ -562,7 +713,6 @@ class DownloadTask {
       }
     };
 
-    // 16 concurrent workers
     const workers = [];
     for (let w = 0; w < Math.min(this.manager.fetchConcurrency, pending.length); w++) {
       workers.push(worker());
@@ -578,7 +728,6 @@ class DownloadTask {
   async finishDownload() {
     const baseDir = `downloads/${this.item.id}`;
 
-    // Write modified index.m3u8
     await Filesystem.writeFile({
       path: `${baseDir}/index.m3u8`,
       data: this.modifiedPlaylist.join('\n'),
@@ -614,34 +763,6 @@ class DownloadTask {
       this.abortController = null;
     }
     this.stopSpeedTracker();
-  }
-
-  startSpeedTracker() {
-    this.stopSpeedTracker();
-    this.lastBytes = this.downloadedBytes;
-
-    this.speedInterval = setInterval(() => {
-      const deltaBytes = Math.max(0, this.downloadedBytes - this.lastBytes);
-      this.lastBytes = this.downloadedBytes;
-      this.speedBytesPerSec = deltaBytes;
-
-      if (this.speedBytesPerSec > 0) {
-        const remainingBytes = Math.max(0, this.totalBytes - this.downloadedBytes);
-        this.etaSeconds = Math.round(remainingBytes / this.speedBytesPerSec);
-      } else {
-        this.etaSeconds = 0;
-      }
-      this.manager.notify();
-    }, 1000);
-  }
-
-  stopSpeedTracker() {
-    if (this.speedInterval) {
-      clearInterval(this.speedInterval);
-      this.speedInterval = null;
-    }
-    this.speedBytesPerSec = 0;
-    this.etaSeconds = 0;
   }
 
   arrayBufferToBase64(buffer) {
