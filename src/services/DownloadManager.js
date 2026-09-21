@@ -34,6 +34,46 @@ export function formatTimeRemaining(seconds) {
   return `${h}h ${remMin}m remaining`;
 }
 
+export function parseDownloadSubjectAndFolder(item) {
+  if (!item) return { subject: 'General Studies', folder: 'Lectures' };
+
+  let subject = (item.subject_name || item.subjectName || '').trim();
+  let folder = (item.folder_path || item.folderPath || '').trim();
+
+  // If subject contains slashes (e.g. "Social Science/Lectures" or "Social Science/History/Chapter 1")
+  if (subject.includes('/')) {
+    const parts = subject.split('/');
+    subject = parts[0].trim();
+    const remaining = parts.slice(1).join('/').trim();
+    if (!folder) {
+      folder = remaining;
+    } else if (!folder.startsWith(remaining)) {
+      folder = `${remaining}/${folder}`;
+    }
+  }
+
+  // If unified_path exists and subject is generic or empty
+  if ((!subject || subject === 'Class Lecture' || subject === 'General' || subject === 'General Studies') && item.unified_path) {
+    const parts = item.unified_path.split('/');
+    subject = parts[0].trim();
+    if (!folder && parts.length > 1) {
+      folder = parts.slice(1).join('/').trim();
+    }
+  }
+
+  // Default folder if completely empty
+  if (!folder) {
+    folder = item.type === 'pdf' ? 'Notes' : 'Lectures';
+  }
+
+  if (!subject) {
+    subject = 'General Studies';
+  }
+
+  folder = folder.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+  return { subject, folder };
+}
+
 class NativeTaskProxy {
   constructor(data) {
     this.id = String(data.id);
@@ -139,8 +179,14 @@ class DownloadManagerService {
       if (res && res.downloads && Array.isArray(res.downloads)) {
         const local = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
         const map = new Map();
-        local.forEach(item => map.set(String(item.id), item));
-        res.downloads.forEach(item => map.set(String(item.id), item));
+        local.forEach(item => {
+          const { subject, folder } = parseDownloadSubjectAndFolder(item);
+          map.set(String(item.id), { ...item, subjectName: subject, folderPath: folder });
+        });
+        res.downloads.forEach(item => {
+          const { subject, folder } = parseDownloadSubjectAndFolder(item);
+          map.set(String(item.id), { ...item, subjectName: subject, folderPath: folder });
+        });
         const merged = Array.from(map.values()).sort((a, b) => {
           const tA = new Date(a.downloadedAt || 0).getTime();
           const tB = new Date(b.downloadedAt || 0).getTime();
@@ -379,11 +425,12 @@ class DownloadManagerService {
 
     if (Capacitor.isNativePlatform()) {
       // 1. Dispatch native foreground download service (stays alive even if swiped from recents!)
+      const { subject, folder } = parseDownloadSubjectAndFolder(item);
       DownloadService.startDownload({
         id: strId,
         title: item.title || 'Lecture',
-        subjectName: item.unified_path || item.folder_path || 'Class Lecture',
-        folderPath: item.folder_path || '',
+        subjectName: subject,
+        folderPath: folder,
         duration: item.duration || 0,
         thumbnail: item.thumbnail || '',
         quality: `${variant.height}p`,
@@ -523,11 +570,12 @@ class DownloadManagerService {
     try {
       const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
       const updated = existing.filter(d => String(d.id) !== strId);
+      const { subject, folder } = parseDownloadSubjectAndFolder(task.item);
       updated.unshift({
         id: task.item.id,
         title: task.item.title,
-        subjectName: task.item.unified_path || task.item.folder_path || 'Class Lecture',
-        folderPath: task.item.folder_path || '',
+        subjectName: subject,
+        folderPath: folder,
         duration: task.item.duration || 0,
         thumbnail: task.item.thumbnail || null,
         downloadedAt: new Date().toISOString(),
@@ -609,12 +657,13 @@ class DownloadManagerService {
       proxy.status = 'completed';
       this.activeDownloads.delete(strId);
 
+      const { subject, folder } = parseDownloadSubjectAndFolder(item);
       const record = {
         id: strId,
         title: item.title,
         type: 'pdf',
-        subjectName: item.subject_name || item.subjectName || 'Class Notes',
-        folderPath: item.folder_path || item.folderPath || '',
+        subjectName: subject,
+        folderPath: folder,
         path: filePath,
         url: item.url,
         sizeBytes: sizeBytes,
