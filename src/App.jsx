@@ -588,25 +588,6 @@ export default function App() {
             >
               <RefreshCw size={18} /> Check Status Again
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsDeviceBound(false);
-                setErrorMsg('');
-                setPatInput('');
-              }}
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-secondary)',
-                padding: '10px',
-                borderRadius: '8px',
-                fontSize: '0.875rem',
-                cursor: 'pointer'
-              }}
-            >
-              Enter Another Token
-            </button>
           </div>
         ) : (
           <form onSubmit={handleLogin} style={{ width: '100%' }}>

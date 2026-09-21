@@ -193,56 +193,56 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
   }, [students, comparedStudentIds]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header & Global KPIs */}
       <div>
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-4 sm:mb-6">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Trophy className="text-[#f59e0b]" size={26} />
-              <span>Learning Analytics & Student Leaderboard</span>
+            <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+              <Trophy className="text-[#f59e0b]" size={22} />
+              <span>Learning Analytics & Leaderboard</span>
             </h1>
-            <p className="text-sm text-[#9ca3af] mt-1">
-              Deep comparison of video watch times, notes study durations, lecture performance, and student engagement.
+            <p className="text-xs sm:text-sm text-[#9ca3af] mt-0.5">
+              Compare watch times, study durations, lecture performance, and engagement.
             </p>
           </div>
 
           {/* Sub-tabs */}
-          <div className="flex bg-[#121212] p-1 rounded-xl border border-[#262626] overflow-x-auto">
+          <div className="flex bg-[#121212] p-1 rounded-xl border border-[#262626] overflow-x-auto scrollbar-none w-full md:w-auto">
             <button
               onClick={() => setActiveSubTab('leaderboard')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === 'leaderboard' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'leaderboard' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <Trophy size={14} />
+              <Trophy size={13} />
               <span>Leaderboard</span>
             </button>
             <button
               onClick={() => setActiveSubTab('comparison')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === 'comparison' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'comparison' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <Users size={14} />
-              <span>Compare Students ({comparedStudentIds.length})</span>
+              <Users size={13} />
+              <span>Compare ({comparedStudentIds.length})</span>
             </button>
             <button
               onClick={() => setActiveSubTab('videos')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === 'videos' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'videos' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <Video size={14} />
-              <span>Video Analytics</span>
+              <Video size={13} />
+              <span>Videos</span>
             </button>
             <button
               onClick={() => setActiveSubTab('notes')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === 'notes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'notes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <FileText size={14} />
-              <span>Notes Analytics</span>
+              <FileText size={13} />
+              <span>Notes</span>
             </button>
             <button
               onClick={() => setActiveSubTab('classes')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === 'classes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${activeSubTab === 'classes' ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <BarChart2 size={14} />
-              <span>Class Breakdown</span>
+              <BarChart2 size={13} />
+              <span>Classes</span>
             </button>
           </div>
         </div>

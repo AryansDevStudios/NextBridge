@@ -72,62 +72,72 @@ export default function Dashboard({ onLogout }) {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f3f4f6]">
       {/* Navbar */}
-      <nav className="bg-[#121212] border-b border-[#262626] px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-8">
-          <div className="flex items-center space-x-2 text-[#f59e0b] font-bold text-xl mr-8">
-            <img src="/favicon.png" alt="Logo" className="w-8 h-8 rounded" />
+      <nav className="bg-[#121212] border-b border-[#262626] px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col md:flex-row md:justify-between md:items-center gap-2.5 sticky top-0 z-40">
+        <div className="flex items-center justify-between w-full md:w-auto">
+          <div className="flex items-center space-x-2 text-[#f59e0b] font-bold text-base sm:text-lg">
+            <img src="/favicon.png" alt="Logo" className="w-6 h-6 sm:w-7 sm:h-7 rounded" />
             <span>Next Bridge Admin</span>
           </div>
           
-          <div className="flex space-x-1 border-l border-[#262626] pl-8">
+          <button onClick={onLogout} className="flex items-center space-x-1.5 text-xs sm:text-sm text-[#9ca3af] hover:text-[#ef4444] transition md:hidden bg-[#1a1a1a] px-2.5 py-1.5 rounded-lg border border-[#262626]">
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between w-full md:w-auto gap-2">
+          <div className="flex space-x-1 overflow-x-auto pb-1 md:pb-0 scrollbar-none w-full md:w-auto">
             <button 
               onClick={() => setActiveTab('students')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'students' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === 'students' ? 'bg-[#1a1a1a] text-white border border-[#333]' : 'text-[#9ca3af] hover:text-white'}`}
             >
               Students
             </button>
             <button 
               onClick={() => setActiveTab('analytics')}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'analytics' ? 'bg-[#1a1a1a] text-[#f59e0b]' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#1a1a1a] text-[#f59e0b] border border-[#f59e0b]/30' : 'text-[#9ca3af] hover:text-white'}`}
             >
-              <Trophy size={16} />
-              <span>Analytics & Leaderboard</span>
+              <Trophy size={14} />
+              <span>Analytics</span>
             </button>
             <button 
               onClick={() => setActiveTab('library')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'library' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === 'library' ? 'bg-[#1a1a1a] text-white border border-[#333]' : 'text-[#9ca3af] hover:text-white'}`}
             >
               Course Library
             </button>
             <button 
               onClick={() => setActiveTab('sync')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'sync' ? 'bg-[#1a1a1a] text-white' : 'text-[#9ca3af] hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${activeTab === 'sync' ? 'bg-[#1a1a1a] text-white border border-[#333]' : 'text-[#9ca3af] hover:text-white'}`}
             >
               Backend Sync
             </button>
           </div>
+          
+          <button onClick={onLogout} className="hidden md:flex items-center space-x-1.5 text-sm text-[#9ca3af] hover:text-[#ef4444] transition px-3 py-1.5 rounded-lg hover:bg-[#1a1a1a]">
+            <LogOut size={16} />
+            <span>Logout</span>
+          </button>
         </div>
-        
-        <button onClick={onLogout} className="flex items-center space-x-2 text-[#9ca3af] hover:text-[#ef4444] transition">
-          <LogOut size={20} />
-          <span>Logout</span>
-        </button>
       </nav>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
         {activeTab === 'students' && (
           <>
-            <div className="flex justify-between items-center mb-8">
-              <h1 className="text-2xl font-bold">Students Directory</h1>
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center space-x-2 bg-[#f59e0b] text-[#0a0a0a] px-4 py-2 rounded-lg hover:bg-[#fbbf24] transition font-bold"
-          >
-            <Plus size={20} />
-            <span>Add Student</span>
-          </button>
-        </div>
+            <div className="flex justify-between items-center mb-4 sm:mb-6 gap-2">
+              <div>
+                <h1 className="text-lg sm:text-2xl font-bold">Students Directory</h1>
+                <p className="text-xs text-[#9ca3af] hidden sm:block">Manage tokens, devices, and subscriptions</p>
+              </div>
+              <button 
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center space-x-1.5 bg-[#f59e0b] text-[#0a0a0a] px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-[#fbbf24] transition font-bold text-xs sm:text-sm whitespace-nowrap"
+              >
+                <Plus size={16} />
+                <span>Add Student</span>
+              </button>
+            </div>
 
         {/* Table */}
         <div className="bg-[#121212] rounded-xl shadow-sm overflow-x-auto border border-[#262626]">
