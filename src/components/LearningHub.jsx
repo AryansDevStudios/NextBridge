@@ -24,7 +24,8 @@ import {
   HardDrive,
   Loader2,
   Send,
-  PieChart
+  PieChart,
+  Lock
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
@@ -74,6 +75,28 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
   // Class 10 only for textbook content
   const isClass10 = String(user?.class || user?.className || '').trim() === '10';
+
+  // Granular section access control (defaults to true for backwards compatibility)
+  const allowedSections = useMemo(() => ({
+    courses: user?.allowedSections?.courses ?? true,
+    textbooks: user?.allowedSections?.textbooks ?? true,
+    pyqs: user?.allowedSections?.pyqs ?? true,
+  }), [user?.allowedSections]);
+
+  // If default 'courses' tab is not permitted, auto-switch to first accessible tab on initial load
+  const hasAutoSwitchedRef = useRef(false);
+  useEffect(() => {
+    if (!hasAutoSwitchedRef.current && activeTab === 'courses' && !allowedSections.courses) {
+      hasAutoSwitchedRef.current = true;
+      if (allowedSections.textbooks && isClass10) {
+        setActiveTab('textbook');
+      } else if (allowedSections.pyqs && isClass10) {
+        setActiveTab('pyq');
+      } else {
+        setActiveTab('downloads');
+      }
+    }
+  }, [activeTab, allowedSections.courses, allowedSections.textbooks, allowedSections.pyqs, isClass10]);
 
   // Subscribe to central download manager
   useEffect(() => {
@@ -563,6 +586,72 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     }
   }
 
+  const renderLockedSection = (sectionName, description) => (
+    <div className="main-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '55vh', textAlign: 'center', padding: '32px 16px' }}>
+      <div style={{
+        width: '64px',
+        height: '64px',
+        borderRadius: '50%',
+        background: 'rgba(239, 68, 68, 0.1)',
+        border: '1px solid rgba(239, 68, 68, 0.25)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: '18px',
+        color: '#f87171'
+      }}>
+        <Lock size={30} />
+      </div>
+
+      <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+        {sectionName} Locked
+      </h2>
+
+      <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: 1.5, marginBottom: '22px' }}>
+        {description || `Access to ${sectionName} is not included in your current subscription plan. Contact admin to upgrade your access.`}
+      </p>
+
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        width: '100%',
+        maxWidth: '300px'
+      }}>
+        <button
+          className="telegram-support-btn"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={() => window.open('https://t.me/nextbridge19', '_blank')}
+        >
+          <Send size={16} />
+          <span>Contact Admin to Upgrade</span>
+          <ExternalLink size={14} style={{ opacity: 0.7, marginLeft: '6px' }} />
+        </button>
+
+        <button
+          onClick={() => {
+            if (allowedSections.courses) setActiveTab('courses');
+            else if (allowedSections.textbooks && isClass10) setActiveTab('textbook');
+            else if (allowedSections.pyqs && isClass10) setActiveTab('pyq');
+            else setActiveTab('downloads');
+          }}
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+            borderRadius: '8px',
+            padding: '9px 14px',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            cursor: 'pointer'
+          }}
+        >
+          Go to Accessible Content
+        </button>
+      </div>
+    </div>
+  );
+
   if (playingVideo) {
     return <VideoPlayer item={playingVideo} onClose={closeVideo} user={user} />;
   }
@@ -630,6 +719,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
             >
               Courses
+              {!allowedSections.courses && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
             </button>
             {isClass10 && (
               <button 
@@ -637,6 +727,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                 onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
               >
                 Textbook
+                {!allowedSections.textbooks && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
               </button>
             )}
             {isClass10 && (
@@ -645,6 +736,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                 onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
               >
                 PYQ
+                {!allowedSections.pyqs && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
               </button>
             )}
             <button 
@@ -733,31 +825,39 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
       {/* TEXTBOOK TAB (Class 10 only) */}
       {activeTab === 'textbook' && isClass10 && (
-        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <NcertTextbookHub
-            showRsAggarwal={true}
-            onOpenPdf={(item) => {
-              if (!Capacitor.isNativePlatform()) {
-                window.history.pushState({ player: true }, '');
-              }
-              setPlayingVideo(item);
-            }}
-          />
-        </div>
+        !allowedSections.textbooks ? (
+          renderLockedSection('NCERT Textbooks', 'NCERT and reference textbook solutions are locked for your account. Please contact the administrator to unlock textbook access.')
+        ) : (
+          <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <NcertTextbookHub
+              showRsAggarwal={true}
+              onOpenPdf={(item) => {
+                if (!Capacitor.isNativePlatform()) {
+                  window.history.pushState({ player: true }, '');
+                }
+                setPlayingVideo(item);
+              }}
+            />
+          </div>
+        )
       )}
 
       {/* CBSE PYQ TAB (Class 10 only) */}
       {activeTab === 'pyq' && isClass10 && (
-        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <CbsePyqHub
-            onOpenPdf={(item) => {
-              if (!Capacitor.isNativePlatform()) {
-                window.history.pushState({ player: true }, '');
-              }
-              setPlayingVideo(item);
-            }}
-          />
-        </div>
+        !allowedSections.pyqs ? (
+          renderLockedSection('CBSE PYQ Hub', 'CBSE Past Year Questions and chapterwise papers are locked for your account. Contact the administrator to unlock the PYQ section.')
+        ) : (
+          <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <CbsePyqHub
+              onOpenPdf={(item) => {
+                if (!Capacitor.isNativePlatform()) {
+                  window.history.pushState({ player: true }, '');
+                }
+                setPlayingVideo(item);
+              }}
+            />
+          </div>
+        )
       )}
 
       {/* DOWNLOADED TAB VIEW */}
@@ -1269,7 +1369,10 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
       {/* COURSES TAB VIEW */}
       {activeTab === 'courses' && (
-        <div className="main-content pb-24">
+        !allowedSections.courses ? (
+          renderLockedSection('Course Lectures & Notes', 'Lectures and batch materials are locked for your account. Upgrade your subscription plan with the admin to get access.')
+        ) : (
+          <div className="main-content pb-24">
           {/* Breadcrumbs with Back Arrow */}
           {!searchQuery && (
             <div className="breadcrumbs">
@@ -1446,6 +1549,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             })}
           </div>
         </div>
+        )
       )}
 
       {/* Student Profile & Support Modal */}
@@ -1499,6 +1603,44 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                   </span>
                 </div>
               )}
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Included Features</span>
+                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    background: allowedSections.courses ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: allowedSections.courses ? '#4ade80' : '#f87171',
+                    border: `1px solid ${allowedSections.courses ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    Courses {allowedSections.courses ? '✓' : '✕'}
+                  </span>
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    background: allowedSections.textbooks ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: allowedSections.textbooks ? '#4ade80' : '#f87171',
+                    border: `1px solid ${allowedSections.textbooks ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    Textbooks {allowedSections.textbooks ? '✓' : '✕'}
+                  </span>
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    background: allowedSections.pyqs ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: allowedSections.pyqs ? '#4ade80' : '#f87171',
+                    border: `1px solid ${allowedSections.pyqs ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    PYQ {allowedSections.pyqs ? '✓' : '✕'}
+                  </span>
+                </div>
+              </div>
               <div className="profile-detail-row" style={{ alignItems: 'center' }}>
                 <span className="profile-detail-label">Offline Storage</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -44,6 +44,11 @@ export default function StudentModal({ student, onClose }) {
   const [customDaysInput, setCustomDaysInput] = useState(30);
   const [customMessage, setCustomMessage] = useState(student.customMessage || '');
   const [saving, setSaving] = useState(false);
+  const [allowedSections, setAllowedSections] = useState({
+    courses: student.allowedSections?.courses ?? true,
+    textbooks: student.allowedSections?.textbooks ?? true,
+    pyqs: student.allowedSections?.pyqs ?? true,
+  });
 
   // Profile Edit State
   const [name, setName] = useState(student.name);
@@ -200,7 +205,8 @@ export default function StudentModal({ student, onClose }) {
         customMessage,
         name,
         class: studentClass,
-        personalDetails: { school, area }
+        personalDetails: { school, area },
+        allowedSections
       });
       onClose();
     } catch (err) {
@@ -271,6 +277,57 @@ export default function StudentModal({ student, onClose }) {
                     <span className="text-xs opacity-75">Live Status</span>
                   </div>
                   <p className="text-sm mt-1 font-medium">{subInfo.summary}</p>
+                </div>
+              </div>
+
+              {/* Feature Access Permissions */}
+              <div className="bg-[#181818] p-4 rounded-xl border border-[#262626]">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#f3f4f6]">Section Access Control</h3>
+                    <p className="text-xs text-[#9ca3af]">Toggle which sections this student is permitted to access</p>
+                  </div>
+                  <span className="text-[11px] text-[#f59e0b] font-medium bg-[#f59e0b]/10 px-2 py-0.5 rounded border border-[#f59e0b]/30">Tier Pricing</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className={`flex flex-col p-3 rounded-lg border transition-all cursor-pointer ${allowedSections.courses ? 'bg-[#121212] border-[#f59e0b]/50 text-white shadow-sm' : 'bg-[#141414] border-[#262626] text-[#71717a]'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm">Courses</span>
+                      <input 
+                        type="checkbox" 
+                        checked={allowedSections.courses} 
+                        onChange={e => setAllowedSections(prev => ({ ...prev, courses: e.target.checked }))}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#1a1a1a]"
+                      />
+                    </div>
+                    <span className="text-[11px] opacity-75">Lectures & Notes</span>
+                  </label>
+
+                  <label className={`flex flex-col p-3 rounded-lg border transition-all cursor-pointer ${allowedSections.textbooks ? 'bg-[#121212] border-[#f59e0b]/50 text-white shadow-sm' : 'bg-[#141414] border-[#262626] text-[#71717a]'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm">Textbooks</span>
+                      <input 
+                        type="checkbox" 
+                        checked={allowedSections.textbooks} 
+                        onChange={e => setAllowedSections(prev => ({ ...prev, textbooks: e.target.checked }))}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#1a1a1a]"
+                      />
+                    </div>
+                    <span className="text-[11px] opacity-75">NCERT Textbooks</span>
+                  </label>
+
+                  <label className={`flex flex-col p-3 rounded-lg border transition-all cursor-pointer ${allowedSections.pyqs ? 'bg-[#121212] border-[#f59e0b]/50 text-white shadow-sm' : 'bg-[#141414] border-[#262626] text-[#71717a]'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm">CBSE PYQs</span>
+                      <input 
+                        type="checkbox" 
+                        checked={allowedSections.pyqs} 
+                        onChange={e => setAllowedSections(prev => ({ ...prev, pyqs: e.target.checked }))}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#1a1a1a]"
+                      />
+                    </div>
+                    <span className="text-[11px] opacity-75">Past Year Papers</span>
+                  </label>
                 </div>
               </div>
 

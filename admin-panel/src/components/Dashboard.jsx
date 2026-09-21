@@ -27,7 +27,10 @@ export default function Dashboard({ onLogout }) {
   const [studentClass, setStudentClass] = useState('9');
   const [school, setSchool] = useState('');
   const [area, setArea] = useState('');
-  const [initialSubscriptionDays, setInitialSubscriptionDays] = useState(30);
+  const [initialSubscriptionDays, setInitialSubscriptionDays] = useState(5);
+  const [accessCourses, setAccessCourses] = useState(true);
+  const [accessTextbooks, setAccessTextbooks] = useState(true);
+  const [accessPyqs, setAccessPyqs] = useState(true);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'students'), (snapshot) => {
@@ -52,13 +55,19 @@ export default function Dashboard({ onLogout }) {
       device: null,
       status: 'active',
       subscriptionExpiresAt: expiry,
+      allowedSections: {
+        courses: accessCourses,
+        textbooks: accessTextbooks,
+        pyqs: accessPyqs
+      },
       customMessage: '',
       totalVideoTime: 0,
       totalNotesTime: 0,
       totalScreenTime: 0
     });
     setShowAddModal(false);
-    setName(''); setSchool(''); setArea(''); setStudentClass('9'); setInitialSubscriptionDays(30);
+    setName(''); setSchool(''); setArea(''); setStudentClass('9'); setInitialSubscriptionDays(5);
+    setAccessCourses(true); setAccessTextbooks(true); setAccessPyqs(true);
   };
 
   const copyToClipboard = (pat) => {
@@ -148,6 +157,7 @@ export default function Dashboard({ onLogout }) {
                 <th className="p-4 border-b border-[#262626]">Class</th>
                 <th className="p-4 border-b border-[#262626]">PAT Token</th>
                 <th className="p-4 border-b border-[#262626]">Device Info</th>
+                <th className="p-4 border-b border-[#262626]">Access</th>
                 <th className="p-4 border-b border-[#262626]">Subscription</th>
                 <th className="p-4 border-b border-[#262626]">Status</th>
                 <th className="p-4 border-b border-[#262626]">Actions</th>
@@ -163,6 +173,10 @@ export default function Dashboard({ onLogout }) {
                 const days = diff !== null && diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
                 const hours = diff !== null && diff > 0 ? Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)) : 0;
                 const isUrgent = days < 3;
+
+                const coursesAllowed = s.allowedSections?.courses ?? true;
+                const textbooksAllowed = s.allowedSections?.textbooks ?? true;
+                const pyqsAllowed = s.allowedSections?.pyqs ?? true;
 
                 return (
                   <tr key={s.id} className="border-b border-[#262626] last:border-0 hover:bg-[#1a1a1a] transition-colors">
@@ -191,6 +205,19 @@ export default function Dashboard({ onLogout }) {
                       ) : (
                         <span className="text-[#9ca3af] italic">Not logged in yet</span>
                       )}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap gap-1 w-28">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${coursesAllowed ? 'bg-amber-950/40 text-amber-400 border-amber-800/60' : 'bg-zinc-900 text-zinc-600 border-zinc-800 line-through'}`} title={coursesAllowed ? 'Courses enabled' : 'Courses blocked'}>
+                          Courses
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${textbooksAllowed ? 'bg-blue-950/40 text-blue-400 border-blue-800/60' : 'bg-zinc-900 text-zinc-600 border-zinc-800 line-through'}`} title={textbooksAllowed ? 'Textbooks enabled' : 'Textbooks blocked'}>
+                          Books
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${pyqsAllowed ? 'bg-purple-950/40 text-purple-400 border-purple-800/60' : 'bg-zinc-900 text-zinc-600 border-zinc-800 line-through'}`} title={pyqsAllowed ? 'PYQs enabled' : 'PYQs blocked'}>
+                          PYQ
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4">
                       {s.status === 'revoked' ? (
@@ -240,7 +267,7 @@ export default function Dashboard({ onLogout }) {
               })}
               {students.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-[#9ca3af]">No students found. Add one to get started!</td>
+                  <td colSpan="8" className="p-8 text-center text-[#9ca3af]">No students found. Add one to get started!</td>
                 </tr>
               )}
             </tbody>
@@ -283,20 +310,76 @@ export default function Dashboard({ onLogout }) {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Initial Subscription Duration</label>
-                <select 
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-[#9ca3af]">Initial Subscription Duration (Days)</label>
+                  <span className="text-xs text-[#f59e0b] font-medium">Default: 5 Days</span>
+                </div>
+                <input 
+                  required 
+                  type="number" 
+                  min="0" 
                   value={initialSubscriptionDays} 
-                  onChange={e => setInitialSubscriptionDays(Number(e.target.value))} 
-                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
-                >
-                  <option value={30}>30 Days (1 Month)</option>
-                  <option value={60}>60 Days (2 Months)</option>
-                  <option value={90}>90 Days (3 Months)</option>
-                  <option value={180}>180 Days (6 Months)</option>
-                  <option value={365}>365 Days (1 Year)</option>
-                  <option value={0}>Unlimited Access (Permanent)</option>
-                </select>
+                  onChange={e => setInitialSubscriptionDays(Math.max(0, parseInt(e.target.value) || 0))} 
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6] mb-2" 
+                  placeholder="Enter days (0 for unlimited)"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[5, 30, 90, 365, 0].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setInitialSubscriptionDays(d)}
+                      className={`text-[11px] px-2.5 py-1 rounded border transition ${initialSubscriptionDays === d ? 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/50' : 'bg-[#181818] text-[#9ca3af] border-[#2a2a2a] hover:text-white'}`}
+                    >
+                      {d === 0 ? 'Unlimited' : `${d} Days`}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[#6b7280] mt-1">Set 0 for permanent unlimited access.</p>
               </div>
+
+              {/* Section Access Permissions */}
+              <div className="bg-[#181818] p-3.5 rounded-lg border border-[#262626]">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">
+                    Feature Access Permissions
+                  </label>
+                  <span className="text-[10px] text-[#f59e0b]">Tier Control</span>
+                </div>
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={accessCourses} 
+                      onChange={e => setAccessCourses(e.target.checked)}
+                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                    />
+                    <span className="text-[#f3f4f6]">Courses & Lectures</span>
+                    <span className="text-[11px] text-[#9ca3af] ml-auto">Video + Notes</span>
+                  </label>
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={accessTextbooks} 
+                      onChange={e => setAccessTextbooks(e.target.checked)}
+                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                    />
+                    <span className="text-[#f3f4f6]">NCERT Textbooks</span>
+                    <span className="text-[11px] text-[#9ca3af] ml-auto">Class 10 Books</span>
+                  </label>
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={accessPyqs} 
+                      onChange={e => setAccessPyqs(e.target.checked)}
+                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                    />
+                    <span className="text-[#f3f4f6]">CBSE PYQs Hub</span>
+                    <span className="text-[11px] text-[#9ca3af] ml-auto">Past Papers</span>
+                  </label>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-[#9ca3af] mb-1">School</label>
                 <input required type="text" value={school} onChange={e => setSchool(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
