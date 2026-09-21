@@ -52,33 +52,33 @@ const RenderSyncPanel = () => {
   };
 
   return (
-    <div className="bg-[#121212] border border-[#262626] rounded-xl shadow-sm p-8">
-      <div className="flex items-center space-x-3 mb-6 border-b border-[#262626] pb-4">
-         <Server className="text-[#f59e0b]" size={28} />
-         <h2 className="text-2xl font-bold">Render Server Sync</h2>
+    <div className="bg-[#121212] border border-[#262626] rounded-xl shadow-sm p-4 sm:p-8">
+      <div className="flex items-center space-x-3 mb-4 sm:mb-6 border-b border-[#262626] pb-3 sm:pb-4">
+         <Server className="text-[#f59e0b]" size={24} />
+         <h2 className="text-xl sm:text-2xl font-bold">Render Server Sync</h2>
       </div>
 
-      <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#262626] mb-8">
-        <p className="text-[#9ca3af] mb-4 text-sm leading-relaxed">
+      <div className="bg-[#1a1a1a] p-4 sm:p-6 rounded-xl border border-[#262626] mb-6 sm:mb-8">
+        <p className="text-[#9ca3af] mb-4 text-xs sm:text-sm leading-relaxed">
            Use this panel to immediately trigger a content sync on your Render.com backend server.
            This will force the server to crawl <strong>NextToppers.com</strong> and upload any new batches, PDFs, or videos to the Firebase Realtime Database.
         </p>
 
-        <div className="space-y-4">
-          <div className="flex items-center space-x-4 bg-[#0a0a0a] p-4 rounded-lg border border-[#262626]">
-             <Clock className="text-[#525252]" size={20} />
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex items-center space-x-3 sm:space-x-4 bg-[#0a0a0a] p-3 sm:p-4 rounded-lg border border-[#262626]">
+             <Clock className="text-[#525252] shrink-0" size={18} />
              <div>
-                 <p className="text-sm font-medium text-white">Automated Sync Schedule</p>
-                 <p className="text-xs text-[#9ca3af]">Runs every 30 minutes in the background</p>
+                 <p className="text-xs sm:text-sm font-medium text-white">Automated Sync Schedule</p>
+                 <p className="text-[11px] sm:text-xs text-[#9ca3af]">Runs every 30 minutes in the background</p>
              </div>
           </div>
           
-          <div className="flex items-center space-x-4 bg-[#0a0a0a] p-4 rounded-lg border border-[#262626]">
-             <Key className="text-[#525252]" size={20} />
-             <div className="flex-1">
+          <div className="flex items-start space-x-3 sm:space-x-4 bg-[#0a0a0a] p-3 sm:p-4 rounded-lg border border-[#262626]">
+             <Key className="text-[#525252] shrink-0 mt-0.5" size={18} />
+             <div className="flex-1 min-w-0">
                  <div className="flex justify-between items-center mb-1">
-                   <p className="text-sm font-medium text-white">Current API Token</p>
-                   <button onClick={fetchTokenInfo} className="text-[#f59e0b] hover:text-[#fbbf24] text-xs font-semibold px-2 py-1 bg-[#f59e0b]/10 rounded transition-colors">
+                   <p className="text-xs sm:text-sm font-medium text-white">Current API Token</p>
+                   <button onClick={fetchTokenInfo} className="text-[#f59e0b] hover:text-[#fbbf24] text-[11px] sm:text-xs font-semibold px-2 py-0.5 bg-[#f59e0b]/10 rounded transition-colors">
                      Refresh
                    </button>
                  </div>
@@ -87,7 +87,7 @@ const RenderSyncPanel = () => {
                  ) : tokenInfo ? (
                    <div className="space-y-1">
                      <p className="text-xs text-[#9ca3af] font-mono break-all">{tokenInfo.maskedToken}</p>
-                     <p className="text-xs text-green-500">Last updated: {tokenInfo.lastUpdated}</p>
+                     <p className="text-[11px] sm:text-xs text-green-500">Last updated: {tokenInfo.lastUpdated}</p>
                    </div>
                  ) : (
                    <p className="text-xs text-red-500">Failed to load token information</p>
@@ -97,20 +97,20 @@ const RenderSyncPanel = () => {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         <button 
           onClick={handleForceSync}
           disabled={syncing}
-          className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-bold transition-all
+          className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg font-bold text-sm sm:text-base transition-all w-full sm:w-auto
             ${syncing ? 'bg-[#f59e0b]/50 text-[#0a0a0a] cursor-not-allowed' : 'bg-[#f59e0b] text-[#0a0a0a] hover:bg-[#fbbf24]'}
           `}
         >
-          <RefreshCw size={20} className={syncing ? 'animate-spin' : ''} />
+          <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} />
           <span>{syncing ? 'Syncing Database...' : 'Force Manual Sync Now'}</span>
         </button>
 
         {lastSyncResult && (
-          <div className="flex items-center space-x-2 text-sm max-w-sm">
+          <div className="flex items-center space-x-2 text-xs sm:text-sm max-w-sm">
              {lastSyncResult.success ? (
                  <>
                    <CheckCircle className="text-green-500 shrink-0" size={18} />

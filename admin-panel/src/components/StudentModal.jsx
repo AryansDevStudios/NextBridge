@@ -339,54 +339,54 @@ export default function StudentModal({ student, onClose }) {
                 <p className="text-xs text-[#9ca3af] mb-3">
                   Click repeatedly to stack duration (e.g. clicking +1 Month 5 times extends subscription by 150 days).
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   <button
                     type="button"
                     onClick={() => handleAddDays(30)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Plus size={14} className="text-[#f59e0b]" />
-                    <span>+1 Month (+30d)</span>
+                    <Plus size={13} className="text-[#f59e0b] shrink-0" />
+                    <span>+30d<span className="hidden sm:inline"> (+1 Mo)</span></span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAddDays(5)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Plus size={14} className="text-[#f59e0b]" />
+                    <Plus size={13} className="text-[#f59e0b] shrink-0" />
                     <span>+5 Days</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAddDays(1)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-[#f59e0b]/60 text-[#f3f4f6] text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Plus size={14} className="text-[#f59e0b]" />
+                    <Plus size={13} className="text-[#f59e0b] shrink-0" />
                     <span>+1 Day</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleSubtractDays(30)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Minus size={14} className="text-red-400" />
-                    <span>-1 Month (-30d)</span>
+                    <Minus size={13} className="text-red-400 shrink-0" />
+                    <span>-30d<span className="hidden sm:inline"> (-1 Mo)</span></span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSubtractDays(5)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Minus size={14} className="text-red-400" />
+                    <Minus size={13} className="text-red-400 shrink-0" />
                     <span>-5 Days</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSubtractDays(1)}
-                    className="flex items-center justify-center space-x-1 py-2 px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-sm font-medium rounded-lg transition active:scale-95"
+                    className="flex items-center justify-center space-x-1 py-2 px-2 sm:px-3 bg-[#1a1a1a] hover:bg-[#262626] border border-[#333] hover:border-red-500/50 text-[#9ca3af] hover:text-red-300 text-xs sm:text-sm font-medium rounded-lg transition active:scale-95 text-center"
                   >
-                    <Minus size={14} className="text-red-400" />
+                    <Minus size={13} className="text-red-400 shrink-0" />
                     <span>-1 Day</span>
                   </button>
                 </div>
@@ -419,7 +419,7 @@ export default function StudentModal({ student, onClose }) {
                       min="1"
                       value={customDaysInput}
                       onChange={(e) => setCustomDaysInput(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-24 px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] text-[#f3f4f6] text-sm text-center"
+                      className="w-20 sm:w-24 px-2 sm:px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] text-[#f3f4f6] text-sm text-center"
                     />
                     <button
                       type="button"
@@ -434,7 +434,7 @@ export default function StudentModal({ student, onClose }) {
               </div>
 
               {/* Instant One-Click Shortcuts: Unlimited vs Expire Immediately */}
-              <div className="flex space-x-3">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={handleSetUnlimited}
@@ -493,7 +493,7 @@ export default function StudentModal({ student, onClose }) {
                 <button 
                   onClick={handleSaveAccess}
                   disabled={saving}
-                  className="px-6 py-2 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24] disabled:opacity-50 transition-colors shadow-lg shadow-amber-500/10"
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24] disabled:opacity-50 transition-colors shadow-lg shadow-amber-500/10 text-center"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -526,7 +526,7 @@ export default function StudentModal({ student, onClose }) {
                 <button 
                   onClick={handleSaveAccess}
                   disabled={saving}
-                  className="px-6 py-2 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24] disabled:opacity-50 transition-colors"
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24] disabled:opacity-50 transition-colors text-center"
                 >
                   {saving ? 'Saving...' : 'Save Profile'}
                 </button>

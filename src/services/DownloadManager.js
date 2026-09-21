@@ -34,6 +34,33 @@ export function formatTimeRemaining(seconds) {
   return `${h}h ${remMin}m remaining`;
 }
 
+export async function cacheThumbnailLocally(remoteUrl) {
+  if (!remoteUrl || typeof remoteUrl !== 'string') return remoteUrl;
+  if (remoteUrl.startsWith('data:') || remoteUrl.startsWith('blob:') || remoteUrl.startsWith('file:') || remoteUrl.startsWith('capacitor:')) {
+    return remoteUrl;
+  }
+  try {
+    const res = await fetch(remoteUrl, { mode: 'cors' });
+    if (!res.ok) return remoteUrl;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          resolve(remoteUrl);
+        }
+      };
+      reader.onerror = () => resolve(remoteUrl);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('[DownloadManager] Failed to cache thumbnail locally:', e);
+    return remoteUrl;
+  }
+}
+
 export function getDescriptivePdfFileName(item) {
   if (!item) return 'Document.pdf';
 
@@ -280,8 +307,14 @@ class DownloadManagerService {
           map.set(String(item.id), { ...item, subjectName: subject, folderPath: folder });
         });
         res.downloads.forEach(item => {
+          const strId = String(item.id);
           const { subject, folder } = parseDownloadSubjectAndFolder(item);
-          map.set(String(item.id), { ...item, subjectName: subject, folderPath: folder });
+          const existing = map.get(strId);
+          // Preserve local cached data: URI thumbnail if already present
+          const thumb = (existing?.thumbnail && existing.thumbnail.startsWith('data:'))
+            ? existing.thumbnail
+            : (item.thumbnail || existing?.thumbnail || '');
+          map.set(strId, { ...existing, ...item, thumbnail: thumb, subjectName: subject, folderPath: folder });
         });
         const merged = Array.from(map.values()).sort((a, b) => {
           const tA = new Date(a.downloadedAt || 0).getTime();
@@ -289,10 +322,31 @@ class DownloadManagerService {
           return tB - tA;
         });
         localStorage.setItem('downloaded_lectures', JSON.stringify(merged));
+        this.cacheRemoteThumbnails(merged);
       }
     } catch (e) {
       console.warn('[DownloadManager] syncCompletedFromRegistry error:', e);
     }
+  }
+
+  cacheRemoteThumbnails(items) {
+    if (!navigator.onLine || !Array.isArray(items)) return;
+    items.forEach(async (item) => {
+      if (item.thumbnail && (item.thumbnail.startsWith('http://') || item.thumbnail.startsWith('https://'))) {
+        try {
+          const cached = await cacheThumbnailLocally(item.thumbnail);
+          if (cached && cached.startsWith('data:')) {
+            const list = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+            const idx = list.findIndex(d => String(d.id) === String(item.id));
+            if (idx !== -1 && list[idx].thumbnail !== cached) {
+              list[idx].thumbnail = cached;
+              localStorage.setItem('downloaded_lectures', JSON.stringify(list));
+              this.notify();
+            }
+          }
+        } catch (_) {}
+      }
+    });
   }
 
   handleNativeProgress(data) {
@@ -511,6 +565,15 @@ class DownloadManagerService {
     this.requestNotificationPermission().catch(() => {});
     const strId = String(item.id);
 
+    // Pre-cache thumbnail locally for offline rendering
+    if (item.thumbnail && (item.thumbnail.startsWith('http://') || item.thumbnail.startsWith('https://'))) {
+      cacheThumbnailLocally(item.thumbnail).then((cached) => {
+        if (cached && cached.startsWith('data:')) {
+          item.thumbnail = cached;
+        }
+      }).catch(() => {});
+    }
+
     const existing = this.activeDownloads.get(strId);
     if (existing) {
       if (existing.status === 'paused') {
@@ -669,13 +732,14 @@ class DownloadManagerService {
       const { subject, folder } = parseDownloadSubjectAndFolder(task.item);
       // swPlaylistUrl: served by the Service Worker from IndexedDB on web
       const swPlaylistUrl = `/sw-hls/${strId}/index.m3u8`;
+      let thumb = task.item.thumbnail || null;
       updated.unshift({
         id: task.item.id,
         title: task.item.title,
         subjectName: subject,
         folderPath: folder,
         duration: task.item.duration || 0,
-        thumbnail: task.item.thumbnail || null,
+        thumbnail: thumb,
         downloadedAt: new Date().toISOString(),
         path: `downloads/${task.item.id}`,
         quality: `${task.variant.height}p`,
@@ -684,6 +748,21 @@ class DownloadManagerService {
         swPlaylistUrl,
       });
       localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
+
+      // Asynchronously cache thumbnail offline if remote
+      if (thumb && (thumb.startsWith('http://') || thumb.startsWith('https://'))) {
+        cacheThumbnailLocally(thumb).then(cached => {
+          if (cached && cached.startsWith('data:')) {
+            const cur = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
+            const idx = cur.findIndex(d => String(d.id) === strId);
+            if (idx !== -1) {
+              cur[idx].thumbnail = cached;
+              localStorage.setItem('downloaded_lectures', JSON.stringify(cur));
+              this.notify();
+            }
+          }
+        }).catch(() => {});
+      }
     } catch (e) {
       console.warn('[DownloadManager] Failed to record completed download:', e);
     }

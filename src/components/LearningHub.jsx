@@ -68,6 +68,23 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [deleteModalItem, setDeleteModalItem] = useState(null);
+  const [blockedDownloadItem, setBlockedDownloadItem] = useState(null);
+
+  const getDownloadItemSection = (item) => {
+    if (!item) return 'courses';
+    if (item.source === 'ncert' || item.source === 'rsa' || (item.subjectName && item.subjectName.toLowerCase().includes('ncert'))) {
+      return 'textbooks';
+    }
+    if (item.source === 'pyq' || (item.subjectName && item.subjectName.toLowerCase().includes('pyq'))) {
+      return 'pyqs';
+    }
+    return 'courses';
+  };
+
+  const isDownloadItemAllowed = (item) => {
+    const sec = getDownloadItemSection(item);
+    return allowedSections[sec] ?? true;
+  };
 
   // Admin panel 5s long-press on avatar
   const adminHoldTimer = useRef(null);
@@ -407,6 +424,12 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   };
 
   const handlePlayDownloaded = async (item) => {
+    const section = getDownloadItemSection(item);
+    if (!allowedSections[section]) {
+      setBlockedDownloadItem({ item, section });
+      return;
+    }
+
     if (!Capacitor.isNativePlatform()) {
       window.history.pushState({ player: true }, '');
     }
@@ -700,9 +723,9 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         </div>
       )}
 
-      {/* Compact Top Navbar */}
+      {/* Top Navbar */}
       <nav className="navbar" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
-        <div className="nav-left">
+        <div className="navbar-top-row">
           <div 
             className="logo" 
             onClick={() => { setCurrentPath([]); setSearchQuery(''); setActiveTab('courses'); }} 
@@ -712,113 +735,115 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             <span>NextBridge</span>
           </div>
 
-          {/* Compact Navigation Tabs — horizontally scrollable */}
-          <div className="nav-tabs">
-            <button 
-              className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
-            >
-              Courses
-              {!allowedSections.courses && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
-            </button>
-            {isClass10 && (
-              <button 
-                className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
+          <div className="navbar-actions">
+            <div className="search-container">
+              <Search size={16} className="search-icon" />
+              <input 
+                type="text" 
+                className="search-input" 
+                placeholder={
+                  activeTab === 'courses' ? "Search courses..." : 
+                  activeTab === 'textbook' ? "Search textbooks..." : 
+                  activeTab === 'pyq' ? "Search PYQs..." : 
+                  "Search downloads..."
+                } 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            {subInfo.badge && (
+              <div 
+                onClick={() => setShowProfileModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  padding: '4px 9px',
+                  borderRadius: '12px',
+                  background: subInfo.isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                  color: subInfo.isExpired ? '#ef4444' : '#4ade80',
+                  border: `1px solid ${subInfo.isExpired ? 'rgba(239, 68, 68, 0.3)' : 'rgba(74, 222, 128, 0.3)'}`,
+                  cursor: 'pointer',
+                  flexShrink: 0
+                }}
+                title={subInfo.text}
               >
-                Textbook
-                {!allowedSections.textbooks && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
-              </button>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: subInfo.isExpired ? '#ef4444' : '#4ade80' }} />
+                <span>{subInfo.badge}</span>
+              </div>
             )}
-            {isClass10 && (
-              <button 
-                className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
-              >
-                PYQ
-                {!allowedSections.pyqs && <Lock size={12} style={{ opacity: 0.7, marginLeft: 4 }} />}
-              </button>
-            )}
+            {/* Avatar button — long-press 5s to unlock admin panel */}
             <button 
-              className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
+              className="student-avatar-btn" 
+              onClick={() => setShowProfileModal(true)}
+              onPointerDown={() => {
+                adminHoldTimer.current = setTimeout(() => {
+                  setAdminHoldActive(false);
+                  if (onOpenAdmin) onOpenAdmin();
+                }, 5000);
+                setAdminHoldActive(true);
+              }}
+              onPointerUp={() => {
+                clearTimeout(adminHoldTimer.current);
+                setAdminHoldActive(false);
+              }}
+              onPointerLeave={() => {
+                clearTimeout(adminHoldTimer.current);
+                setAdminHoldActive(false);
+              }}
+              title="Student Profile & Support"
+              aria-label="Student Profile"
+              style={{
+                outline: adminHoldActive ? '2px solid rgba(106,163,255,0.6)' : 'none',
+                transition: 'outline 0.2s ease',
+                flexShrink: 0
+              }}
             >
-              <HardDriveDownload size={14} />
-              Downloaded
-              {downloadedLectures.length > 0 && (
-                <span className="badge-count">{downloadedLectures.length}</span>
-              )}
+              <span className="student-avatar-text">
+                {user?.name ? user.name.slice(0, 2).toUpperCase() : 'ST'}
+              </span>
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          <div className="search-container">
-            <Search size={16} className="search-icon" />
-            <input 
-              type="text" 
-              className="search-input" 
-              placeholder={
-                activeTab === 'courses' ? "Search courses..." : 
-                activeTab === 'textbook' ? "Search textbooks..." : 
-                activeTab === 'pyq' ? "Search PYQs..." : 
-                "Search downloads..."
-              } 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          {subInfo.badge && (
-            <div 
-              onClick={() => setShowProfileModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                padding: '4px 9px',
-                borderRadius: '12px',
-                background: subInfo.isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(74, 222, 128, 0.15)',
-                color: subInfo.isExpired ? '#ef4444' : '#4ade80',
-                border: `1px solid ${subInfo.isExpired ? 'rgba(239, 68, 68, 0.3)' : 'rgba(74, 222, 128, 0.3)'}`,
-                cursor: 'pointer'
-              }}
-              title={subInfo.text}
-            >
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: subInfo.isExpired ? '#ef4444' : '#4ade80' }} />
-              <span>{subInfo.badge}</span>
-            </div>
-          )}
-          {/* Avatar button — long-press 5s to unlock admin panel */}
+        {/* Navigation Tabs — full width, no horizontal scroll */}
+        <div className="nav-tabs">
           <button 
-            className="student-avatar-btn" 
-            onClick={() => setShowProfileModal(true)}
-            onPointerDown={() => {
-              adminHoldTimer.current = setTimeout(() => {
-                setAdminHoldActive(false);
-                if (onOpenAdmin) onOpenAdmin();
-              }, 5000);
-              setAdminHoldActive(true);
-            }}
-            onPointerUp={() => {
-              clearTimeout(adminHoldTimer.current);
-              setAdminHoldActive(false);
-            }}
-            onPointerLeave={() => {
-              clearTimeout(adminHoldTimer.current);
-              setAdminHoldActive(false);
-            }}
-            title="Student Profile & Support"
-            aria-label="Student Profile"
-            style={{
-              outline: adminHoldActive ? '2px solid rgba(106,163,255,0.6)' : 'none',
-              transition: 'outline 0.2s ease'
-            }}
+            className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
           >
-            <span className="student-avatar-text">
-              {user?.name ? user.name.slice(0, 2).toUpperCase() : 'ST'}
-            </span>
+            <span>Courses</span>
+            {!allowedSections.courses && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+          </button>
+          {isClass10 && (
+            <button 
+              className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
+            >
+              <span>Textbook</span>
+              {!allowedSections.textbooks && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+            </button>
+          )}
+          {isClass10 && (
+            <button 
+              className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
+            >
+              <span>PYQ</span>
+              {!allowedSections.pyqs && <Lock size={12} style={{ opacity: 0.7, marginLeft: 2 }} />}
+            </button>
+          )}
+          <button 
+            className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
+          >
+            <HardDriveDownload size={13} />
+            <span>Downloaded</span>
+            {downloadedLectures.length > 0 && (
+              <span className="badge-count">{downloadedLectures.length}</span>
+            )}
           </button>
         </div>
       </nav>
@@ -1093,12 +1118,21 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                     key={item.id} 
                     className="download-card"
                     onClick={() => handlePlayDownloaded(item)}
-                    style={{ cursor: 'pointer' }}
+                    style={{ 
+                      cursor: 'pointer',
+                      opacity: isDownloadItemAllowed(item) ? 1 : 0.8,
+                      borderColor: isDownloadItemAllowed(item) ? undefined : 'rgba(239, 68, 68, 0.3)'
+                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
                       <div className={item.type === 'video' && item.thumbnail ? "item-thumbnail-container" : `item-icon-container ${item.type || 'video'}`} style={{ width: '100px', height: '60px', margin: 0, flexShrink: 0 }}>
                         {item.type === 'video' && item.thumbnail ? (
-                          <img src={item.thumbnail} alt="" className="item-thumbnail" />
+                          <img 
+                            src={item.thumbnail} 
+                            alt="" 
+                            className="item-thumbnail" 
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
                         ) : item.type === 'pdf' ? (
                           <FileText size={24} style={{ color: '#ef4444' }} />
                         ) : (
@@ -1110,6 +1144,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                           {item.title}
                         </div>
                         <div className="item-meta" style={{ gap: '8px', fontSize: '0.78rem', flexWrap: 'wrap', marginTop: '3px' }}>
+                          {!isDownloadItemAllowed(item) && (
+                            <span className="badge-locked">
+                              <Lock size={10} /> Locked
+                            </span>
+                          )}
                           <span style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#d1d5db', padding: '1px 7px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 500 }}>
                             {item.subjectName} {item.folderPath ? `• ${item.folderPath}` : ''}
                           </span>
@@ -1289,12 +1328,21 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                         key={item.id} 
                         className="download-card"
                         onClick={() => handlePlayDownloaded(item)}
-                        style={{ cursor: 'pointer' }}
+                        style={{ 
+                          cursor: 'pointer',
+                          opacity: isDownloadItemAllowed(item) ? 1 : 0.8,
+                          borderColor: isDownloadItemAllowed(item) ? undefined : 'rgba(239, 68, 68, 0.3)'
+                        }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
                           <div className={item.type === 'video' && item.thumbnail ? "item-thumbnail-container" : `item-icon-container ${item.type || 'video'}`} style={{ width: '100px', height: '60px', margin: 0, flexShrink: 0 }}>
                             {item.type === 'video' && item.thumbnail ? (
-                              <img src={item.thumbnail} alt="" className="item-thumbnail" />
+                              <img 
+                                src={item.thumbnail} 
+                                alt="" 
+                                className="item-thumbnail" 
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
                             ) : item.type === 'pdf' ? (
                               <FileText size={24} style={{ color: '#ef4444' }} />
                             ) : (
@@ -1306,6 +1354,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                               {item.title}
                             </div>
                             <div className="item-meta" style={{ gap: '8px', fontSize: '0.78rem', flexWrap: 'wrap', marginTop: '3px' }}>
+                              {!isDownloadItemAllowed(item) && (
+                                <span className="badge-locked">
+                                  <Lock size={10} /> Locked
+                                </span>
+                              )}
                               {item.type === 'pdf' ? (
                                 <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '1px 6px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 600 }}>
                                   PDF Document
@@ -1858,6 +1911,70 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                   borderRadius: '6px',
                   fontSize: '0.85rem',
                   fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Blocked Download Access Modal */}
+      {blockedDownloadItem && (
+        <div className="modal-backdrop" onClick={() => setBlockedDownloadItem(null)}>
+          <div className="profile-modal-card" style={{ maxWidth: '420px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              color: '#f87171'
+            }}>
+              <Lock size={30} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+              Access Blocked
+            </h3>
+
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '6px' }}>
+              <strong style={{ color: '#fff' }}>"{blockedDownloadItem.item?.title}"</strong> belongs to the <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                {blockedDownloadItem.section === 'courses' ? 'Courses & Lectures' : blockedDownloadItem.section === 'textbooks' ? 'NCERT Textbooks' : 'CBSE PYQ Hub'}
+              </span> section.
+            </p>
+
+            <p style={{ fontSize: '0.84rem', color: '#9ca3af', lineHeight: 1.4, marginBottom: '24px' }}>
+              Access to this section is not included in your current subscription plan. Contact the administrator on Telegram to unlock or upgrade access.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                className="telegram-support-btn"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => window.open('https://t.me/nextbridge19', '_blank')}
+              >
+                <Send size={16} />
+                <span>Contact Admin to Upgrade</span>
+                <ExternalLink size={14} style={{ opacity: 0.7, marginLeft: '6px' }} />
+              </button>
+
+              <button
+                onClick={() => setBlockedDownloadItem(null)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)',
+                  borderRadius: '8px',
+                  padding: '9px 14px',
+                  fontSize: '0.85rem',
+                  fontWeight: 500,
                   cursor: 'pointer'
                 }}
               >
