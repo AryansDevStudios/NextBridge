@@ -5,7 +5,7 @@ import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc } fro
 import { Device } from '@capacitor/device';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor } from '@capacitor/core';
-import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound } from 'lucide-react';
+import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, ExternalLink } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 
 // CRITICAL: Notify Capgo immediately on module import that the app has booted
@@ -547,6 +547,35 @@ export default function App() {
             </button>
           </form>
         )}
+
+        {/* Telegram Admin Support Link */}
+        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', width: '100%', textAlign: 'center' }}>
+          <a
+            href="https://t.me/nextbridge19"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontSize: '0.8rem',
+              color: 'var(--accent)',
+              textDecoration: 'none',
+              fontWeight: 500,
+              padding: '8px 14px',
+              borderRadius: '8px',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              width: '100%',
+              boxSizing: 'border-box'
+            }}
+          >
+            <Send size={14} />
+            <span>Need access or support? Contact Admin</span>
+            <ExternalLink size={12} style={{ opacity: 0.7, marginLeft: 'auto' }} />
+          </a>
+        </div>
       </div>
 
       {/* Anonymous Footer */}

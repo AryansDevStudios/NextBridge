@@ -25,3 +25,4 @@ dist-ssr
 deploy_dist
 shell_dist
 android/
+release/

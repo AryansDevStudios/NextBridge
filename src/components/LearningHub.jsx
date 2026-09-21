@@ -14,12 +14,22 @@ import {
   Clock, 
   Trash2, 
   HardDriveDownload, 
-  WifiOff 
+  WifiOff,
+  User,
+  ExternalLink,
+  Play,
+  Pause,
+  X,
+  AlertTriangle,
+  HardDrive,
+  Loader2,
+  Send
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
@@ -28,7 +38,7 @@ function formatDuration(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (h > 0) return `${h}h ${m}s`;
   return `${m}m ${s}s`;
 }
 
@@ -48,6 +58,38 @@ const LearningHub = ({ user, onLogout }) => {
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [offlineToast, setOfflineToast] = useState('');
+  const [mgrState, setMgrState] = useState(downloadManager.getState());
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [deleteModalItem, setDeleteModalItem] = useState(null);
+
+  // Subscribe to central download manager
+  useEffect(() => {
+    return downloadManager.subscribe((st) => {
+      setMgrState(st);
+      loadDownloadedLectures();
+    });
+  }, []);
+
+  const totalStorageBytes = useMemo(() => {
+    return downloadedLectures.reduce((acc, l) => acc + (l.sizeBytes || 0), 0);
+  }, [downloadedLectures]);
+
+  const confirmDelete = async () => {
+    if (!deleteModalItem) return;
+    try {
+      await Filesystem.rmdir({
+        path: `downloads/${deleteModalItem.id}`,
+        directory: Directory.Data,
+        recursive: true
+      });
+    } catch (err) {
+      console.warn('Failed to delete download folder:', err);
+    }
+    const updated = downloadedLectures.filter(d => String(d.id) !== String(deleteModalItem.id));
+    setDownloadedLectures(updated);
+    localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
+    setDeleteModalItem(null);
+  };
 
   // Refs for tracking navigation state without closure lag
   const playingVideoRef = useRef(playingVideo);
@@ -451,7 +493,7 @@ const LearningHub = ({ user, onLogout }) => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           {activeTab === 'courses' && (
             <div className="search-container">
               <Search size={16} className="search-icon" />
@@ -464,13 +506,23 @@ const LearningHub = ({ user, onLogout }) => {
               />
             </div>
           )}
+          <button 
+            className="student-avatar-btn" 
+            onClick={() => setShowProfileModal(true)}
+            title="Student Profile & Support"
+            aria-label="Student Profile"
+          >
+            <span className="student-avatar-text">
+              {user?.name ? user.name.slice(0, 2).toUpperCase() : 'ST'}
+            </span>
+          </button>
         </div>
       </nav>
 
       {/* DOWNLOADED TAB VIEW */}
       {activeTab === 'downloads' && (
         <div className="main-content pb-24">
-          <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button 
                 onClick={() => setActiveTab('courses')}
@@ -491,11 +543,111 @@ const LearningHub = ({ user, onLogout }) => {
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Downloaded Lectures</span>
               <span className="badge-count">{downloadedLectures.length}</span>
             </div>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Stored on Device</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--accent)', background: 'rgba(245, 158, 11, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+              <HardDrive size={14} />
+              <span>{formatBytes(totalStorageBytes)} Device Storage</span>
+            </div>
           </div>
 
+          {/* Active & Queued Downloads Panel */}
+          {(mgrState.active.length > 0 || mgrState.queued.length > 0) && (
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                <Loader2 size={16} className="spin-icon" style={{ color: 'var(--accent)' }} />
+                <span>Downloading Now ({mgrState.active.length + mgrState.queued.length})</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {mgrState.active.map((task) => {
+                  const isPaused = task.status === 'paused';
+                  return (
+                    <div key={task.id} className="active-download-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {task.title}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', marginTop: '2px' }}>
+                            <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                              {task.quality}
+                            </span>
+                            <span style={{ color: isPaused ? '#f59e0b' : '#38bdf8', fontWeight: 600 }}>
+                              {isPaused ? 'Paused' : 'Downloading (16 streams)'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                          <button
+                            onClick={() => isPaused ? downloadManager.resumeDownload(task.id) : downloadManager.pauseDownload(task.id)}
+                            className="active-task-action-btn"
+                            title={isPaused ? "Resume Download" : "Pause Download"}
+                          >
+                            {isPaused ? <Play size={13} /> : <Pause size={13} />}
+                            <span>{isPaused ? 'Resume' : 'Pause'}</span>
+                          </button>
+                          <button
+                            onClick={() => downloadManager.cancelDownload(task.id)}
+                            className="active-task-cancel-btn"
+                            title="Cancel Download"
+                          >
+                            <X size={13} />
+                            <span>Cancel</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="download-progress-bar-track">
+                        <div 
+                          className="download-progress-bar-fill" 
+                          style={{ 
+                            width: `${task.percent}%`,
+                            background: isPaused ? '#f59e0b' : 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                          }} 
+                        />
+                      </div>
+
+                      {/* Stats footer */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '0.75rem', color: '#9ca3af', fontFamily: 'monospace' }}>
+                        <span>
+                          {task.formattedDownloaded} / {task.formattedTotal} ({task.percent}%)
+                        </span>
+                        <span>
+                          {!isPaused && task.speed && `${task.speed} • ETA ${task.eta || 'calculating...'}`}
+                          {isPaused && 'Paused'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {mgrState.queued.map((q) => (
+                  <div key={q.item.id} className="active-download-card" style={{ opacity: 0.8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {q.item.title}
+                        </div>
+                        <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                          Queued • Waiting for download slot
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => downloadManager.cancelDownload(q.item.id)}
+                        className="active-task-cancel-btn"
+                      >
+                        <X size={13} /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="list-container">
-            {downloadedLectures.length === 0 ? (
+            {downloadedLectures.length === 0 && mgrState.active.length === 0 && mgrState.queued.length === 0 ? (
               <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
                 <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '18px', borderRadius: '50%', marginBottom: '16px', color: 'var(--accent)' }}>
                   <HardDriveDownload size={36} />
@@ -539,6 +691,12 @@ const LearningHub = ({ user, onLogout }) => {
                             {item.quality}
                           </span>
                         )}
+                        {item.sizeBytes > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8', fontWeight: 500 }}>
+                            <HardDrive size={12} />
+                            {formatBytes(item.sizeBytes)}
+                          </span>
+                        )}
                         {item.duration > 0 && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <Clock size={12} />
@@ -550,7 +708,10 @@ const LearningHub = ({ user, onLogout }) => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     <button 
-                      onClick={(e) => handleDeleteDownload(item, e)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteModalItem(item);
+                      }}
                       style={{ 
                         background: 'rgba(239, 68, 68, 0.1)', 
                         border: '1px solid rgba(239, 68, 68, 0.3)', 
@@ -700,6 +861,128 @@ const LearningHub = ({ user, onLogout }) => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Student Profile & Support Modal */}
+      {showProfileModal && (
+        <div className="modal-backdrop" onClick={() => setShowProfileModal(false)}>
+          <div className="profile-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Student Profile
+              </span>
+              <button 
+                onClick={() => setShowProfileModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '24px' }}>
+              <div className="profile-avatar-large">
+                {user?.name ? user.name.slice(0, 2).toUpperCase() : 'ST'}
+              </div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '12px', marginBottom: '4px' }}>
+                {user?.name || 'Enrolled Student'}
+              </h3>
+              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent)', padding: '2px 10px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                Class {user?.class || 'N/A'}
+              </span>
+            </div>
+
+            <div className="profile-details-list">
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Access Token (PAT)</span>
+                <span className="profile-detail-value monospace">{user?.pat || user?.id || 'Active'}</span>
+              </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Device Status</span>
+                <span className="profile-detail-value" style={{ color: '#4ade80' }}>● Bound & Verified</span>
+              </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Offline Storage</span>
+                <span className="profile-detail-value">{downloadedLectures.length} files ({formatBytes(totalStorageBytes)})</span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '24px' }}>
+              <button
+                className="telegram-support-btn"
+                onClick={() => window.open('https://t.me/nextbridge19', '_blank')}
+              >
+                <Send size={16} />
+                <span>Contact Admin on Telegram</span>
+                <ExternalLink size={14} style={{ opacity: 0.7, marginLeft: 'auto' }} />
+              </button>
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: '8px' }}>
+                Support, token queries & device transfer: @nextbridge19
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalItem && (
+        <div className="modal-backdrop" onClick={() => setDeleteModalItem(null)}>
+          <div className="delete-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '10px', borderRadius: '50%' }}>
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Delete Download?
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Frees storage space on this device</span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '20px' }}>
+              Are you sure you want to remove <strong style={{ color: 'var(--text-primary)' }}>"{deleteModalItem.title}"</strong>
+              {deleteModalItem.quality ? ` (${deleteModalItem.quality})` : ''} from your device storage?
+              {deleteModalItem.sizeBytes > 0 && ` This will free up ${formatBytes(deleteModalItem.sizeBytes)} of space.`}
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={() => setDeleteModalItem(null)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  background: '#ef4444',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Trash2 size={15} />
+                <span>Delete Video</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

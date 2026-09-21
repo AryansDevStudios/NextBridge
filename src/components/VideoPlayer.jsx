@@ -8,9 +8,20 @@ import { collection, addDoc } from 'firebase/firestore';
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw } from 'lucide-react';
+import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
+
+export function formatSeekTime(seconds) {
+  if (!seconds || isNaN(seconds) || seconds < 0) seconds = 0;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const pad = (n) => n.toString().padStart(2, '0');
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
+}
 
 function HlsPlayer({ url, item, user }) {
   const videoRef = useRef(null);
@@ -20,6 +31,8 @@ function HlsPlayer({ url, item, user }) {
   const [offlineUrl, setOfflineUrl] = useState(null);
   const [isReady, setIsReady] = useState(false);
   const [skipIndicator, setSkipIndicator] = useState(null);
+  const [seekPreview, setSeekPreview] = useState(null);
+  const previewVideoRef = useRef(null);
 
   useEffect(() => {
     const checkOffline = async () => {
@@ -255,6 +268,49 @@ function HlsPlayer({ url, item, user }) {
       if (plyrInstance.elements.container) {
         plyrInstance.elements.container.addEventListener('mousemove', onMouseMoveWhilePaused);
         plyrInstance.elements.container.addEventListener('touchstart', onMouseMoveWhilePaused);
+
+        // YouTube-style frame preview on scrub / hover
+        const progressEl = plyrInstance.elements.container.querySelector('.plyr__progress');
+        if (progressEl) {
+          const onScrubMove = (e) => {
+            const rect = progressEl.getBoundingClientRect();
+            const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+            if (clientX < rect.left || clientX > rect.right) {
+              setSeekPreview(null);
+              return;
+            }
+            const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const dur = video.duration || item.duration || 0;
+            const targetTime = ratio * dur;
+
+            const wrapRect = wrapper.getBoundingClientRect();
+            const relX = clientX - wrapRect.left;
+
+            setSeekPreview({
+              time: targetTime,
+              x: Math.max(80, Math.min(wrapRect.width - 80, relX))
+            });
+
+            if (previewVideoRef.current) {
+              try {
+                if (previewVideoRef.current.fastSeek) {
+                  previewVideoRef.current.fastSeek(targetTime);
+                } else {
+                  previewVideoRef.current.currentTime = targetTime;
+                }
+              } catch (err) {}
+            }
+          };
+
+          const onScrubLeave = () => {
+            setSeekPreview(null);
+          };
+
+          progressEl.addEventListener('mousemove', onScrubMove);
+          progressEl.addEventListener('touchmove', onScrubMove);
+          progressEl.addEventListener('mouseleave', onScrubLeave);
+          progressEl.addEventListener('touchend', onScrubLeave);
+        }
       }
 
       setTimeout(() => {
@@ -477,310 +533,227 @@ function HlsPlayer({ url, item, user }) {
           </div>
         </React.Fragment>
       )}
+
+      {/* YouTube-Style Seek Preview Tooltip */}
+      {seekPreview && (
+        <div 
+          className="seek-preview-tooltip"
+          style={{ left: `${seekPreview.x}px` }}
+        >
+          <div className="seek-preview-frame">
+            <video 
+              ref={previewVideoRef} 
+              src={offlineUrl || url} 
+              muted 
+              playsInline 
+              preload="auto" 
+              className="seek-preview-video"
+            />
+          </div>
+          <div className="seek-preview-time">
+            {formatSeekTime(seekPreview.time)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function VideoDownloader({ url, item, user }) {
-  const [state, setState] = useState('idle'); // idle | fetchingOptions | selecting | downloading | done | error
+  const [mgrState, setMgrState] = useState(downloadManager.getState());
+  const [isSavedOnDevice, setIsSavedOnDevice] = useState(false);
+  const [viewState, setViewState] = useState('idle'); // idle | analyzing | selecting | error
   const [variants, setVariants] = useState([]);
   const [selectedVariant, setSelectedVariant] = useState(null);
-  const [progress, setProgress] = useState({ current: 0, total: 0, percent: 0 });
+  const [analysisProgress, setAnalysisProgress] = useState({ completed: 0, total: 0 });
   const [errorMsg, setErrorMsg] = useState('');
-  const abortRef = useRef(null);
 
+  // Subscribe to central download manager
   useEffect(() => {
-    const checkDownloaded = async () => {
-      try {
-        const m3u8Stat = await Filesystem.stat({ path: `downloads/${item.id}/index.m3u8`, directory: Directory.Data });
-        if (m3u8Stat) { setState('done'); return; }
-      } catch (e) {}
+    return downloadManager.subscribe(setMgrState);
+  }, []);
 
+  // Check if downloaded on disk
+  useEffect(() => {
+    const checkDisk = async () => {
       try {
-        const mp4Stat = await Filesystem.stat({ path: `downloads/${item.id}/video.mp4`, directory: Directory.Data });
-        if (mp4Stat) { setState('done'); return; }
+        const stat = await Filesystem.stat({ path: `downloads/${item.id}/index.m3u8`, directory: Directory.Data });
+        if (stat) { setIsSavedOnDevice(true); return; }
       } catch (e) {}
-
-      setState('idle');
+      try {
+        const statMp4 = await Filesystem.stat({ path: `downloads/${item.id}/video.mp4`, directory: Directory.Data });
+        if (statMp4) { setIsSavedOnDevice(true); return; }
+      } catch (e) {}
+      setIsSavedOnDevice(false);
     };
-    checkDownloaded();
-  }, [item.id]);
+    checkDisk();
+  }, [item.id, mgrState]);
 
-  const fetchOptions = async () => {
-    if (!url.includes('.m3u8')) {
-      // Direct MP4 - download immediately
-      startDownloadDirect();
-      return;
-    }
+  // Find active task or queued task
+  const activeTask = mgrState.active.find(t => String(t.id) === String(item.id));
+  const queuedTask = mgrState.queued.find(q => String(q.item.id) === String(item.id));
+  const currentTask = activeTask || (queuedTask ? { ...queuedTask.task.toPublicState(), status: 'queued' } : null);
 
-    try {
-      setState('fetchingOptions');
-      setErrorMsg('');
+  // If already downloading or queued in downloadManager:
+  if (currentTask) {
+    const isPaused = currentTask.status === 'paused';
+    const isQueued = currentTask.status === 'queued';
 
-      let masterText = '';
-      try {
-        const res = await fetch(url);
-        if (res.ok) masterText = await res.text();
-        else throw new Error('Fetch status ' + res.status);
-      } catch (e) {
-        const { CapacitorHttp } = await import('@capacitor/core');
-        const masterRes = await CapacitorHttp.request({ method: 'GET', url });
-        masterText = masterRes.data;
-      }
-
-      const lines = masterText.split('\n').map(l => l.trim());
-      let parsedVariants = [];
-
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-          const resMatch = lines[i].match(/RESOLUTION=\d+x(\d+)/);
-          const height = resMatch ? parseInt(resMatch[1]) : 0;
-          const nextLine = lines[i + 1];
-          if (nextLine && !nextLine.startsWith('#')) {
-            parsedVariants.push({ height: height || 720, path: nextLine });
-          }
-        }
-      }
-
-      if (parsedVariants.length === 0) {
-        parsedVariants = [{ height: 720, path: url }];
-      } else {
-        parsedVariants.sort((a, b) => b.height - a.height);
-      }
-
-      setVariants(parsedVariants);
-      const savedQuality = parseInt(localStorage.getItem('global_quality') || '720');
-      let initialSelected = parsedVariants[0];
-      const matched = parsedVariants.find(v => v.height === savedQuality);
-      if (matched) initialSelected = matched;
-
-      setSelectedVariant(initialSelected);
-      setState('selecting');
-    } catch (err) {
-      console.error('[Download] Failed to fetch qualities:', err);
-      // If fetching variants fails, fallback to direct download
-      startDownloadDirect();
-    }
-  };
-
-  const startDownloadDirect = async () => {
-    setState('downloading');
-    setErrorMsg('');
-    setProgress({ current: 0, total: 1, percent: 10 });
-    abortRef.current = new AbortController();
-
-    try {
-      const baseDir = `downloads/${item.id}`;
-      await Filesystem.mkdir({ path: 'downloads', directory: Directory.Data, recursive: true }).catch(() => {});
-      await Filesystem.mkdir({ path: baseDir, directory: Directory.Data, recursive: true }).catch(() => {});
-
-      await Filesystem.downloadFile({
-        url,
-        path: `${baseDir}/video.mp4`,
-        directory: Directory.Data
-      });
-
-      // Register in downloaded_lectures
-      saveToDownloadRegistry('Direct');
-
-      setState('done');
-      if (user) {
-        addDoc(collection(db, 'students', user.id, 'logs'), {
-          type: 'download',
-          videoId: item.id || '',
-          videoTitle: item.title || 'Unknown Video',
-          timestamp: new Date().toISOString()
-        }).catch(console.error);
-      }
-    } catch (err) {
-      console.error('[Download] Direct download failed:', err);
-      setErrorMsg('Download failed. Check your internet.');
-      setState('error');
-    }
-  };
-
-  const startDownload = async (variant) => {
-    setState('downloading');
-    setErrorMsg('');
-    setProgress({ current: 0, total: 0, percent: 0 });
-    abortRef.current = new AbortController();
-    const signal = abortRef.current.signal;
-
-    try {
-      const baseDir = `downloads/${item.id}`;
-      await Filesystem.mkdir({ path: 'downloads', directory: Directory.Data, recursive: true }).catch(() => {});
-      await Filesystem.mkdir({ path: baseDir, directory: Directory.Data, recursive: true }).catch(() => {});
-
-      const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
-      const variantUrl = variant.path.startsWith('http') ? variant.path : baseUrl + variant.path;
-
-      let mediaText = '';
-      try {
-        const fetchRes = await fetch(variantUrl, { signal });
-        if (fetchRes.ok) mediaText = await fetchRes.text();
-        else throw new Error('Fetch status ' + fetchRes.status);
-      } catch (e) {
-        const { CapacitorHttp } = await import('@capacitor/core');
-        const mediaRes = await CapacitorHttp.request({ method: 'GET', url: variantUrl });
-        mediaText = mediaRes.data;
-      }
-
-      const mediaBase = variantUrl.substring(0, variantUrl.lastIndexOf('/') + 1);
-      const mediaLines = mediaText.split('\n');
-
-      let modifiedPlaylist = [];
-      let segmentUrls = [];
-      let segCount = 0;
-
-      for (let line of mediaLines) {
-        line = line.trim();
-        if (!line) continue;
-        if (line.startsWith('#')) {
-          modifiedPlaylist.push(line);
-        } else {
-          const absoluteUrl = line.startsWith('http') ? line : mediaBase + line;
-          const localName = `${segCount}.ts`;
-          segmentUrls.push({ url: absoluteUrl, localName });
-          modifiedPlaylist.push(localName);
-          segCount++;
-        }
-      }
-
-      if (segmentUrls.length === 0) throw new Error('No video segments found');
-
-      setProgress({ current: 0, total: segmentUrls.length, percent: 0 });
-
-      // Parallel download in batches of 5
-      const CONCURRENCY = 5;
-      let completed = 0;
-
-      for (let i = 0; i < segmentUrls.length; i += CONCURRENCY) {
-        if (signal.aborted) throw new Error('Aborted');
-        const batch = segmentUrls.slice(i, i + CONCURRENCY);
-
-        await Promise.all(batch.map(seg => Filesystem.downloadFile({
-          url: seg.url,
-          path: `${baseDir}/${seg.localName}`,
-          directory: Directory.Data
-        })));
-
-        completed += batch.length;
-        const pct = Math.round((completed / segmentUrls.length) * 100);
-        setProgress({ current: completed, total: segmentUrls.length, percent: pct });
-      }
-
-      // Write relative index.m3u8
-      await Filesystem.writeFile({
-        path: `${baseDir}/index.m3u8`,
-        data: modifiedPlaylist.join('\n'),
-        directory: Directory.Data,
-        encoding: 'utf8'
-      });
-
-      // Save to download registry
-      saveToDownloadRegistry(`${variant.height}p`);
-
-      setState('done');
-
-      if (user) {
-        addDoc(collection(db, 'students', user.id, 'logs'), {
-          type: 'download',
-          videoId: item.id || '',
-          videoTitle: item.title || 'Unknown Video',
-          quality: `${variant.height}p`,
-          timestamp: new Date().toISOString()
-        }).catch(console.error);
-      }
-    } catch (err) {
-      if (err.message === 'Aborted') {
-        setState('idle');
-      } else {
-        console.error('[Download] Execution failed:', err);
-        setErrorMsg(err.message || 'Download failed');
-        setState('error');
-      }
-    }
-  };
-
-  const saveToDownloadRegistry = (qualityLabel) => {
-    try {
-      const existing = JSON.parse(localStorage.getItem('downloaded_lectures') || '[]');
-      const updated = existing.filter(d => String(d.id) !== String(item.id));
-      updated.unshift({
-        id: item.id,
-        title: item.title,
-        subjectName: item.unified_path || item.folder_path || 'Class Lecture',
-        folderPath: item.folder_path || '',
-        duration: item.duration || 0,
-        thumbnail: item.thumbnail || null,
-        downloadedAt: new Date().toISOString(),
-        path: `downloads/${item.id}`,
-        quality: qualityLabel
-      });
-      localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('[Download] Failed to update download registry:', e);
-    }
-  };
-
-  const cancelDownload = () => {
-    if (abortRef.current) abortRef.current.abort();
-    setState('idle');
-  };
-
-  if (state === 'idle') {
     return (
-      <button className="yt-download-btn" onClick={fetchOptions}>
-        <Download size={18} /> Download Lecture
-      </button>
-    );
-  }
+      <div className="download-active-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isPaused ? '#f59e0b' : '#38bdf8' }}>
+            {isQueued ? 'Queued (Waiting for slot)' : isPaused ? 'Download Paused' : `Downloading (${currentTask.quality}) • 16 streams`}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontFamily: 'monospace' }}>
+            {currentTask.formattedDownloaded} / {currentTask.formattedTotal}
+          </span>
+        </div>
 
-  if (state === 'fetchingOptions') {
-    return (
-      <div className="download-progress-container">
-        <Loader2 size={16} className="spin-icon text-amber-500" />
-        <div className="download-progress-text">Preparing download...</div>
+        <div className="download-progress-bar-track">
+          <div 
+            className="download-progress-bar-fill" 
+            style={{ 
+              width: `${currentTask.percent}%`,
+              background: isPaused ? '#f59e0b' : 'var(--accent)'
+            }} 
+          />
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: '0.75rem', color: '#9ca3af' }}>
+          <div>
+            {!isPaused && !isQueued && currentTask.speed && (
+              <span>{currentTask.speed} • {currentTask.eta || 'calculating...'}</span>
+            )}
+            {(isPaused || isQueued) && (
+              <span>{isPaused ? 'Paused' : 'Waiting in queue...'}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {!isQueued && (
+              <button 
+                onClick={() => isPaused ? downloadManager.resumeDownload(item.id) : downloadManager.pauseDownload(item.id)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600 }}
+              >
+                {isPaused ? <Play size={12} /> : <Pause size={12} />}
+                {isPaused ? 'Resume' : 'Pause'}
+              </button>
+            )}
+            <button 
+              onClick={() => downloadManager.cancelDownload(item.id)}
+              style={{ background: 'rgba(239,68,68,0.15)', border: 'none', color: '#ef4444', padding: '4px 10px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              <X size={12} /> Cancel
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (state === 'selecting') {
+  // If saved on device
+  if (isSavedOnDevice) {
     return (
-      <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', padding: '10px 14px' }}>
-        <div className="download-progress-text" style={{ color: '#f3f4f6', fontWeight: '600' }}>
-          Select Quality to Download:
+      <div className="download-progress-container" style={{ justifyContent: 'space-between' }}>
+        <div className="download-progress-text" style={{ color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckCircle size={16} /> Saved to Device (Offline Ready)
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+      </div>
+    );
+  }
+
+  // Analyze sizes (50 concurrent HEAD requests)
+  const handleStartAnalysis = async () => {
+    setViewState('analyzing');
+    setErrorMsg('');
+    try {
+      const res = await downloadManager.queryAccurateResolutionSizes(
+        url,
+        item.duration,
+        ({ completed, total }) => {
+          setAnalysisProgress({ completed, total });
+        }
+      );
+      setVariants(res);
+      setSelectedVariant(res[0]);
+      setViewState('selecting');
+    } catch (err) {
+      console.error('Failed to query resolution sizes:', err);
+      setErrorMsg('Failed to query resolutions. Try again.');
+      setViewState('error');
+    }
+  };
+
+  if (viewState === 'analyzing') {
+    return (
+      <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6, padding: '10px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.825rem', color: 'var(--accent)', fontWeight: 600 }}>
+          <Loader2 size={16} className="spin-icon" />
+          <span>Querying accurate sizes (50 concurrent streams)...</span>
+        </div>
+        {analysisProgress.total > 0 && (
+          <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+            Analyzed {analysisProgress.completed} / {analysisProgress.total} video chunks
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (viewState === 'selecting') {
+    return (
+      <div className="download-progress-container" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '12px 14px' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f3f4f6' }}>
+          Select Resolution to Download:
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {variants.map(v => (
             <button
               key={v.height}
               onClick={() => setSelectedVariant(v)}
               style={{
-                padding: '4px 10px',
+                padding: '6px 12px',
                 borderRadius: '6px',
                 fontSize: '0.8rem',
-                fontWeight: '600',
+                fontWeight: 600,
                 border: selectedVariant?.height === v.height ? '1px solid var(--accent)' : '1px solid var(--border-color)',
                 background: selectedVariant?.height === v.height ? 'rgba(245, 158, 11, 0.2)' : '#1a1a1a',
                 color: selectedVariant?.height === v.height ? 'var(--accent)' : '#9ca3af',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
               }}
             >
-              {v.height}p
+              <span>{v.height}p</span>
+              <span style={{ fontSize: '0.72rem', opacity: 0.85, fontWeight: 500 }}>
+                • {v.formattedSize}
+              </span>
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button 
-            className="yt-download-btn" 
+            className="yt-download-btn"
             style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-            onClick={() => startDownload(selectedVariant || variants[0])}
+            onClick={() => {
+              downloadManager.enqueueDownload(item, selectedVariant || variants[0]);
+              setViewState('idle');
+              if (user) {
+                addDoc(collection(db, 'students', user.id, 'logs'), {
+                  type: 'download',
+                  videoId: item.id || '',
+                  videoTitle: item.title || 'Unknown Video',
+                  quality: `${(selectedVariant || variants[0]).height}p`,
+                  timestamp: new Date().toISOString()
+                }).catch(console.error);
+              }
+            }}
           >
-            Start Download
+            Start Download (16 Streams)
           </button>
           <button 
-            onClick={() => setState('idle')}
+            onClick={() => setViewState('idle')}
             style={{ background: 'transparent', border: '1px solid var(--border-color)', color: '#9ca3af', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
           >
             Cancel
@@ -790,40 +763,14 @@ function VideoDownloader({ url, item, user }) {
     );
   }
 
-  if (state === 'downloading') {
-    return (
-      <div className="download-progress-container">
-        <div className="download-progress-bar-track">
-          <div className="download-progress-bar-fill" style={{ width: `${progress.percent}%` }} />
-        </div>
-        <div className="download-progress-text">
-          {progress.percent}% ({progress.current}/{progress.total})
-        </div>
-        <button className="download-cancel-btn" onClick={cancelDownload} title="Cancel Download">
-          <X size={14} />
-        </button>
-      </div>
-    );
-  }
-
-  if (state === 'done') {
-    return (
-      <div className="download-progress-container">
-        <div className="download-progress-text" style={{ color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <CheckCircle size={16} /> Saved to Device
-        </div>
-      </div>
-    );
-  }
-
-  if (state === 'error') {
+  if (viewState === 'error') {
     return (
       <div className="download-progress-container">
         <div className="download-progress-text" style={{ color: 'var(--danger)' }}>
-          {errorMsg || 'Download failed'}
+          {errorMsg}
         </div>
         <button 
-          onClick={fetchOptions}
+          onClick={handleStartAnalysis}
           style={{ background: 'var(--accent)', color: '#000', border: 'none', padding: '3px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
         >
           Retry
@@ -832,7 +779,12 @@ function VideoDownloader({ url, item, user }) {
     );
   }
 
-  return null;
+  // Idle state
+  return (
+    <button className="yt-download-btn" onClick={handleStartAnalysis}>
+      <Download size={18} /> Download Lecture
+    </button>
+  );
 }
 
 function formatDuration(seconds) {
