@@ -34,40 +34,126 @@ export function formatTimeRemaining(seconds) {
   return `${h}h ${remMin}m remaining`;
 }
 
+export function getDescriptivePdfFileName(item) {
+  if (!item) return 'Document.pdf';
+
+  const sanitize = (str) =>
+    String(str || '')
+      .replace(/\.pdf$/i, '')
+      .replace(/[\\/:*?"<>|&]+/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .trim();
+
+  // --- NCERT items: Book_Chapter_Subject ---
+  if (item.source === 'ncert') {
+    const book = sanitize(item.book_title || '');
+    const chapter = sanitize(item.chapter_title || item.name || item.title || '');
+    const subject = sanitize(
+      (item.subject_name || item.subjectName || '')
+        .replace(/^NCERT:\s*/i, '')
+        .split('/')[0]
+        .trim()
+    );
+    const parts = [book, chapter, subject].filter(Boolean);
+    return `${parts.join('_')}.pdf`;
+  }
+
+  // --- PYQ items: FileName_Subject_Year ---
+  if (item.source === 'pyq') {
+    const name = sanitize(item.name || item.title || '');
+    const pathParts = String(item.folder_path || item.raw_url || item.url || '').split('/').filter(Boolean);
+    // Pick subject (first folder part) and year (second folder part if it looks like a year)
+    const subjectPart = sanitize(item.subject_name || pathParts[0] || '');
+    const yearPart = pathParts.find(p => /\d{4}/.test(p));
+    const year = yearPart ? sanitize(yearPart) : '';
+    const parts = [name, subjectPart, year].filter(Boolean);
+    return `${parts.join('_')}.pdf`;
+  }
+
+  // --- Regular course notes / lectures ---
+  let rawTitle = (item.title || item.name || 'Notes').trim();
+  rawTitle = rawTitle.replace(/\.pdf$/i, '');
+
+  let rawSubject = (item.subject_name || item.subjectName || '').trim();
+  rawSubject = rawSubject.replace(/^(NCERT|CBSE PYQ):\s*/i, '');
+  if (rawSubject.includes('/')) {
+    rawSubject = rawSubject.split('/')[0].trim();
+  }
+
+  let rawFolder = (item.folder_path || item.folderPath || '').trim();
+
+  let baseParts = [rawTitle];
+
+  // If it's a notes doc (folder includes "note" or title has lecture numbers like L1, L2)
+  const isNotes = item.type === 'pdf' && (
+    (rawFolder && rawFolder.toLowerCase().includes('note')) ||
+    (/\bL\d+\b/i.test(rawTitle))
+  );
+
+  if (isNotes && !rawTitle.toLowerCase().includes('notes')) {
+    baseParts.push('notes');
+  }
+
+  // Add subject if not already embedded
+  if (rawSubject && !rawTitle.toLowerCase().includes(rawSubject.toLowerCase())) {
+    baseParts.push(rawSubject);
+  }
+
+  const formatted = baseParts
+    .join('_')
+    .replace(/[\\/:*?"<>|&]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  return `${formatted}.pdf`;
+}
+
 export function parseDownloadSubjectAndFolder(item) {
   if (!item) return { subject: 'General Studies', folder: 'Lectures' };
 
   let subject = (item.subject_name || item.subjectName || '').trim();
   let folder = (item.folder_path || item.folderPath || '').trim();
 
-  // If subject contains slashes (e.g. "Social Science/Lectures" or "Social Science/History/Chapter 1")
-  if (subject.includes('/')) {
-    const parts = subject.split('/');
-    subject = parts[0].trim();
-    const remaining = parts.slice(1).join('/').trim();
+  // If source is ncert or pyq
+  if (item.source === 'ncert' || subject.startsWith('NCERT:')) {
+    if (!subject.startsWith('NCERT:')) subject = `NCERT: ${subject}`;
+    if (!folder) folder = item.book_title || 'Textbooks';
+  } else if (item.source === 'pyq' || subject.startsWith('CBSE PYQ:')) {
+    if (!subject.startsWith('CBSE PYQ:')) subject = `CBSE PYQ: ${subject}`;
+    if (!folder) folder = 'Question Papers';
+  } else {
+    // If subject contains slashes (e.g. "Social Science/Lectures" or "Social Science/History/Chapter 1")
+    if (subject.includes('/')) {
+      const parts = subject.split('/');
+      subject = parts[0].trim();
+      const remaining = parts.slice(1).join('/').trim();
+      if (!folder) {
+        folder = remaining;
+      } else if (!folder.startsWith(remaining)) {
+        folder = `${remaining}/${folder}`;
+      }
+    }
+
+    // If unified_path exists and subject is generic or empty
+    if ((!subject || subject === 'Class Lecture' || subject === 'General' || subject === 'General Studies') && item.unified_path) {
+      const parts = item.unified_path.split('/');
+      subject = parts[0].trim();
+      if (!folder && parts.length > 1) {
+        folder = parts.slice(1).join('/').trim();
+      }
+    }
+
+    // Default folder if completely empty
     if (!folder) {
-      folder = remaining;
-    } else if (!folder.startsWith(remaining)) {
-      folder = `${remaining}/${folder}`;
+      folder = item.type === 'pdf' ? 'Notes' : 'Lectures';
     }
-  }
 
-  // If unified_path exists and subject is generic or empty
-  if ((!subject || subject === 'Class Lecture' || subject === 'General' || subject === 'General Studies') && item.unified_path) {
-    const parts = item.unified_path.split('/');
-    subject = parts[0].trim();
-    if (!folder && parts.length > 1) {
-      folder = parts.slice(1).join('/').trim();
+    if (!subject) {
+      subject = 'General Studies';
     }
-  }
-
-  // Default folder if completely empty
-  if (!folder) {
-    folder = item.type === 'pdf' ? 'Notes' : 'Lectures';
-  }
-
-  if (!subject) {
-    subject = 'General Studies';
   }
 
   folder = folder.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
@@ -661,7 +747,12 @@ class DownloadManagerService {
       const record = {
         id: strId,
         title: item.title,
+        name: item.name || item.title,
         type: 'pdf',
+        source: item.source || null,
+        subject_name: item.subject_name || item.subjectName || subject,
+        book_title: item.book_title || null,
+        chapter_title: item.chapter_title || null,
         subjectName: subject,
         folderPath: folder,
         path: filePath,
@@ -747,8 +838,7 @@ class DownloadManagerService {
 
   async saveToDevice(item) {
     const strId = String(item.id);
-    const cleanTitle = (item.title || 'Document').replace(/[\\/:*?"<>|]/g, '_').trim();
-    const fileName = cleanTitle.toLowerCase().endsWith('.pdf') ? cleanTitle : `${cleanTitle}.pdf`;
+    const fileName = getDescriptivePdfFileName(item);
 
     if (Capacitor.isNativePlatform()) {
       let relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
@@ -791,7 +881,7 @@ class DownloadManagerService {
 
   async sharePdf(item) {
     const strId = String(item.id);
-    const cleanTitle = (item.title || 'Document').replace(/[\\/:*?"<>|]/g, '_').trim();
+    const fileName = getDescriptivePdfFileName(item);
 
     if (Capacitor.isNativePlatform()) {
       let relPath = item.path || `downloads/${strId}/document_${strId}.pdf`;
@@ -802,14 +892,15 @@ class DownloadManagerService {
       }
       return await DownloadService.sharePdf({
         path: relPath,
-        title: item.title || 'Study Notes'
+        title: item.title || 'Study Notes',
+        fileName: fileName
       });
     } else {
       try {
         if (navigator.share) {
           const res = await fetch(item.url);
           const blob = await res.blob();
-          const file = new File([blob], `${cleanTitle}.pdf`, { type: 'application/pdf' });
+          const file = new File([blob], fileName, { type: 'application/pdf' });
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
               title: item.title || 'Study Notes',

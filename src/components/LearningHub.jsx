@@ -27,6 +27,8 @@ import {
   PieChart
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
+import NcertTextbookHub from './NcertTextbookHub';
+import CbsePyqHub from './CbsePyqHub';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -56,7 +58,7 @@ const LearningHub = ({ user, onLogout }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'downloads'
+  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'ncert' | 'pyq' | 'downloads'
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -616,6 +618,18 @@ const LearningHub = ({ user, onLogout }) => {
               Courses
             </button>
             <button 
+              className={`nav-tab-btn ${activeTab === 'ncert' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('ncert'); setSearchQuery(''); }}
+            >
+              NCERT
+            </button>
+            <button 
+              className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
+            >
+              PYQ
+            </button>
+            <button 
               className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
               onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
             >
@@ -634,7 +648,12 @@ const LearningHub = ({ user, onLogout }) => {
             <input 
               type="text" 
               className="search-input" 
-              placeholder={activeTab === 'courses' ? "Search courses..." : "Search downloads..."} 
+              placeholder={
+                activeTab === 'courses' ? "Search courses..." : 
+                activeTab === 'ncert' ? "Search NCERT chapters..." : 
+                activeTab === 'pyq' ? "Search PYQs..." : 
+                "Search downloads..."
+              } 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -673,6 +692,35 @@ const LearningHub = ({ user, onLogout }) => {
           </button>
         </div>
       </nav>
+
+
+      {/* NCERT TEXTBOOKS TAB */}
+      {activeTab === 'ncert' && (
+        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <NcertTextbookHub
+            onOpenPdf={(item) => {
+              if (!Capacitor.isNativePlatform()) {
+                window.history.pushState({ player: true }, '');
+              }
+              setPlayingVideo(item);
+            }}
+          />
+        </div>
+      )}
+
+      {/* CBSE PYQ TAB */}
+      {activeTab === 'pyq' && (
+        <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <CbsePyqHub
+            onOpenPdf={(item) => {
+              if (!Capacitor.isNativePlatform()) {
+                window.history.pushState({ player: true }, '');
+              }
+              setPlayingVideo(item);
+            }}
+          />
+        </div>
+      )}
 
       {/* DOWNLOADED TAB VIEW */}
       {activeTab === 'downloads' && (
