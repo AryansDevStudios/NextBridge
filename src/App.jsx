@@ -89,6 +89,23 @@ export default function App() {
       if (!snap.exists()) return;
       const data = { id: snap.id, ...snap.data() };
 
+      const localDeviceId = deviceInfo?.androidId || localStorage.getItem('_app_device_id');
+      const localBoundAt = Number(localStorage.getItem('student_device_bound_at') || 0);
+      const revokedAt = data.deviceRevokedAt ? new Date(data.deviceRevokedAt).getTime() : 0;
+      const serverDeviceId = typeof data.device === 'string' ? data.device : data.device?.androidId;
+
+      // A device unbind or replacement must invalidate the old cached session.
+      if ((revokedAt && localBoundAt && revokedAt > localBoundAt) ||
+          (serverDeviceId && localDeviceId && serverDeviceId !== localDeviceId)) {
+        localStorage.removeItem('student_user');
+        localStorage.removeItem('student_pat');
+        localStorage.removeItem('student_device_bound_at');
+        setErrorMsg('This device is no longer authorized for this account. Please log in again.');
+        setUser(null);
+        setIsDeviceBound(true);
+        return;
+      }
+
       // 1. Check if revoked by admin
       if (data.status !== 'active') {
         setErrorMsg(data.customMessage || 'Your access has been revoked by the admin.');
@@ -316,8 +333,12 @@ export default function App() {
           if (!boundId || boundId === dev?.androidId) {
             // Update device info if not bound yet
             if (!boundId && dev?.androidId) {
-              await updateDoc(doc(db, 'students', targetStudent.id), { device: dev }).catch(console.warn);
+              await updateDoc(doc(db, 'students', targetStudent.id), {
+                device: dev,
+                deviceRevokedAt: null
+              }).catch(console.warn);
               targetStudent.device = dev;
+              localStorage.setItem('student_device_bound_at', String(Date.now()));
             }
 
             setUser(targetStudent);
@@ -461,8 +482,10 @@ export default function App() {
       // Bind device if not currently bound
       if (!boundId) {
         await updateDoc(doc(db, 'students', studentDoc.id), {
-          device: dev
+            device: dev,
+            deviceRevokedAt: null
         });
+          localStorage.setItem('student_device_bound_at', String(Date.now()));
       }
 
       // Log successful login

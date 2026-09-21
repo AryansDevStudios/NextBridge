@@ -163,7 +163,8 @@ export default function StudentModal({ student, onClose }) {
     
     try {
       await updateDoc(doc(db, 'students', student.id), {
-        device: null
+        device: null,
+        deviceRevokedAt: new Date().toISOString()
       });
       setCurrentDevice(null);
     } catch (err) {
