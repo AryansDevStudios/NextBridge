@@ -28,15 +28,15 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '2.7.5';
-export const CURRENT_LATEST_CODE = 20705;
+export const CURRENT_LATEST_VERSION = '2.7.6';
+export const CURRENT_LATEST_CODE = 20706;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '2.7.5',
-  latestVersionCode: 20705,
+  latestAppVersion: '2.7.6',
+  latestVersionCode: 20706,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
   releaseNotes: '• Performance and stability enhancements'
