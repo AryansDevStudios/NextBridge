@@ -9,6 +9,8 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, ExternalLink } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
+import UpdateLockoutScreen from './components/UpdateLockoutScreen';
+import { APP_VERSION, APP_VERSION_CODE, compareSemver, isUpdateRequired } from './utils/version';
 
 const ADMIN_KEY = '_nb_admin_mode';
 
@@ -32,6 +34,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isDeviceBound, setIsDeviceBound] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [forcedUpdateInfo, setForcedUpdateInfo] = useState(null);
 
   // Ref to hold the timestamp of when the app became active
   const sessionStartTime = useRef(null);
@@ -128,7 +131,14 @@ export default function App() {
         }
       }
 
-      // 3. Keep local user state synchronized with server
+      // 3. Check if remote forced update lockout is active
+      if (isUpdateRequired(data.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+        setForcedUpdateInfo(data.forcedUpdate);
+      } else {
+        setForcedUpdateInfo(null);
+      }
+
+      // 4. Keep local user state synchronized with server
       setUser(prev => ({ ...prev, ...data }));
       try {
         const local = JSON.parse(localStorage.getItem('student_user') || '{}');
@@ -333,14 +343,28 @@ export default function App() {
 
           // Device match validation: allowed if unbound or bound to this device
           if (!boundId || boundId === dev?.androidId) {
+            const telemetryPayload = {
+              appVersion: APP_VERSION,
+              versionCode: APP_VERSION_CODE,
+              platform: Capacitor.isNativePlatform() ? 'android' : 'web',
+              lastActive: new Date().toISOString()
+            };
+
             // Update device info if not bound yet
             if (!boundId && dev?.androidId) {
-              await updateDoc(doc(db, 'students', targetStudent.id), {
-                device: dev,
-                deviceRevokedAt: null
-              }).catch(console.warn);
+              telemetryPayload.device = dev;
+              telemetryPayload.deviceRevokedAt = null;
               targetStudent.device = dev;
               localStorage.setItem('student_device_bound_at', String(Date.now()));
+            }
+
+            await updateDoc(doc(db, 'students', targetStudent.id), telemetryPayload).catch(console.warn);
+
+            // Check if remote forced update lockout is active
+            if (isUpdateRequired(targetStudent.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+              setForcedUpdateInfo(targetStudent.forcedUpdate);
+            } else {
+              setForcedUpdateInfo(null);
             }
 
             setUser(targetStudent);
@@ -481,13 +505,25 @@ export default function App() {
         return;
       }
 
-      // Bind device if not currently bound
+      // Bind device if not currently bound, and sync version telemetry
+      const telemetryPayload = {
+        appVersion: APP_VERSION,
+        versionCode: APP_VERSION_CODE,
+        platform: Capacitor.isNativePlatform() ? 'android' : 'web',
+        lastActive: new Date().toISOString()
+      };
       if (!boundId) {
-        await updateDoc(doc(db, 'students', studentDoc.id), {
-            device: dev,
-            deviceRevokedAt: null
-        });
-          localStorage.setItem('student_device_bound_at', String(Date.now()));
+        telemetryPayload.device = dev;
+        telemetryPayload.deviceRevokedAt = null;
+        localStorage.setItem('student_device_bound_at', String(Date.now()));
+      }
+      await updateDoc(doc(db, 'students', studentDoc.id), telemetryPayload).catch(console.warn);
+
+      // Check remote forced update requirement
+      if (isUpdateRequired(studentData.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+        setForcedUpdateInfo(studentData.forcedUpdate);
+      } else {
+        setForcedUpdateInfo(null);
       }
 
       // Log successful login
@@ -518,6 +554,7 @@ export default function App() {
     setPatInput('');
     setErrorMsg('');
     setIsDeviceBound(false);
+    setForcedUpdateInfo(null);
   };
 
   if (loading || updateMsg) {
@@ -541,6 +578,18 @@ export default function App() {
           try { localStorage.setItem(ADMIN_KEY, '0'); } catch (_) {}
           setShowAdminPanel(false);
         }} 
+      />
+    );
+  }
+
+  if (forcedUpdateInfo) {
+    return (
+      <UpdateLockoutScreen 
+        forcedUpdate={forcedUpdateInfo}
+        currentVersion={APP_VERSION}
+        user={user}
+        onRefresh={checkAutoLogin}
+        onLogout={handleLogout}
       />
     );
   }
@@ -708,7 +757,7 @@ export default function App() {
       {/* Anonymous Footer */}
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
         <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-          Secure Device-Bound Portal • v2.6.6
+          Secure Device-Bound Portal • v{APP_VERSION}
         </p>
       </div>
     </div>

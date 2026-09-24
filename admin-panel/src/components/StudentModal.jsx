@@ -17,9 +17,12 @@ import {
   BarChart2,
   Video,
   FileText,
-  Filter
+  Filter,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import { formatDuration, getStudentTimeForPeriod, getLast7DaysBreakdown } from '../utils/timeFormat';
+import { CURRENT_LATEST_VERSION, CURRENT_LATEST_CODE, compareSemver } from '../utils/version';
 
 function toDateTimeLocalString(timestamp) {
   if (!timestamp) return '';
@@ -54,6 +57,29 @@ export default function StudentModal({ student, onClose }) {
     textbooks: student.allowedSections?.textbooks ?? true,
     pyqs: student.allowedSections?.pyqs ?? true,
   });
+
+  // Remote Forced Update Lockout State
+  const [forcedUpdateEnabled, setForcedUpdateEnabled] = useState(
+    student.forcedUpdate?.enabled ?? false
+  );
+  const [minVersion, setMinVersion] = useState(
+    student.forcedUpdate?.minVersion || CURRENT_LATEST_VERSION
+  );
+  const [minVersionCode, setMinVersionCode] = useState(
+    student.forcedUpdate?.minVersionCode || CURRENT_LATEST_CODE
+  );
+  const [downloadUrl, setDownloadUrl] = useState(
+    student.forcedUpdate?.downloadUrl || ''
+  );
+  const [updateMessage, setUpdateMessage] = useState(
+    student.forcedUpdate?.message || 'A mandatory app update (v2.7.0) is required to continue using NextBridge.'
+  );
+  const [releaseNotes, setReleaseNotes] = useState(
+    student.forcedUpdate?.releaseNotes || '• High-performance immersive full-screen mode\n• Video player stability enhancements\n• Offline PDF & document improvements'
+  );
+  const [targetPlatform, setTargetPlatform] = useState(
+    student.forcedUpdate?.targetPlatform || 'android'
+  );
 
   // Profile Edit State
   const [name, setName] = useState(student.name);
@@ -244,7 +270,17 @@ export default function StudentModal({ student, onClose }) {
         name,
         class: studentClass,
         personalDetails: { school, area },
-        allowedSections
+        allowedSections,
+        forcedUpdate: {
+          enabled: forcedUpdateEnabled,
+          minVersion: minVersion.trim(),
+          minVersionCode: Number(minVersionCode) || CURRENT_LATEST_CODE,
+          downloadUrl: downloadUrl.trim(),
+          message: updateMessage.trim(),
+          releaseNotes: releaseNotes.trim(),
+          targetPlatform,
+          updatedAt: new Date().toISOString()
+        }
       });
       onClose();
     } catch (err) {
@@ -530,6 +566,135 @@ export default function StudentModal({ student, onClose }) {
                 />
               </div>
 
+              {/* App Version & Remote APK Update Lockout Card */}
+              <div className="bg-[#181818] p-4 rounded-xl border border-[#262626] space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#262626] pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#f3f4f6] flex items-center space-x-2">
+                      <Download size={16} className="text-[#f59e0b]" />
+                      <span>App Version & Remote APK Update</span>
+                    </h3>
+                    <p className="text-xs text-[#9ca3af]">Track installed version and remotely require APK updates</p>
+                  </div>
+
+                  {/* Student App Telemetry Pills */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full border bg-[#141414] border-[#333] text-[#9ca3af]">
+                      Platform: <strong className="text-white uppercase">{student.platform || (student.device ? 'android' : 'web')}</strong>
+                    </span>
+                    {student.appVersion ? (
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${compareSemver(student.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
+                        v{student.appVersion} {compareSemver(student.appVersion, CURRENT_LATEST_VERSION) >= 0 ? '(Latest)' : '(Outdated)'}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-zinc-900 text-zinc-500 border-zinc-800">
+                        Version: Legacy (&lt; v2.7.0)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lockout Activation Toggle */}
+                <div className="flex items-center justify-between bg-[#121212] p-3 rounded-lg border border-[#262626]">
+                  <div>
+                    <label className="text-sm font-medium text-[#f3f4f6] cursor-pointer flex items-center gap-2" htmlFor="lockout-toggle">
+                      <span>Require App Update (Lockout Access)</span>
+                      {forcedUpdateEnabled && (
+                        <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-800 px-1.5 py-0.5 rounded font-bold uppercase animate-pulse">
+                          Lockout Active
+                        </span>
+                      )}
+                    </label>
+                    <p className="text-xs text-[#9ca3af] mt-0.5">
+                      Locks student out with download instructions until they install the required version
+                    </p>
+                  </div>
+                  <input
+                    id="lockout-toggle"
+                    type="checkbox"
+                    checked={forcedUpdateEnabled}
+                    onChange={e => setForcedUpdateEnabled(e.target.checked)}
+                    className="w-5 h-5 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#1a1a1a] cursor-pointer"
+                  />
+                </div>
+
+                {/* Lockout Configuration Inputs */}
+                <div className={`space-y-3 transition-opacity ${forcedUpdateEnabled ? 'opacity-100' : 'opacity-60'}`}>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-[#9ca3af] mb-1">Target Platform</label>
+                      <select
+                        value={targetPlatform}
+                        onChange={e => setTargetPlatform(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b]"
+                      >
+                        <option value="android">Android App Only</option>
+                        <option value="all">All Platforms (Android & Web)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#9ca3af] mb-1">Required Min Version</label>
+                      <input
+                        type="text"
+                        value={minVersion}
+                        onChange={e => setMinVersion(e.target.value)}
+                        placeholder="2.7.0"
+                        className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#9ca3af] mb-1">Required Build Code</label>
+                      <input
+                        type="number"
+                        value={minVersionCode}
+                        onChange={e => setMinVersionCode(e.target.value)}
+                        placeholder="20700"
+                        className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#9ca3af] mb-1">APK Download URL</label>
+                    <input
+                      type="url"
+                      value={downloadUrl}
+                      onChange={e => setDownloadUrl(e.target.value)}
+                      placeholder="https://... (Direct APK link, Google Drive, Netlify, etc.)"
+                      className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#9ca3af] mb-1">Lockout Message Shown to Student</label>
+                    <textarea
+                      rows={2}
+                      value={updateMessage}
+                      onChange={e => setUpdateMessage(e.target.value)}
+                      placeholder="A mandatory app update is required to continue using NextBridge."
+                      className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b] resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#9ca3af] mb-1">Release Notes / Highlights</label>
+                    <textarea
+                      rows={2}
+                      value={releaseNotes}
+                      onChange={e => setReleaseNotes(e.target.value)}
+                      placeholder="• Feature 1\n• Feature 2"
+                      className="w-full px-3 py-2 bg-[#121212] border border-[#262626] rounded-lg text-xs text-[#f3f4f6] outline-none focus:border-[#f59e0b] resize-none font-mono"
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-[#71717a] italic">
+                    ℹ️ Note: As soon as the student installs and opens v{minVersion}, the app automatically reports the new version and removes the lockout restriction.
+                  </p>
+                </div>
+              </div>
+
               <div className="flex justify-end pt-4 border-t border-[#262626]">
                 <button 
                   onClick={handleSaveAccess}
@@ -597,6 +762,11 @@ export default function StudentModal({ student, onClose }) {
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Model:</span> <span>{currentDevice.model}</span></div>
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">OS Version:</span> <span>{currentDevice.osVersion}</span></div>
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Android ID:</span> <span className="font-mono bg-[#121212] px-1 border border-[#262626] rounded text-xs break-all text-[#f59e0b]">{currentDevice.androidId}</span></div>
+                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">App Version:</span> <span className="font-mono text-xs">{student.appVersion ? `v${student.appVersion}` : 'Not reported yet (< v2.7.0)'}</span></div>
+                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Platform:</span> <span className="uppercase text-xs font-semibold text-white">{student.platform || (student.device ? 'android' : 'web')}</span></div>
+                    {student.lastActive && (
+                      <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Last Active:</span> <span className="text-xs">{new Date(student.lastActive).toLocaleString()}</span></div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-[#9ca3af] italic">No device bound yet.</p>

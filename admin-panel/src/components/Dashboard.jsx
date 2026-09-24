@@ -16,12 +16,15 @@ import {
   BookOpen,
   RefreshCw,
   Search,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
 import RenderSyncPanel from './RenderSyncPanel';
 import AdminAnalytics from './AdminAnalytics';
+import BroadcastUpdateModal from './BroadcastUpdateModal';
+import { CURRENT_LATEST_VERSION, compareSemver } from '../utils/version';
 
 function generatePAT() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -35,6 +38,7 @@ function generatePAT() {
 export default function Dashboard({ onLogout }) {
   const [students, setStudents] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [copiedPAT, setCopiedPAT] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
 
@@ -203,13 +207,23 @@ export default function Dashboard({ onLogout }) {
                 </h1>
                 <p className="text-xs text-[#9ca3af] mt-0.5">Manage tokens, devices, and tiered section access</p>
               </div>
-              <button 
-                onClick={() => setShowAddModal(true)}
-                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 bg-[#f59e0b] text-[#0a0a0a] px-4 py-2 rounded-lg hover:bg-[#fbbf24] transition font-bold text-sm shadow-lg shadow-amber-500/10"
-              >
-                <Plus size={16} />
-                <span>Add New Student</span>
-              </button>
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button 
+                  onClick={() => setShowBroadcastModal(true)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#181818] hover:bg-[#222] text-[#f59e0b] border border-[#f59e0b]/40 hover:border-[#f59e0b] px-3.5 py-2 rounded-lg transition font-semibold text-xs sm:text-sm shadow-md"
+                  title="Broadcast app update requirements to students"
+                >
+                  <Download size={15} />
+                  <span>Broadcast Update</span>
+                </button>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#f59e0b] text-[#0a0a0a] px-4 py-2 rounded-lg hover:bg-[#fbbf24] transition font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/10"
+                >
+                  <Plus size={16} />
+                  <span>Add New Student</span>
+                </button>
+              </div>
             </div>
 
             {/* Search and Filters Bar */}
@@ -356,9 +370,9 @@ export default function Dashboard({ onLogout }) {
                         </div>
                       </div>
 
-                      {/* Device & Manage Button */}
+                      {/* Device, Platform, Version & Manage Button */}
                       <div className="flex items-center justify-between pt-1 text-xs">
-                        <div className="flex items-center space-x-1.5 text-[#9ca3af]">
+                        <div className="flex items-center gap-1.5 flex-wrap text-[#9ca3af]">
                           {s.device ? (
                             <span className="text-green-400 flex items-center gap-1 text-[11px]">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
@@ -367,11 +381,28 @@ export default function Dashboard({ onLogout }) {
                           ) : (
                             <span className="italic text-[11px] text-[#71717a]">No device bound</span>
                           )}
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold border bg-zinc-900 border-zinc-700 text-zinc-300 uppercase">
+                            {s.platform || (s.device ? 'android' : 'web')}
+                          </span>
+                          {s.appVersion ? (
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${compareSemver(s.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
+                              v{s.appVersion}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900 text-zinc-500 border-zinc-800">
+                              &lt; v2.7.0
+                            </span>
+                          )}
+                          {s.forcedUpdate?.enabled && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 animate-pulse">
+                              Lockout
+                            </span>
+                          )}
                         </div>
 
                         <button 
                           onClick={() => setSelectedStudent(s)}
-                          className="flex items-center space-x-1 text-xs font-semibold text-[#f59e0b] hover:text-[#fbbf24] bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition"
+                          className="flex items-center space-x-1 text-xs font-semibold text-[#f59e0b] hover:text-[#fbbf24] bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition shrink-0"
                         >
                           <Settings size={13} />
                           <span>Manage</span>
@@ -431,14 +462,43 @@ export default function Dashboard({ onLogout }) {
                         <td className="p-4 text-sm">
                           {s.device ? (
                             <div className="flex items-start space-x-1 text-green-500">
-                              <Info size={16} className="mt-0.5" />
+                              <Info size={16} className="mt-0.5 shrink-0" />
                               <div>
-                                <div className="text-[#f3f4f6]">{s.device.model}</div>
-                                <div className="text-xs text-[#9ca3af] break-all w-32">{s.device.androidId}</div>
+                                <div className="text-[#f3f4f6] flex items-center gap-1.5 flex-wrap">
+                                  <span>{s.device.model}</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold border bg-zinc-900 border-zinc-700 text-zinc-300 uppercase">
+                                    {s.platform || (s.device ? 'android' : 'web')}
+                                  </span>
+                                  {s.appVersion ? (
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${compareSemver(s.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
+                                      v{s.appVersion}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900 text-zinc-500 border-zinc-800" title="Legacy version (< 2.7.0)">
+                                      &lt; v2.7.0
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-[#9ca3af] break-all w-36 font-mono mt-0.5">{s.device.androidId}</div>
+                                {s.forcedUpdate?.enabled && (
+                                  <div className="mt-1">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 inline-flex items-center gap-1 animate-pulse">
+                                      <Download size={10} />
+                                      Update Locked ({s.forcedUpdate.minVersion || '2.7.0'})
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ) : (
-                            <span className="text-[#9ca3af] italic">Not logged in yet</span>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[#9ca3af] italic">Not logged in yet</span>
+                              {s.forcedUpdate?.enabled && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 w-fit">
+                                  Update Locked
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="p-4">
@@ -647,6 +707,14 @@ export default function Dashboard({ onLogout }) {
         <StudentModal 
           student={selectedStudent} 
           onClose={() => setSelectedStudent(null)} 
+        />
+      )}
+
+      {/* Broadcast Update Modal */}
+      {showBroadcastModal && (
+        <BroadcastUpdateModal
+          students={students}
+          onClose={() => setShowBroadcastModal(false)}
         />
       )}
     </div>
