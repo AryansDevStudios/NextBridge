@@ -40,6 +40,7 @@ import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining, parseDownloadSubjectAndFolder } from '../services/DownloadManager';
+import { APP_VERSION } from '../utils/version';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
@@ -2327,7 +2328,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               </div>
               <div className="profile-detail-row">
                 <span className="profile-detail-label">App Version</span>
-                <span className="profile-detail-value">v2.7.0</span>
+                <span className="profile-detail-value">v{APP_VERSION}</span>
               </div>
             </div>
 

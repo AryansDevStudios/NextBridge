@@ -1,5 +1,5 @@
-export const APP_VERSION = '2.7.0';
-export const APP_VERSION_CODE = 20700;
+export const APP_VERSION = '2.7.2';
+export const APP_VERSION_CODE = 20702;
 
 /**
  * Compare two semantic version strings.
