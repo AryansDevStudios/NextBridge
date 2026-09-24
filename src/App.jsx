@@ -686,7 +686,6 @@ export default function App() {
         user={user}
         onRefresh={checkAutoLogin}
         onCheckOta={checkForUpdates}
-        onLogout={handleLogout}
       />
     );
   }
@@ -721,21 +720,6 @@ export default function App() {
             >
               Check Status / Refresh
             </button>
-            <button
-              onClick={handleLogout}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '8px',
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: '#9ca3af',
-                fontSize: '0.85rem',
-                cursor: 'pointer'
-              }}
-            >
-              Sign Out
-            </button>
           </div>
         </div>
       </div>
@@ -747,7 +731,6 @@ export default function App() {
       <LearningHub 
         user={user} 
         runtimeVersion={runtimeVersion}
-        onLogout={handleLogout} 
         onOpenAdmin={() => {
           try { localStorage.setItem(ADMIN_KEY, '1'); } catch (_) {}
           setShowAdminPanel(true);

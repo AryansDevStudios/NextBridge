@@ -74,7 +74,7 @@ function formatDate(timestamp) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const LearningHub = ({ user, runtimeVersion, onLogout, onOpenAdmin }) => {
+const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]); // Array of folder objects
   const [searchQuery, setSearchQuery] = useState('');

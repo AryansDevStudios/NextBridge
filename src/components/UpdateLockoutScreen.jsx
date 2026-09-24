@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Download, RefreshCw, AlertTriangle, ShieldAlert, LogOut, ExternalLink, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Download, RefreshCw, AlertTriangle, ShieldAlert, ExternalLink, Sparkles, CheckCircle2 } from 'lucide-react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, currentOtaVersion, user, onRefresh, onCheckOta, onLogout }) {
+export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, currentOtaVersion, user, onRefresh, onCheckOta }) {
   const [refreshing, setRefreshing] = useState(false);
   const [apkState, setApkState] = useState('idle'); // 'idle' | 'downloading' | 'done' | 'error'
   const [apkProgress, setApkProgress] = useState(0);
@@ -180,15 +180,8 @@ export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, curr
           <span>{refreshing ? 'Checking version\u2026' : 'I have installed it, check again'}</span>
         </button>
 
-        <div style={{ paddingTop: '16px', borderTop: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: '#71717a' }}>
-          <div style={{ textAlign: 'left', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {user?.name ? <span>Logged in: <strong style={{ color: '#d1d5db' }}>{user.name}</strong></span> : <span>Device Locked</span>}
-          </div>
-          {apkState !== 'downloading' && (
-            <button onClick={onLogout} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600, padding: '4px 6px' }}>
-              <LogOut size={13} /><span>Sign Out</span>
-            </button>
-          )}
+        <div style={{ paddingTop: '16px', borderTop: '1px solid #222', textAlign: 'center', fontSize: '12px', color: '#71717a' }}>
+          {user?.name ? <span>Logged in: <strong style={{ color: '#d1d5db' }}>{user.name}</strong></span> : <span>Device Locked</span>}
         </div>
       </div>
     </div>
