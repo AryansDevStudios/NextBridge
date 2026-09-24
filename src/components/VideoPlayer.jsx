@@ -28,11 +28,16 @@ function HlsPlayer({ url, item, user }) {
   const wrapperRef = useRef(null);
   const totalWatchTime = useRef(0);
   const lastPlayTime = useRef(null);
+  const userRef = useRef(user);
+  const itemRef = useRef(item);
   const [offlineUrl, setOfflineUrl] = useState(null);
   const [isReady, setIsReady] = useState(false);
   const [skipIndicator, setSkipIndicator] = useState(null);
   const [seekPreview, setSeekPreview] = useState(null);
   const previewVideoRef = useRef(null);
+
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { itemRef.current = item; }, [item]);
 
   useEffect(() => {
     const checkOffline = async () => {
@@ -84,16 +89,17 @@ function HlsPlayer({ url, item, user }) {
   useEffect(() => {
     if (!isReady) return;
 
-    if (Capacitor.isNativePlatform()) {
-      PrivacyScreen.enable().catch(console.error);
-    }
+    // Do NOT enable PrivacyScreen during video playback: setting FLAG_SECURE on
+    // Android causes hardware MediaCodec video buffer loss ('Null anb' GPU error)
+    // and turns the video black/unresponsive after buffer exhaustion (~10s).
 
     const video = videoRef.current;
     const wrapper = wrapperRef.current;
     if (!video || !wrapper) return;
 
     const finalUrl = offlineUrl || url;
-    const storageKey = item.id ? `lecture_pos_${item.id}` : null;
+    const currentItemId = itemRef.current?.id;
+    const storageKey = currentItemId ? `lecture_pos_${currentItemId}` : null;
     let saveInterval = null;
 
     const restorePosition = () => {
@@ -431,7 +437,16 @@ function HlsPlayer({ url, item, user }) {
     };
 
     if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
-      hls = new Hls({ debug: false });
+      hls = new Hls({
+        debug: false,
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 30,
+        maxBufferLength: 15,
+        maxMaxBufferLength: 30,
+        maxBufferSize: 30 * 1024 * 1024,
+        maxBufferHole: 0.5,
+      });
       hls.loadSource(finalUrl);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
@@ -459,7 +474,23 @@ function HlsPlayer({ url, item, user }) {
         setupPlayerFeatures(player);
       });
       hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error:', data);
+        console.warn('HLS Error event:', data.type, data.details, data.fatal);
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.warn('HLS Fatal Network Error, attempting reload...');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.warn('HLS Fatal Media Error, attempting recovery...');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.error('HLS Unrecoverable Fatal Error:', data);
+              hls.destroy();
+              break;
+          }
+        }
       });
     } else {
       video.src = finalUrl;
@@ -477,27 +508,29 @@ function HlsPlayer({ url, item, user }) {
         lastPlayTime.current = Date.now();
       }
       const pendingMs = totalWatchTime.current;
-      if (pendingMs >= 3000 && user?.id) {
+      const currentUser = userRef.current;
+      const currentItem = itemRef.current;
+      if (pendingMs >= 3000 && currentUser?.id) {
         totalWatchTime.current = 0;
         const durationSecs = Math.floor(pendingMs / 1000);
-        const cleanVidId = String(item.id || 'vid_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
+        const cleanVidId = String(currentItem?.id || 'vid_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
         
-        addDoc(collection(db, 'students', user.id, 'logs'), {
+        addDoc(collection(db, 'students', currentUser.id, 'logs'), {
           type: 'watch',
-          videoId: item.id || '',
-          videoTitle: item.title || 'Unknown Video',
-          subjectName: item.subject_name || item.subjectName || '',
+          videoId: currentItem?.id || '',
+          videoTitle: currentItem?.title || 'Unknown Video',
+          subjectName: currentItem?.subject_name || currentItem?.subjectName || '',
           durationSecs: durationSecs,
           timestamp: new Date().toISOString()
         }).catch(() => {});
 
         const todayKey = new Date().toISOString().slice(0, 10);
-        updateDoc(doc(db, 'students', user.id), {
+        updateDoc(doc(db, 'students', currentUser.id), {
           totalVideoTime: increment(durationSecs),
           lastActive: new Date().toISOString(),
           [`dailyVideoTime.${todayKey}`]: increment(durationSecs),
-          [`videoStats.${cleanVidId}.title`]: item.title || 'Unknown Video',
-          [`videoStats.${cleanVidId}.subjectName`]: item.subject_name || item.subjectName || '',
+          [`videoStats.${cleanVidId}.title`]: currentItem?.title || 'Unknown Video',
+          [`videoStats.${cleanVidId}.subjectName`]: currentItem?.subject_name || currentItem?.subjectName || '',
           [`videoStats.${cleanVidId}.watchTimeSecs`]: increment(durationSecs),
           [`videoStats.${cleanVidId}.lastWatched`]: new Date().toISOString(),
           [`videoStats.${cleanVidId}.playCount`]: increment(1)
@@ -536,16 +569,17 @@ function HlsPlayer({ url, item, user }) {
       if (player) player.destroy();
 
       if (Capacitor.isNativePlatform()) {
-        PrivacyScreen.disable().catch(console.error);
         try {
           ImmersiveMode.exit().catch(() => {});
           ScreenOrientation.unlock().catch(() => {});
         } catch (e) {}
       }
     };
-  }, [isReady, offlineUrl, url, item, user]);
+  }, [isReady, offlineUrl, url]);
 
   if (!isReady) return <div style={{height: '100%', background: 'black'}} />;
+
+  const isDesktopHover = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches && !Capacitor.isNativePlatform();
 
   return (
     <div ref={wrapperRef} className="hls-player-wrapper" style={{ width: '100%', height: '100%', background: 'black', position: 'relative' }}>
@@ -588,16 +622,18 @@ function HlsPlayer({ url, item, user }) {
           className="seek-preview-tooltip"
           style={{ left: `${seekPreview.x}px` }}
         >
-          <div className="seek-preview-frame">
-            <video 
-              ref={previewVideoRef} 
-              src={offlineUrl || url} 
-              muted 
-              playsInline 
-              preload="auto" 
-              className="seek-preview-video"
-            />
-          </div>
+          {isDesktopHover && (
+            <div className="seek-preview-frame">
+              <video 
+                ref={previewVideoRef} 
+                src={offlineUrl || url} 
+                muted 
+                playsInline 
+                preload="metadata" 
+                className="seek-preview-video"
+              />
+            </div>
+          )}
           <div className="seek-preview-time">
             {formatSeekTime(seekPreview.time)}
           </div>

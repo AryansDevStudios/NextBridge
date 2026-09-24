@@ -264,10 +264,19 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
   // Online / Offline monitor
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setActiveTab('downloads');
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    if (!navigator.onLine) {
+      setIsOnline(false);
+      setActiveTab('downloads');
+    }
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -297,7 +306,9 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               setDownloadPath(prev => prev.slice(0, -1));
               return;
             }
-            setActiveTab('courses');
+            if (navigator.onLine) {
+              setActiveTab('courses');
+            }
             return;
           }
 
@@ -688,19 +699,9 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     <div className="app-container">
       {/* Offline Alert Banner */}
       {!isOnline && (
-        <div className="offline-banner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <WifiOff size={16} />
-            <span>You are offline. Open downloaded lectures to continue studying.</span>
-          </div>
-          {activeTab !== 'downloads' && (
-            <button 
-              className="offline-banner-btn"
-              onClick={() => setActiveTab('downloads')}
-            >
-              View Downloads
-            </button>
-          )}
+        <div className="offline-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 16px', background: '#dc2626', color: '#fff', fontSize: '0.85rem', fontWeight: 600 }}>
+          <WifiOff size={16} />
+          <span>Your device is offline. Connect to internet to get full access.</span>
         </div>
       )}
 
@@ -815,33 +816,37 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
         {/* Navigation Tabs — compact, full width, zero horizontal scroll */}
         <div className="nav-tabs">
-          <button 
-            className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
-          >
-            <span className="tab-text">Courses</span>
-            {!allowedSections.courses && <Lock size={10} className="tab-lock-icon" />}
-          </button>
-          {isClass10 && (
-            <button 
-              className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
-            >
-              <span className="tab-text">Textbook</span>
-              {!allowedSections.textbooks && <Lock size={10} className="tab-lock-icon" />}
-            </button>
+          {isOnline && (
+            <>
+              <button 
+                className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
+              >
+                <span className="tab-text">Courses</span>
+                {!allowedSections.courses && <Lock size={10} className="tab-lock-icon" />}
+              </button>
+              {isClass10 && (
+                <button 
+                  className={`nav-tab-btn ${activeTab === 'textbook' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('textbook'); setSearchQuery(''); }}
+                >
+                  <span className="tab-text">Textbook</span>
+                  {!allowedSections.textbooks && <Lock size={10} className="tab-lock-icon" />}
+                </button>
+              )}
+              {isClass10 && (
+                <button 
+                  className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
+                >
+                  <span className="tab-text">PYQ</span>
+                  {!allowedSections.pyqs && <Lock size={10} className="tab-lock-icon" />}
+                </button>
+              )}
+            </>
           )}
-          {isClass10 && (
-            <button 
-              className={`nav-tab-btn ${activeTab === 'pyq' ? 'active' : ''}`}
-              onClick={() => { setActiveTab('pyq'); setSearchQuery(''); }}
-            >
-              <span className="tab-text">PYQ</span>
-              {!allowedSections.pyqs && <Lock size={10} className="tab-lock-icon" />}
-            </button>
-          )}
           <button 
-            className={`nav-tab-btn ${activeTab === 'downloads' ? 'active' : ''}`}
+            className={`nav-tab-btn ${activeTab === 'downloads' || !isOnline ? 'active' : ''}`}
             onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
           >
             <span className="tab-text">Downloads</span>
@@ -853,7 +858,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       </nav>
 
       {/* TEXTBOOK TAB (Class 10 only) */}
-      {activeTab === 'textbook' && isClass10 && (
+      {isOnline && activeTab === 'textbook' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <NcertTextbookHub
             showRsAggarwal={true}
@@ -873,7 +878,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       )}
 
       {/* CBSE PYQ TAB (Class 10 only) */}
-      {activeTab === 'pyq' && isClass10 && (
+      {isOnline && activeTab === 'pyq' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <CbsePyqHub
             isLocked={!allowedSections.pyqs}
@@ -892,26 +897,28 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       )}
 
       {/* DOWNLOADED TAB VIEW */}
-      {activeTab === 'downloads' && (
+      {(activeTab === 'downloads' || !isOnline) && (
         <div className="main-content pb-24">
           <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button 
-                onClick={() => setActiveTab('courses')}
-                style={{ 
-                  background: 'transparent', 
-                  border: 'none', 
-                  color: 'var(--accent)', 
-                  cursor: 'pointer', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  padding: '4px', 
-                  borderRadius: '4px' 
-                }}
-                title="Back to Courses"
-              >
-                <ArrowLeft size={18} />
-              </button>
+              {isOnline && (
+                <button 
+                  onClick={() => setActiveTab('courses')}
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: 'var(--accent)', 
+                    cursor: 'pointer', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '4px', 
+                    borderRadius: '4px' 
+                  }}
+                  title="Back to Courses"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              )}
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Downloaded Content</span>
               <span className="badge-count">{downloadedLectures.length}</span>
             </div>
@@ -1427,7 +1434,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       )}
 
       {/* COURSES TAB VIEW */}
-      {activeTab === 'courses' && (
+      {isOnline && activeTab === 'courses' && (
         <div className="main-content pb-24">
           {/* Breadcrumbs with Back Arrow */}
           {!searchQuery && (
@@ -1574,6 +1581,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                         if (downloadManager.isDownloaded(item.id)) {
                           handlePlayDownloaded(downloadManager.getDownloadedItem(item.id) || item);
                         } else {
+                          if (!isOnline) {
+                            setOfflineToast('Your device is offline. Connect to internet to download.');
+                            setTimeout(() => setOfflineToast(''), 4000);
+                            return;
+                          }
                           try {
                             await downloadManager.downloadPdf({
                               ...item,
@@ -1581,7 +1593,8 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                               folder_path: item.folder_path || ''
                             });
                           } catch (err) {
-                            alert('Failed to download PDF: ' + (err.message || 'Error'));
+                            setOfflineToast('Failed to download PDF: ' + (err.message || 'Error'));
+                            setTimeout(() => setOfflineToast(''), 4000);
                           }
                         }
                       }}
