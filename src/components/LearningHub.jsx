@@ -519,12 +519,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
   const searchedDownloads = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
-    return normalizedDownloads.filter(item => 
-      (item.title || '').toLowerCase().includes(q) || 
-      (item.subjectName || '').toLowerCase().includes(q) ||
-      (item.folderPath || '').toLowerCase().includes(q)
-    );
+    const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return normalizedDownloads.filter(item => {
+      const target = `${item.title || ''} ${item.name || ''} ${item.subjectName || ''} ${item.folderPath || ''}`.toLowerCase();
+      return tokens.every(token => target.includes(token));
+    });
   }, [normalizedDownloads, searchQuery]);
 
   const confirmDelete = async () => {
