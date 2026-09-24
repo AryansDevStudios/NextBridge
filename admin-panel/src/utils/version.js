@@ -1,5 +1,5 @@
-export const CURRENT_LATEST_VERSION = '2.7.2';
-export const CURRENT_LATEST_CODE = 20702;
+export const CURRENT_LATEST_VERSION = '2.7.4';
+export const CURRENT_LATEST_CODE = 20704;
 
 /**
  * Compare two semantic version strings.

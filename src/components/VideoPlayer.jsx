@@ -144,6 +144,19 @@ function HlsPlayer({ url, item, user }) {
     const savePosition = () => {
       if (!storageKey || !video || (video.paused && video.currentTime === 0)) return;
       if (video.currentTime > 0 && isFinite(video.currentTime)) {
+        try {
+          const curItem = itemRef.current;
+          if (curItem) {
+            const rawHidden = localStorage.getItem('hidden_watch_history');
+            const hiddenList = rawHidden ? JSON.parse(rawHidden) : [];
+            const curId = String(curItem.id || '');
+            const cleanId = curId.replace(/[./#[\]$]/g, '_');
+            if (hiddenList.includes(curId) || hiddenList.includes(cleanId)) {
+              return;
+            }
+          }
+        } catch (_) {}
+
         localStorage.setItem(storageKey, video.currentTime.toString());
         try {
           const curItem = itemRef.current;
@@ -1127,12 +1140,22 @@ function VideoDownloader({ url, item, user }) {
 }
 
 function formatDuration(seconds) {
-  if (!seconds) return '';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  return `${m}m ${s}s`;
+  if (!seconds || isNaN(seconds)) return '';
+  const totalSecs = Math.round(Number(seconds));
+  if (totalSecs <= 0) return '0s';
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  if (h > 0) {
+    if (m === 0 && s === 0) return `${h}h`;
+    if (s === 0) return `${h}h ${m}m`;
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    if (s === 0) return `${m}m`;
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
 }
 
 function formatDate(timestamp) {
@@ -1151,6 +1174,58 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
   const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [isAudioOnlyMode, setIsAudioOnlyMode] = useState(false);
+  const [isHistoryHidden, setIsHistoryHidden] = useState(() => {
+    try {
+      const rawId = item?.id != null ? String(item.id) : '';
+      const cleanId = rawId.replace(/[./#[\]$]/g, '_');
+      const rawHidden = localStorage.getItem('hidden_watch_history');
+      const hiddenList = rawHidden ? JSON.parse(rawHidden) : [];
+      return hiddenList.includes(rawId) || hiddenList.includes(cleanId);
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleHistoryHide = () => {
+    try {
+      const rawId = item?.id != null ? String(item.id) : '';
+      const cleanId = rawId.replace(/[./#[\]$]/g, '_');
+      const rawHidden = localStorage.getItem('hidden_watch_history');
+      const hiddenList = rawHidden ? JSON.parse(rawHidden) : [];
+      const alreadyHidden = hiddenList.includes(rawId) || hiddenList.includes(cleanId);
+
+      if (alreadyHidden) {
+        const filtered = hiddenList.filter(id => id !== rawId && id !== cleanId);
+        localStorage.setItem('hidden_watch_history', JSON.stringify(filtered));
+        setIsHistoryHidden(false);
+        showToast('Restored to watch history');
+      } else {
+        const nextHidden = Array.from(new Set([...hiddenList, rawId, cleanId].filter(Boolean)));
+        localStorage.setItem('hidden_watch_history', JSON.stringify(nextHidden));
+
+        const rawRecents = localStorage.getItem('recent_watched_lectures');
+        if (rawRecents) {
+          const recents = JSON.parse(rawRecents);
+          const filtered = recents.filter(r => {
+            const rId = String(r.id || '');
+            const rClean = rId.replace(/[./#[\]$]/g, '_');
+            return rId !== rawId && rClean !== cleanId;
+          });
+          localStorage.setItem('recent_watched_lectures', JSON.stringify(filtered));
+        }
+
+        localStorage.removeItem(`lecture_pos_${rawId}`);
+        localStorage.removeItem(`video_pos_${rawId}`);
+        if (cleanId !== rawId) {
+          localStorage.removeItem(`lecture_pos_${cleanId}`);
+          localStorage.removeItem(`video_pos_${cleanId}`);
+        }
+
+        setIsHistoryHidden(true);
+        showToast('Hidden from watch history');
+      }
+    } catch (_) {}
+  };
 
   // PDF Download & Device Export Permissions (Default: true)
   const allowPdfDownload = user?.allowedSections?.pdfDownload ?? user?.pdfDownload ?? true;
@@ -1657,6 +1732,30 @@ const VideoPlayer = ({ item, onClose, user }) => {
 
   return (
     <div className="viewer-overlay video-mode">
+      {pdfActionToast && (
+        <div style={{
+          position: 'fixed',
+          top: '52px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(24, 24, 27, 0.95)',
+          border: '1px solid #38bdf8',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          zIndex: 10005,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          pointerEvents: 'none'
+        }}>
+          <CheckCircle size={15} style={{ color: '#38bdf8' }} />
+          <span>{pdfActionToast}</span>
+        </div>
+      )}
       <div className="viewer-content">
         <div className="yt-layout">
           {/* Mobile-friendly top header with Back navigation */}
@@ -1785,6 +1884,28 @@ const VideoPlayer = ({ item, onClose, user }) => {
               >
                 <BookmarkPlus size={15} />
                 <span>Notes ({notes.length})</span>
+              </button>
+
+              <button 
+                onClick={handleToggleHistoryHide}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: isHistoryHidden ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.06)',
+                  border: isHistoryHidden ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.12)',
+                  color: isHistoryHidden ? '#ef4444' : '#f3f4f6',
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title={isHistoryHidden ? "Hidden from your watch history (click to restore)" : "Hide from your watch history"}
+              >
+                <X size={15} />
+                <span>{isHistoryHidden ? 'Hidden from History' : 'Hide from History'}</span>
               </button>
 
               <button className="yt-close-btn" onClick={onClose}>

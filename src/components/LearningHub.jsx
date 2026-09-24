@@ -45,12 +45,22 @@ import { APP_VERSION } from '../utils/version';
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 function formatDuration(seconds) {
-  if (!seconds) return '';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}s`;
-  return `${m}m ${s}s`;
+  if (!seconds || isNaN(seconds)) return '';
+  const totalSecs = Math.round(Number(seconds));
+  if (totalSecs <= 0) return '0s';
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  if (h > 0) {
+    if (m === 0 && s === 0) return `${h}h`;
+    if (s === 0) return `${h}h ${m}m`;
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    if (s === 0) return `${m}m`;
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
 }
 
 function formatDate(timestamp) {
@@ -143,6 +153,64 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const [localRecents, setLocalRecents] = useState([]);
   const [localDailyTime, setLocalDailyTime] = useState({});
   const [localStats, setLocalStats] = useState({});
+  const [hiddenHistoryIds, setHiddenHistoryIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('hidden_watch_history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [historyToast, setHistoryToast] = useState('');
+
+  const isHistoryHidden = (id) => {
+    if (!id || !hiddenHistoryIds.length) return false;
+    const strId = String(id);
+    const cleanId = strId.replace(/[./#[\]$]/g, '_');
+    return hiddenHistoryIds.includes(strId) || hiddenHistoryIds.includes(cleanId);
+  };
+
+  const handleRemoveFromHistory = (item, e) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    if (!item) return;
+    const rawId = item.id != null ? String(item.id) : '';
+    const cleanId = rawId.replace(/[./#[\]$]/g, '_');
+
+    // 1. Add to hidden history in state and localStorage (client-side only, backend untouched)
+    const currentHidden = JSON.parse(localStorage.getItem('hidden_watch_history') || '[]');
+    const nextHidden = Array.from(new Set([...currentHidden, rawId, cleanId].filter(Boolean)));
+    localStorage.setItem('hidden_watch_history', JSON.stringify(nextHidden));
+    setHiddenHistoryIds(nextHidden);
+
+    // 2. Remove from recent_watched_lectures in localStorage
+    try {
+      const rawRecents = localStorage.getItem('recent_watched_lectures');
+      if (rawRecents) {
+        const recents = JSON.parse(rawRecents);
+        const filtered = recents.filter(r => {
+          const rId = String(r.id || '');
+          const rClean = rId.replace(/[./#[\]$]/g, '_');
+          return rId !== rawId && rClean !== cleanId;
+        });
+        localStorage.setItem('recent_watched_lectures', JSON.stringify(filtered));
+        setLocalRecents(filtered);
+      }
+    } catch (_) {}
+
+    // 3. Clear local video resume position
+    try {
+      localStorage.removeItem(`lecture_pos_${rawId}`);
+      localStorage.removeItem(`video_pos_${rawId}`);
+      if (cleanId !== rawId) {
+        localStorage.removeItem(`lecture_pos_${cleanId}`);
+        localStorage.removeItem(`video_pos_${cleanId}`);
+      }
+    } catch (_) {}
+
+    setHistoryToast('Removed from watch history');
+    setTimeout(() => setHistoryToast(''), 2500);
+  };
 
   const reloadWatchHistory = () => {
     try {
@@ -152,6 +220,8 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       setLocalDailyTime(d);
       const s = JSON.parse(localStorage.getItem('local_video_stats') || '{}');
       setLocalStats(s);
+      const hidden = JSON.parse(localStorage.getItem('hidden_watch_history') || '[]');
+      setHiddenHistoryIds(hidden);
     } catch (_) {}
   };
 
@@ -197,7 +267,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     const map = new Map();
 
     localRecents.forEach(item => {
-      if (item && item.id) {
+      if (item && item.id && !isHistoryHidden(item.id)) {
         const cleanId = String(item.id).replace(/[./#[\]$]/g, '_');
         map.set(String(item.id), {
           ...item,
@@ -208,6 +278,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
 
     if (user?.videoStats) {
       Object.entries(user.videoStats).forEach(([cleanId, stat]) => {
+        if (isHistoryHidden(cleanId) || (stat?.id && isHistoryHidden(stat.id))) return;
         const existing = Array.from(map.values()).find(
           v => String(v.id).replace(/[./#[\]$]/g, '_') === cleanId
         );
@@ -232,6 +303,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     }
 
     Object.entries(localStats).forEach(([cleanId, stat]) => {
+      if (isHistoryHidden(cleanId) || (stat?.id && isHistoryHidden(stat.id))) return;
       const existing = Array.from(map.values()).find(
         v => String(v.id).replace(/[./#[\]$]/g, '_') === cleanId
       );
@@ -258,7 +330,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       const timeB = new Date(b.lastWatched || 0).getTime();
       return timeB - timeA;
     });
-  }, [localRecents, localStats, user?.videoStats]);
+  }, [localRecents, localStats, user?.videoStats, hiddenHistoryIds]);
 
   const displayWatchedLectures = useMemo(() => {
     if (!searchQuery.trim()) return watchedLecturesList;
@@ -272,12 +344,12 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   // "Continue Watching" carousel items (home screen)
   const continueWatchingItems = useMemo(() => {
     return localRecents.filter(item => {
-      if (!item || item.type !== 'video') return false;
+      if (!item || item.type !== 'video' || isHistoryHidden(item.id)) return false;
       const pos = item.lastPosition || 0;
       const dur = item.duration || 0;
       return pos > 10 && (dur === 0 || pos < dur * 0.92);
     }).slice(0, 6);
-  }, [localRecents]);
+  }, [localRecents, hiddenHistoryIds]);
 
   // Subject-wise Storage Breakdown
   const subjectStorageBreakdown = useMemo(() => {
@@ -971,6 +1043,31 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         }}>
           <WifiOff size={16} />
           <span>{offlineToast}</span>
+        </div>
+      )}
+
+      {/* History Removed Toast Notification */}
+      {historyToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#1f2937',
+          border: '1px solid rgba(255,255,255,0.15)',
+          color: '#f3f4f6',
+          padding: '10px 18px',
+          borderRadius: '8px',
+          zIndex: 9999,
+          fontSize: '0.85rem',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          maxWidth: '90%'
+        }}>
+          <Check size={16} style={{ color: '#22c55e' }} />
+          <span>{historyToast}</span>
         </div>
       )}
 
@@ -1872,27 +1969,57 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                       )}
                     </div>
 
-                    {/* Action Button */}
-                    <button
-                      onClick={() => handleWatchLecture(item)}
-                      style={{
-                        background: 'rgba(245, 158, 11, 0.1)',
-                        border: '1px solid rgba(245, 158, 11, 0.25)',
-                        color: 'var(--accent)',
-                        borderRadius: '8px',
-                        padding: '6px 12px',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Play size={12} fill="currentColor" />
-                      <span>Watch</span>
-                    </button>
+                    {/* Action Buttons: Watch & Remove */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleWatchLecture(item)}
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.1)',
+                          border: '1px solid rgba(245, 158, 11, 0.25)',
+                          color: 'var(--accent)',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <Play size={12} fill="currentColor" />
+                        <span>Watch</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveFromHistory(item, e)}
+                        title="Remove from watch history"
+                        aria-label="Remove from watch history"
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          color: '#ef4444',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#ef4444';
+                          e.currentTarget.style.color = '#fff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                          e.currentTarget.style.color = '#ef4444';
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -2006,6 +2133,48 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                             <Play size={18} fill="#000" style={{ marginLeft: 2 }} />
                           </div>
                         </div>
+
+                        {/* Cut / Remove Icon to Hide from Watch History */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveFromHistory(item, e)}
+                          title="Remove from watch history"
+                          aria-label="Remove from watch history"
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            right: '6px',
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '50%',
+                            background: 'rgba(0, 0, 0, 0.75)',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            color: '#e5e7eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0,
+                            zIndex: 10,
+                            backdropFilter: 'blur(4px)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#ef4444';
+                            e.currentTarget.style.borderColor = '#ef4444';
+                            e.currentTarget.style.color = '#fff';
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 0, 0, 0.75)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                            e.currentTarget.style.color = '#e5e7eb';
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+
                         {item.duration > 0 && (
                           <div style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.8)', color: '#fff', fontSize: '0.68rem', fontWeight: 600, padding: '2px 5px', borderRadius: '4px' }}>
                             {formatDuration(item.duration)}

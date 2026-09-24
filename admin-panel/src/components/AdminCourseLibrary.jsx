@@ -7,12 +7,22 @@ streamSaver.mitm = '/mitm.html';
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 function formatDuration(seconds) {
-  if (!seconds) return '';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  return `${m}m ${s}s`;
+  if (!seconds || isNaN(seconds)) return '';
+  const totalSecs = Math.round(Number(seconds));
+  if (totalSecs <= 0) return '0s';
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  if (h > 0) {
+    if (m === 0 && s === 0) return `${h}h`;
+    if (s === 0) return `${h}h ${m}m`;
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    if (s === 0) return `${m}m`;
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
 }
 
 function formatDate(timestamp) {

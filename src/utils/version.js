@@ -1,9 +1,22 @@
-export const APP_VERSION = '2.7.2';
-export const APP_VERSION_CODE = 20702;
+export const APP_VERSION = '2.7.4';
+export const APP_VERSION_CODE = 20704;
+
+/**
+ * Strips timestamp/prerelease suffixes from compound OTA version strings.
+ * e.g. "2.4.9-1789976471117" → "2.4.9",  "v2.7.0-beta.1" → "2.7.0"
+ * Plain semvers like "2.7.2" pass through unchanged.
+ *
+ * @param {string} v
+ * @returns {string}
+ */
+export function extractCleanVersion(v) {
+  if (!v) return '0';
+  return String(v).trim().replace(/^v/i, '').split('-')[0];
+}
 
 /**
  * Compare two semantic version strings.
- * Supports versions like "2.7.0", "v2.6.6", "2.7", "2.7.0-beta.1".
+ * Supports "2.7.0", "v2.6.6", "2.7", and OTA compound strings like "2.4.9-1789976471117".
  *
  * @param {string} v1
  * @param {string} v2
@@ -14,14 +27,10 @@ export function compareSemver(v1, v2) {
   if (!v1) return -1;
   if (!v2) return 1;
 
-  const normalize = (v) => {
-    return String(v)
-      .trim()
-      .replace(/^v/i, '')
-      .split('-')[0] // remove pre-release qualifiers
+  const normalize = (v) =>
+    extractCleanVersion(v)
       .split('.')
       .map(part => parseInt(part, 10) || 0);
-  };
 
   const p1 = normalize(v1);
   const p2 = normalize(v2);
@@ -57,14 +66,14 @@ export function isUpdateRequired(forcedUpdate, currentVersion = APP_VERSION, cur
     return false;
   }
 
-  // 1. Check SemVer
+  // 1. Check SemVer (clean comparison, tolerant of OTA compound strings)
   if (forcedUpdate.minVersion) {
     if (compareSemver(currentVersion, forcedUpdate.minVersion) < 0) {
       return true;
     }
   }
 
-  // 2. Check Version Code (applies on native)
+  // 2. Check Version Code (native only)
   if (isNative && forcedUpdate.minVersionCode) {
     const minCode = Number(forcedUpdate.minVersionCode);
     if (!isNaN(minCode) && currentCode < minCode) {
@@ -74,3 +83,4 @@ export function isUpdateRequired(forcedUpdate, currentVersion = APP_VERSION, cur
 
   return false;
 }
+
