@@ -661,12 +661,6 @@ function HlsPlayer({ url, item, user }) {
   return (
     <div ref={wrapperRef} className="hls-player-wrapper" style={{ width: '100%', height: '100%', background: 'black', position: 'relative' }}>
       <video ref={videoRef} playsInline crossOrigin="anonymous" style={{ width: '100%', height: '100%' }} />
-      
-      {offlineUrl && (
-        <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(74,222,128,0.2)', color: '#4ade80', padding: '4px 8px', borderRadius: 4, fontSize: 12, fontWeight: 'bold', zIndex: 50, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <CheckCircle size={14} /> PLAYING OFFLINE
-        </div>
-      )}
 
       {/* Skip indicator overlays */}
       {skipIndicator && (
