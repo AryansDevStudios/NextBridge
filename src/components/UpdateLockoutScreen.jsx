@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Download, RefreshCw, AlertTriangle, ShieldAlert, ExternalLink, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Download, RefreshCw, AlertTriangle, ShieldAlert, ExternalLink, Sparkles, CheckCircle2, Send } from 'lucide-react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, currentOtaVersion, user, onRefresh, onCheckOta }) {
@@ -175,9 +175,39 @@ export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, curr
           </div>
         )}
 
-        <button onClick={handleManualCheck} disabled={refreshing || apkState === 'downloading'} style={{ width: '100%', padding: '11px 16px', backgroundColor: '#1a1a1a', color: '#f3f4f6', border: '1px solid #333', borderRadius: '12px', fontSize: '13px', fontWeight: 600, cursor: (refreshing || apkState === 'downloading') ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px', opacity: apkState === 'downloading' ? 0.5 : 1 }}>
+        <button onClick={handleManualCheck} disabled={refreshing || apkState === 'downloading'} style={{ width: '100%', padding: '11px 16px', backgroundColor: '#1a1a1a', color: '#f3f4f6', border: '1px solid #333', borderRadius: '12px', fontSize: '13px', fontWeight: 600, cursor: (refreshing || apkState === 'downloading') ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px', opacity: apkState === 'downloading' ? 0.5 : 1 }}>
           <RefreshCw size={15} style={refreshing ? { animation: 'spin 1s linear infinite' } : {}} />
           <span>{refreshing ? 'Checking version\u2026' : 'I have installed it, check again'}</span>
+        </button>
+
+        <button
+          onClick={() => {
+            try {
+              window.open('https://t.me/nextbridge19', '_blank');
+            } catch (_) {
+              window.location.href = 'https://t.me/nextbridge19';
+            }
+          }}
+          style={{
+            width: '100%',
+            padding: '11px 16px',
+            backgroundColor: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.25)',
+            color: '#f59e0b',
+            borderRadius: '12px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            marginBottom: '16px'
+          }}
+        >
+          <Send size={15} />
+          <span>Need Help? Contact Admin on Telegram</span>
+          <ExternalLink size={13} style={{ opacity: 0.7, marginLeft: 'auto' }} />
         </button>
 
         <div style={{ paddingTop: '16px', borderTop: '1px solid #222', textAlign: 'center', fontSize: '12px', color: '#71717a' }}>
