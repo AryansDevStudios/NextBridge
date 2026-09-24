@@ -22,9 +22,26 @@ const PYQ_INDEX_URL = 'https://class10pyq.netlify.app/file-index.json';
 const CDN_PYQ_BASE = 'https://cdn.jsdelivr.net/gh/code-verse-star/CBSE_PYQ@main/public';
 const RAW_PYQ_BASE = 'https://github.com/code-verse-star/CBSE_PYQ/raw/main/public';
 
-export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false, allowDownload = true }) {
+export default function CbsePyqHub({ 
+  searchQuery: externalSearchQuery = '', 
+  onSearchChange,
+  onOpenPdf, 
+  onBack, 
+  isLocked = false, 
+  allowDownload = true 
+}) {
   const [files, setFiles] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  
+  // Use external searchQuery from LearningHub if provided and active, else local
+  const searchQuery = (externalSearchQuery !== undefined && externalSearchQuery !== null)
+    ? externalSearchQuery 
+    : internalSearchQuery;
+
+  const setSearchQuery = (val) => {
+    setInternalSearchQuery(val);
+    if (onSearchChange) onSearchChange(val);
+  };
   const [currentPath, setCurrentPath] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('cbse-pyq-view') || 'grid');

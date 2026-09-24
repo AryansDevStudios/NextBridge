@@ -119,7 +119,15 @@ const RSA_BOOK = {
   }))
 };
 
-export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false, isLocked = false, allowDownload = true }) {
+export default function NcertTextbookHub({ 
+  searchQuery = '', 
+  onSearchChange, 
+  onOpenPdf, 
+  onBack, 
+  showRsAggarwal = false, 
+  isLocked = false, 
+  allowDownload = true 
+}) {
   const [allBooks, setAllBooks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -268,13 +276,73 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
   // Filtered chapters for current book
   const filteredChapters = useMemo(() => {
     if (!selectedBook || !selectedBook.chapters) return [];
-    if (!chapterSearch.trim()) return selectedBook.chapters;
-    const q = chapterSearch.toLowerCase().trim();
+    const activeSearch = searchQuery.trim() || chapterSearch.trim();
+    if (!activeSearch) return selectedBook.chapters;
+    const q = activeSearch.toLowerCase().trim();
     return selectedBook.chapters.filter(ch => 
       (ch.title && ch.title.toLowerCase().includes(q)) ||
       (ch.filename && ch.filename.toLowerCase().includes(q))
     );
-  }, [selectedBook, chapterSearch]);
+  }, [selectedBook, chapterSearch, searchQuery]);
+
+  // Global search across all textbooks and reference books
+  const globalSearchResults = useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    const parts = q.split(' ').filter(Boolean);
+
+    const results = [];
+    const booksToSearch = [...allBooks];
+    if (showRsAggarwal) {
+      booksToSearch.push(RSA_BOOK);
+    }
+
+    booksToSearch.forEach(book => {
+      if (!book || !Array.isArray(book.chapters)) return;
+      const subj = NCERT_SUBJECTS.find(s => s.bookIds?.includes(book.id)) || {
+        name: book.category || 'Textbook',
+        badgeColor: '#f59e0b',
+        mark: 'TB'
+      };
+
+      book.chapters.forEach((chapter, chIdx) => {
+        const fullTarget = `${chapter.title || ''} ${chapter.filename || ''} ${book.title || ''} ${subj.name || ''} ${book.category || ''}`.toLowerCase();
+        const matches = parts.every(p => fullTarget.includes(p));
+
+        if (matches) {
+          results.push({
+            chapter,
+            book,
+            subject: subj,
+            chapterIdx: chIdx
+          });
+        }
+      });
+    });
+
+    return results;
+  }, [allBooks, searchQuery, showRsAggarwal]);
+
+  const handleOpenSearchChapter = (item) => {
+    const { chapter, book, subject } = item;
+    const isRsa = chapter._rsa || book.id === '__rsa__';
+    const itemId = isRsa
+      ? `rsa_${(chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
+      : `ncert_${book.id}_${(chapter.filename || '').replace(/\.pdf$/i, '')}`;
+    const url = getChapterPdfUrl(chapter.url);
+    onOpenPdf({
+      id: itemId,
+      title: isRsa ? `RS Aggarwal — ${chapter.title}` : `${book.title} - ${chapter.title}`,
+      name: `${chapter.title}`,
+      type: 'pdf',
+      url: url,
+      source: isRsa ? 'rsa' : 'ncert',
+      subject_name: subject?.name || book.category || 'Mathematics',
+      book_title: book.title,
+      chapter_title: chapter.title,
+      folder_path: isRsa ? 'RS Aggarwal' : book.title
+    });
+  };
 
   return (
     <div style={{
@@ -391,6 +459,177 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
               >
                 Retry
               </button>
+            </div>
+          ) : searchQuery.trim().length > 0 ? (
+            /* GLOBAL SEARCH RESULTS ACROSS ALL TEXTBOOKS */
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f4f4f6', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Search size={18} style={{ color: 'var(--accent, #f59e0b)' }} />
+                    <span>Search Results in Textbooks</span>
+                  </h2>
+                  <p style={{ fontSize: '0.8rem', color: '#a0a0a8', margin: 0 }}>
+                    Found {globalSearchResults.length} chapter{globalSearchResults.length === 1 ? '' : 's'} matching "{searchQuery}"
+                  </p>
+                </div>
+                {onSearchChange && (
+                  <button
+                    onClick={() => onSearchChange('')}
+                    style={{
+                      padding: '6px 12px',
+                      background: '#1c1c22',
+                      border: '1px solid #2e2e36',
+                      borderRadius: '8px',
+                      color: '#a0a0a8',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear Search
+                  </button>
+                )}
+              </div>
+
+              {globalSearchResults.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', background: '#121215', borderRadius: '14px', border: '1px dashed #282832' }}>
+                  <Search size={36} style={{ color: '#4a4a55', margin: '0 auto 12px' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: '#f4f4f6', marginBottom: '6px' }}>
+                    No chapters found matching "{searchQuery}"
+                  </h3>
+                  <p style={{ fontSize: '0.82rem', color: '#888894', maxWidth: '380px', margin: '0 auto 16px', lineHeight: 1.4 }}>
+                    Try searching by topic (e.g. "Chemical", "Triangle", "Trigonometry"), chapter name, or book title.
+                  </p>
+                  {onSearchChange && (
+                    <button
+                      onClick={() => onSearchChange('')}
+                      style={{
+                        padding: '8px 18px',
+                        background: 'var(--accent, #f59e0b)',
+                        color: '#000',
+                        fontWeight: 700,
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '12px' }}>
+                  {globalSearchResults.map((res, idx) => {
+                    const isRsa = res.chapter._rsa || res.book.id === '__rsa__';
+                    const itemId = isRsa
+                      ? `rsa_${(res.chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
+                      : `ncert_${res.book.id}_${(res.chapter.filename || '').replace(/\.pdf$/i, '')}`;
+                    const dl = downloadState.tasks.get(itemId);
+                    const isDone = Boolean(downloadState.completed.find(c => c.id === itemId));
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => handleOpenSearchChapter(res)}
+                        style={{
+                          background: '#131317',
+                          border: '1px solid #22222a',
+                          borderRadius: '12px',
+                          padding: '14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div>
+                          {/* Subject Badge & Book Title */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '6px' }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              background: `${res.subject.badgeColor}18`,
+                              color: res.subject.badgeColor,
+                              border: `1px solid ${res.subject.badgeColor}35`
+                            }}>
+                              {res.subject.name}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: '#7a7a85', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {res.book.title}
+                            </span>
+                          </div>
+
+                          {/* Chapter Title */}
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#f4f4f6', lineHeight: 1.35, marginBottom: '6px' }}>
+                            {res.chapter.title}
+                          </div>
+                        </div>
+
+                        {/* Card Footer: Pages & Download */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid #1c1c24' }}>
+                          <span style={{ fontSize: '0.72rem', color: '#888894' }}>
+                            {res.chapter.pages ? `${res.chapter.pages} pages` : 'PDF Document'}
+                          </span>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {allowDownload && !isLocked && (
+                              <button
+                                onClick={(e) => handleDownloadChapter(e, res.chapter, res.book, res.subject)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  border: isDone ? '1px solid rgba(74, 222, 128, 0.4)' : '1px solid #2e2e38',
+                                  background: isDone ? 'rgba(74, 222, 128, 0.1)' : '#1a1a20',
+                                  color: isDone ? '#4ade80' : '#d4d4d8',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {dl ? (
+                                  <>
+                                    <Loader2 size={12} className="spin-icon" />
+                                    <span>{dl.progress ? `${Math.round(dl.progress)}%` : '...'}</span>
+                                  </>
+                                ) : isDone ? (
+                                  <>
+                                    <Check size={12} />
+                                    <span>Saved</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download size={12} />
+                                    <span>Download</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            <span style={{
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              background: '#202028',
+                              color: '#6aa3ff',
+                              fontSize: '0.72rem',
+                              fontWeight: 600
+                            }}>
+                              Read
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : !selectedSubject ? (
             /* LEVEL 1: Subject Cards Grid */
