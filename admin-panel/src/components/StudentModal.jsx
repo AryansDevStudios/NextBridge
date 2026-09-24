@@ -127,6 +127,16 @@ export default function StudentModal({ student, onClose }) {
 
   // Remaining subscription info calculation
   const subInfo = useMemo(() => {
+    if (status === 'suspended') {
+      return {
+        badge: 'Account Suspended',
+        colorClass: 'text-amber-400 bg-amber-950/40 border-amber-800',
+        icon: <ShieldAlert size={16} className="text-amber-400" />,
+        isExpired: true,
+        summary: 'Access is temporarily frozen/suspended. Device binding & history are preserved.'
+      };
+    }
+
     if (status === 'revoked') {
       return {
         badge: 'Account Revoked',
@@ -347,6 +357,21 @@ export default function StudentModal({ student, onClose }) {
           </div>
         </div>
         <div className="flex items-center space-x-2">
+          <button 
+            onClick={async () => {
+              const newStatus = status === 'suspended' ? 'active' : 'suspended';
+              setStatus(newStatus);
+              await updateDoc(doc(db, 'students', student.id), { status: newStatus }).catch(() => {});
+            }}
+            className={`flex items-center space-x-1.5 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg border transition ${
+              status === 'suspended'
+                ? 'text-green-400 bg-green-950/20 border-green-900/50 hover:bg-green-950/40'
+                : 'text-amber-400 bg-amber-950/20 border-amber-900/50 hover:bg-amber-950/40'
+            }`}
+            title={status === 'suspended' ? "Reactivate student account" : "Temporarily freeze/suspend student account"}
+          >
+            <span>{status === 'suspended' ? 'Unfreeze' : 'Freeze'}</span>
+          </button>
           <button 
             onClick={handleDeleteStudent}
             disabled={deleting}
@@ -582,20 +607,27 @@ export default function StudentModal({ student, onClose }) {
               {/* Master Access Status Override */}
               <div className="pt-2 border-t border-[#262626]">
                 <label className="block text-sm font-medium text-[#9ca3af] mb-2">Master Account Status</label>
-                <div className="flex space-x-4">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setStatus('active')}
-                    className={`flex-1 py-2 rounded-lg border font-medium transition-colors ${status === 'active' ? 'bg-green-900/20 border-green-900/50 text-green-400' : 'border-[#262626] text-[#9ca3af] hover:bg-[#1a1a1a]'}`}
+                    className={`py-2 px-2 text-xs sm:text-sm rounded-lg border font-medium transition-colors ${status === 'active' ? 'bg-green-900/20 border-green-900/50 text-green-400 font-bold' : 'border-[#262626] text-[#9ca3af] hover:bg-[#1a1a1a]'}`}
                   >
-                    Active Account
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatus('suspended')}
+                    className={`py-2 px-2 text-xs sm:text-sm rounded-lg border font-medium transition-colors ${status === 'suspended' ? 'bg-amber-900/20 border-amber-900/50 text-amber-400 font-bold' : 'border-[#262626] text-[#9ca3af] hover:bg-[#1a1a1a]'}`}
+                  >
+                    Freeze / Suspend
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatus('revoked')}
-                    className={`flex-1 py-2 rounded-lg border font-medium transition-colors ${status === 'revoked' ? 'bg-red-900/20 border-red-900/50 text-red-400' : 'border-[#262626] text-[#9ca3af] hover:bg-[#1a1a1a]'}`}
+                    className={`py-2 px-2 text-xs sm:text-sm rounded-lg border font-medium transition-colors ${status === 'revoked' ? 'bg-red-900/20 border-red-900/50 text-red-400 font-bold' : 'border-[#262626] text-[#9ca3af] hover:bg-[#1a1a1a]'}`}
                   >
-                    Revoke / Block Account
+                    Revoke / Block
                   </button>
                 </div>
               </div>

@@ -12,7 +12,8 @@ import {
   ChevronDown, 
   ChevronUp, 
   Eye,
-  Calendar
+  Calendar,
+  Download
 } from 'lucide-react';
 import { formatDuration, getStudentTimeForPeriod } from '../utils/timeFormat';
 
@@ -201,6 +202,30 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
     return studentsWithPeriodStats.filter(s => comparedStudentIds.includes(s.id));
   }, [studentsWithPeriodStats, comparedStudentIds]);
 
+  const exportAnalyticsCSV = () => {
+    const headers = ['Name', 'PAT', 'Class', 'Status', 'Device Model', 'Video Study Time', 'Notes Reading Time', 'Last Active'];
+    const rows = filteredStudents.map(s => [
+      `"${(s.name || '').replace(/"/g, '""')}"`,
+      `"${s.pat || ''}"`,
+      `"Class ${s.class || ''}"`,
+      `"${s.status || 'active'}"`,
+      `"${(s.device?.model || s.device?.name || 'Unbound').replace(/"/g, '""')}"`,
+      `"${formatSecondsToHMS(s.periodStats?.videoTime || s.totalVideoTime || 0)}"`,
+      `"${formatSecondsToHMS(s.periodStats?.notesTime || s.totalNotesTime || 0)}"`,
+      `"${s.lastActive ? new Date(s.lastActive).toLocaleString() : 'Never'}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `NextBridge_Analytics_${selectedPeriod}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Header & Global KPIs */}
@@ -217,6 +242,16 @@ export default function AdminAnalytics({ students, onSelectStudent }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-start md:justify-end">
+            {/* Export CSV Button */}
+            <button
+              onClick={exportAnalyticsCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121212] hover:bg-[#222] border border-[#262626] hover:border-[#f59e0b]/50 text-xs font-semibold text-[#f3f4f6] rounded-xl transition shadow-sm"
+              title="Export current filtered analytics as a CSV spreadsheet"
+            >
+              <Download size={13} className="text-[#f59e0b]" />
+              <span>Export CSV</span>
+            </button>
+
             {/* Time Period Selector */}
             <div className="flex items-center gap-2 bg-[#121212] border border-[#262626] rounded-xl px-3 py-1.5 text-xs text-[#f3f4f6]">
               <Calendar size={14} className="text-[#f59e0b] shrink-0" />

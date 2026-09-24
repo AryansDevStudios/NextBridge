@@ -25,7 +25,11 @@ import {
   Loader2,
   Send,
   PieChart,
-  Lock
+  Lock,
+  History,
+  RotateCcw,
+  BarChart2,
+  Check
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
@@ -33,6 +37,7 @@ import CbsePyqHub from './CbsePyqHub';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining, parseDownloadSubjectAndFolder } from '../services/DownloadManager';
 
@@ -59,7 +64,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'textbook' | 'pyq' | 'downloads'
+  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'textbook' | 'pyq' | 'history' | 'downloads'
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -130,6 +135,187 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const storageDetails = useMemo(() => {
     return downloadManager.getStorageDetails();
   }, [downloadedLectures]);
+
+  // ── Watch History & Study Activity (Last 7 Days) ──
+  const [localRecents, setLocalRecents] = useState([]);
+  const [localDailyTime, setLocalDailyTime] = useState({});
+  const [localStats, setLocalStats] = useState({});
+
+  const reloadWatchHistory = () => {
+    try {
+      const rec = JSON.parse(localStorage.getItem('recent_watched_lectures') || '[]');
+      setLocalRecents(rec);
+      const d = JSON.parse(localStorage.getItem('local_daily_video_time') || '{}');
+      setLocalDailyTime(d);
+      const s = JSON.parse(localStorage.getItem('local_video_stats') || '{}');
+      setLocalStats(s);
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    reloadWatchHistory();
+  }, [activeTab, playingVideo]);
+
+  // Generate 7-day timeline report
+  const sevenDayReport = useMemo(() => {
+    const days = [];
+    const now = new Date();
+    let total7DaySecs = 0;
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateKey = d.toISOString().slice(0, 10);
+      
+      const firestoreSecs = user?.dailyVideoTime?.[dateKey] || 0;
+      const localSecs = localDailyTime[dateKey] || 0;
+      const secs = Math.max(firestoreSecs, localSecs);
+      total7DaySecs += secs;
+
+      let dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+      if (i === 0) dayLabel = 'Today';
+      else if (i === 1) dayLabel = 'Yest';
+
+      days.push({
+        dateKey,
+        dayLabel,
+        dateFormatted: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        seconds: secs,
+        isToday: i === 0
+      });
+    }
+
+    const maxDaySecs = Math.max(...days.map(d => d.seconds), 3600);
+    return { days, total7DaySecs, maxDaySecs };
+  }, [user?.dailyVideoTime, localDailyTime]);
+
+  // Watched lectures list (combined from localStorage and firestore videoStats)
+  const watchedLecturesList = useMemo(() => {
+    const map = new Map();
+
+    localRecents.forEach(item => {
+      if (item && item.id) {
+        const cleanId = String(item.id).replace(/[./#[\]$]/g, '_');
+        map.set(String(item.id), {
+          ...item,
+          watchTimeSecs: item.watchTimeSecs || (localStats[cleanId]?.watchTimeSecs || 0)
+        });
+      }
+    });
+
+    if (user?.videoStats) {
+      Object.entries(user.videoStats).forEach(([cleanId, stat]) => {
+        const existing = Array.from(map.values()).find(
+          v => String(v.id).replace(/[./#[\]$]/g, '_') === cleanId
+        );
+        if (existing) {
+          existing.watchTimeSecs = Math.max(existing.watchTimeSecs || 0, stat.watchTimeSecs || 0);
+          if (stat.lastWatched && (!existing.lastWatched || stat.lastWatched > existing.lastWatched)) {
+            existing.lastWatched = stat.lastWatched;
+          }
+        } else {
+          map.set(cleanId, {
+            id: cleanId,
+            title: stat.title || 'Video Lecture',
+            type: 'video',
+            subject_name: stat.subjectName || '',
+            watchTimeSecs: stat.watchTimeSecs || 0,
+            lastWatched: stat.lastWatched || '',
+            duration: stat.duration || 0,
+            lastPosition: 0
+          });
+        }
+      });
+    }
+
+    Object.entries(localStats).forEach(([cleanId, stat]) => {
+      const existing = Array.from(map.values()).find(
+        v => String(v.id).replace(/[./#[\]$]/g, '_') === cleanId
+      );
+      if (existing) {
+        existing.watchTimeSecs = Math.max(existing.watchTimeSecs || 0, stat.watchTimeSecs || 0);
+      } else {
+        map.set(cleanId, {
+          id: stat.id || cleanId,
+          title: stat.title || 'Video Lecture',
+          type: 'video',
+          subject_name: stat.subjectName || '',
+          watchTimeSecs: stat.watchTimeSecs || 0,
+          lastWatched: stat.lastWatched || '',
+          duration: stat.duration || 0,
+          url: stat.url || '',
+          thumbnail: stat.thumbnail || '',
+          lastPosition: 0
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const timeA = new Date(a.lastWatched || 0).getTime();
+      const timeB = new Date(b.lastWatched || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [localRecents, localStats, user?.videoStats]);
+
+  const displayWatchedLectures = useMemo(() => {
+    if (!searchQuery.trim()) return watchedLecturesList;
+    const q = searchQuery.toLowerCase().trim();
+    return watchedLecturesList.filter(l => 
+      (l.title || '').toLowerCase().includes(q) ||
+      (l.subject_name || '').toLowerCase().includes(q)
+    );
+  }, [watchedLecturesList, searchQuery]);
+
+  // "Continue Watching" carousel items (home screen)
+  const continueWatchingItems = useMemo(() => {
+    return localRecents.filter(item => {
+      if (!item || item.type !== 'video') return false;
+      const pos = item.lastPosition || 0;
+      const dur = item.duration || 0;
+      return pos > 10 && (dur === 0 || pos < dur * 0.92);
+    }).slice(0, 6);
+  }, [localRecents]);
+
+  // Subject-wise Storage Breakdown
+  const subjectStorageBreakdown = useMemo(() => {
+    const map = {};
+    downloadedLectures.forEach(item => {
+      const subj = item.subjectName || 'General';
+      if (!map[subj]) {
+        map[subj] = { name: subj, totalBytes: 0, count: 0, videoCount: 0, pdfCount: 0 };
+      }
+      map[subj].totalBytes += (item.sizeBytes || 0);
+      map[subj].count += 1;
+      if (item.type === 'pdf') map[subj].pdfCount += 1;
+      else map[subj].videoCount += 1;
+    });
+    return Object.values(map).sort((a, b) => b.totalBytes - a.totalBytes);
+  }, [downloadedLectures]);
+
+  // Finished downloaded videos (watched >= 90%)
+  const finishedDownloadedVideos = useMemo(() => {
+    return downloadedLectures.filter(item => {
+      if (item.type === 'pdf') return false;
+      const dur = item.duration || 0;
+      const savedPos = parseFloat(localStorage.getItem('video_pos_' + item.id) || '0');
+      if (dur > 0 && (savedPos / dur) >= 0.90) return true;
+      try {
+        const match = localRecents.find(r => String(r.id) === String(item.id));
+        if (match && match.duration > 0 && (match.lastPosition / match.duration) >= 0.90) {
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    });
+  }, [downloadedLectures, localRecents]);
+
+  const handleCleanFinishedVideos = async () => {
+    if (finishedDownloadedVideos.length === 0) return;
+    for (const vid of finishedDownloadedVideos) {
+      await downloadManager.deleteDownload(vid.id);
+    }
+    loadDownloadedLectures();
+  };
 
   const subInfo = useMemo(() => {
     if (!user) return { status: 'none', text: 'Enrolled' };
@@ -269,24 +455,53 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     loadDownloadedLectures();
   }, [activeTab]);
 
-  // Online / Offline monitor
+  // Online / Offline monitor with auto-resume for interrupted downloads
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
+      downloadManager.resumeInterrupted();
     };
     const handleOffline = () => {
       setIsOnline(false);
-      setActiveTab('downloads');
+      if (activeTabRef.current !== 'history') {
+        setActiveTab('downloads');
+      }
     };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    let netListener = null;
+    const setupNet = async () => {
+      try {
+        const status = await Network.getStatus();
+        setIsOnline(status.connected);
+        if (!status.connected && activeTabRef.current !== 'history') {
+          setActiveTab('downloads');
+        }
+        netListener = await Network.addListener('networkStatusChange', (s) => {
+          setIsOnline(s.connected);
+          if (s.connected) {
+            downloadManager.resumeInterrupted();
+          } else if (activeTabRef.current !== 'history') {
+            setActiveTab('downloads');
+          }
+        });
+      } catch (e) {
+        console.warn('Network plugin status check:', e);
+      }
+    };
+    setupNet();
+
     if (!navigator.onLine) {
       setIsOnline(false);
-      setActiveTab('downloads');
+      if (activeTabRef.current !== 'history') {
+        setActiveTab('downloads');
+      }
     }
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (netListener) netListener.remove();
     };
   }, []);
 
@@ -307,31 +522,41 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             return;
           }
 
-          // 2. If in Downloads tab
+          // 2. If in History tab
+          if (activeTabRef.current === 'history') {
+            if (navigator.onLine && allowedSections.courses) {
+              setActiveTab('courses');
+            } else {
+              setActiveTab('downloads');
+            }
+            return;
+          }
+
+          // 3. If in Downloads tab
           if (activeTabRef.current === 'downloads') {
             if (downloadPathRef.current && downloadPathRef.current.length > 0) {
               setDownloadPath(prev => prev.slice(0, -1));
               return;
             }
-            if (navigator.onLine) {
+            if (navigator.onLine && allowedSections.courses) {
               setActiveTab('courses');
             }
             return;
           }
 
-          // 3. If searching, clear search query
+          // 4. If searching, clear search query
           if (searchQueryRef.current) {
             setSearchQuery('');
             return;
           }
 
-          // 4. If inside a folder hierarchy, go up one folder
+          // 5. If inside a folder hierarchy, go up one folder
           if (currentPathRef.current && currentPathRef.current.length > 0) {
             setCurrentPath(prev => prev.slice(0, -1));
             return;
           }
 
-          // 5. At root, exit app
+          // 6. At root, exit app
           App.exitApp();
         });
       } catch (e) {
@@ -346,7 +571,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         backListener.remove();
       }
     };
-  }, []);
+  }, [allowedSections.courses]);
 
   // Web fallback for browser popstate
   useEffect(() => {
@@ -357,6 +582,10 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
           return;
         }
         setPlayingVideo(null);
+        return;
+      }
+      if (activeTabRef.current === 'history') {
+        setActiveTab(allowedSections.courses ? 'courses' : 'downloads');
         return;
       }
       if (activeTabRef.current === 'downloads') {
@@ -380,7 +609,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       window.addEventListener('popstate', handlePop);
       return () => window.removeEventListener('popstate', handlePop);
     }
-  }, []);
+  }, [allowedSections.courses]);
 
   const fetchCourseData = async () => {
     setLoading(true);
@@ -499,6 +728,15 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       isSecure: item.isSecure,
       preventScreenshots: item.preventScreenshots
     });
+  };
+
+  const handleWatchLecture = (item) => {
+    const downloaded = downloadedLectures.find(d => String(d.id) === String(item.id));
+    if (downloaded) {
+      handlePlayDownloaded(downloaded);
+    } else {
+      handlePlayVideo(item);
+    }
   };
 
   const handleDeleteDownload = async (item, e) => {
@@ -755,6 +993,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                   activeTab === 'courses' ? "Search courses..." : 
                   activeTab === 'textbook' ? "Search textbooks..." : 
                   activeTab === 'pyq' ? "Search PYQs..." : 
+                  activeTab === 'history' ? "Search history..." :
                   "Search downloads..."
                 } 
                 value={searchQuery}
@@ -850,7 +1089,13 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
             </>
           )}
           <button 
-            className={`nav-tab-btn ${activeTab === 'downloads' || !isOnline ? 'active' : ''}`}
+            className={`nav-tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('history'); setSearchQuery(''); }}
+          >
+            <span className="tab-text">History</span>
+          </button>
+          <button 
+            className={`nav-tab-btn ${activeTab === 'downloads' || (!isOnline && activeTab !== 'history') ? 'active' : ''}`}
             onClick={() => { setActiveTab('downloads'); setSearchQuery(''); }}
           >
             <span className="tab-text">Downloads</span>
@@ -901,7 +1146,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       )}
 
       {/* DOWNLOADED TAB VIEW */}
-      {(activeTab === 'downloads' || !isOnline) && (
+      {(activeTab === 'downloads' || (!isOnline && activeTab !== 'history')) && (
         <div className="main-content pb-24">
           <div className="breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1437,6 +1682,220 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         </div>
       )}
 
+      {/* WATCH HISTORY & ACTIVITY TAB VIEW */}
+      {activeTab === 'history' && (
+        <div className="main-content pb-24 custom-scrollbar" style={{ overflowY: 'auto', flex: 1, padding: '16px' }}>
+          {/* Header & 7-Day Overview */}
+          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <History size={20} style={{ color: 'var(--accent)' }} />
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Watch History & Activity
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Last 7 Days Study Time</span>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent)' }}>
+                  {formatDuration(sevenDayReport.total7DaySecs)}
+                </div>
+                <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>7-Day Total</span>
+              </div>
+            </div>
+
+            {/* 7-Day Day-by-Day Activity Bar Chart */}
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(7, 1fr)', 
+              gap: '6px', 
+              alignItems: 'flex-end', 
+              height: '110px', 
+              paddingTop: '20px', 
+              paddingBottom: '8px', 
+              borderBottom: '1px solid var(--border-color)' 
+            }}>
+              {sevenDayReport.days.map((day, idx) => {
+                const heightPct = day.seconds > 0 
+                  ? Math.max(12, Math.round((day.seconds / sevenDayReport.maxDaySecs) * 100)) 
+                  : 6;
+                return (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                    <span style={{ fontSize: '0.62rem', color: day.seconds > 0 ? 'var(--accent)' : '#6b7280', fontWeight: 600, marginBottom: '4px' }}>
+                      {day.seconds > 0 ? (day.seconds >= 3600 ? `${(day.seconds / 3600).toFixed(1)}h` : `${Math.round(day.seconds / 60)}m`) : '0m'}
+                    </span>
+                    <div style={{ 
+                      width: '100%', 
+                      maxWidth: '28px', 
+                      height: `${heightPct}%`, 
+                      background: day.isToday 
+                        ? 'var(--accent)' 
+                        : (day.seconds > 0 ? 'rgba(245, 158, 11, 0.45)' : 'rgba(255, 255, 255, 0.08)'), 
+                      borderRadius: '5px 5px 2px 2px',
+                      transition: 'height 0.3s ease'
+                    }} />
+                    <span style={{ fontSize: '0.68rem', color: day.isToday ? 'var(--accent)' : '#9ca3af', fontWeight: day.isToday ? 700 : 500, marginTop: '6px' }}>
+                      {day.dayLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '0.72rem', color: '#9ca3af' }}>
+              <span>Day-by-day video watch time</span>
+              <span>Today: <strong style={{ color: 'var(--text-primary)' }}>{formatDuration(sevenDayReport.days[6]?.seconds || 0)}</strong></span>
+            </div>
+          </div>
+
+          {/* Watched Lectures Section */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+              Watched Lectures ({displayWatchedLectures.length})
+            </h4>
+            {displayWatchedLectures.length > 0 && (
+              <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>
+                Sorted by recent activity
+              </span>
+            )}
+          </div>
+
+          {displayWatchedLectures.length === 0 ? (
+            <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <History size={28} style={{ color: 'var(--text-secondary)' }} />
+              </div>
+              <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '6px', fontWeight: 600 }}>No Watch History Yet</h4>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: '340px', margin: '0 auto 16px', lineHeight: '1.4' }}>
+                Start watching video lectures from Courses or Downloads. Your study time and progress will appear here automatically.
+              </p>
+              <button
+                onClick={() => setActiveTab(isOnline ? 'courses' : 'downloads')}
+                style={{
+                  background: 'var(--accent)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 18px',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Explore Lectures
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {displayWatchedLectures.map((item, idx) => {
+                const pct = item.duration > 0 ? Math.min(100, Math.round(((item.lastPosition || 0) / item.duration) * 100)) : 0;
+                return (
+                  <div 
+                    key={idx}
+                    style={{
+                      background: 'var(--panel-bg)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}
+                  >
+                    {/* Thumbnail / Icon */}
+                    <div 
+                      onClick={() => handleWatchLecture(item)}
+                      style={{
+                        position: 'relative',
+                        width: '76px',
+                        height: '52px',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        background: '#0a0a0a',
+                        flexShrink: 0,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {item.thumbnail ? (
+                        <img src={item.thumbnail} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Video size={22} style={{ color: 'var(--accent)' }} />
+                      )}
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Play size={16} fill="#fff" color="#fff" />
+                      </div>
+                    </div>
+
+                    {/* Lecture Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div 
+                        onClick={() => handleWatchLecture(item)}
+                        style={{
+                          fontSize: '0.88rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          cursor: 'pointer',
+                          marginBottom: '3px'
+                        }}
+                      >
+                        {item.title}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#9ca3af', display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '6px' }}>
+                        <span>{item.subject_name || item.subjectName || 'General'}</span>
+                        {item.watchTimeSecs > 0 && (
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                            Time spent: {formatDuration(item.watchTimeSecs)}
+                          </span>
+                        )}
+                        {item.lastWatched && (
+                          <span>• {formatDate(item.lastWatched)}</span>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      {item.duration > 0 && (
+                        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: pct >= 90 ? '#22c55e' : 'var(--accent)' }} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <button
+                      onClick={() => handleWatchLecture(item)}
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        color: 'var(--accent)',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Play size={12} fill="currentColor" />
+                      <span>Watch</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* COURSES TAB VIEW */}
       {isOnline && activeTab === 'courses' && (
         <div className="main-content pb-24">
@@ -1482,6 +1941,89 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
           {searchQuery && (
             <div className="breadcrumbs" style={{ color: 'var(--accent)' }}>
               Search Results for "{searchQuery}"
+            </div>
+          )}
+
+          {/* Continue Watching Section (Home Screen Only) */}
+          {currentPath.length === 0 && !searchQuery && continueWatchingItems.length > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <RotateCcw size={16} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Continue Watching
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('history')}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  View All
+                </button>
+              </div>
+
+              <div style={{ 
+                display: 'flex', 
+                gap: '12px', 
+                overflowX: 'auto', 
+                paddingBottom: '8px',
+                scrollbarWidth: 'none',
+                WebkitOverflowScrolling: 'touch'
+              }}>
+                {continueWatchingItems.map(item => {
+                  const pct = Math.min(100, Math.round(((item.lastPosition || 0) / (item.duration || 1)) * 100));
+                  return (
+                    <div 
+                      key={item.id}
+                      onClick={() => handleWatchLecture(item)}
+                      style={{
+                        flex: '0 0 240px',
+                        background: 'var(--panel-bg)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                      }}
+                    >
+                      <div style={{ position: 'relative', width: '100%', height: '110px', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {item.thumbnail ? (
+                          <img src={item.thumbnail} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#6b7280' }}>
+                            <Video size={28} />
+                          </div>
+                        )}
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000' }}>
+                            <Play size={18} fill="#000" style={{ marginLeft: 2 }} />
+                          </div>
+                        </div>
+                        {item.duration > 0 && (
+                          <div style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.8)', color: '#fff', fontSize: '0.68rem', fontWeight: 600, padding: '2px 5px', borderRadius: '4px' }}>
+                            {formatDuration(item.duration)}
+                          </div>
+                        )}
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: 'rgba(255,255,255,0.2)' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent)' }} />
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '4px' }}>
+                          {item.title}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>{item.subject_name || item.subjectName || 'Lecture'}</span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{pct}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1836,6 +2378,37 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               </div>
             </div>
 
+            {/* 1-Tap Cleanup for Finished Videos (>=90% watched) */}
+            {finishedDownloadedVideos.length > 0 && (
+              <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '10px', padding: '12px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#22c55e', fontSize: '0.82rem', fontWeight: 700 }}>
+                    <CheckCircle size={15} />
+                    <span>Clean Finished Videos</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '2px' }}>
+                    {finishedDownloadedVideos.length} {finishedDownloadedVideos.length === 1 ? 'lecture' : 'lectures'} completed (&ge;90% watched). Free up {formatBytes(finishedDownloadedVideos.reduce((a, b) => a + (b.sizeBytes || 0), 0))}.
+                  </div>
+                </div>
+                <button
+                  onClick={handleCleanFinishedVideos}
+                  style={{
+                    background: '#22c55e',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Clean Now
+                </button>
+              </div>
+            )}
+
             {/* Cards for Videos & Notes breakdown */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '10px', padding: '12px' }}>
@@ -1864,6 +2437,45 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                 </div>
               </div>
             </div>
+
+            {/* Subject Storage Breakdown */}
+            {subjectStorageBreakdown.length > 0 && (
+              <div style={{ marginBottom: '14px' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Storage by Subject
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {subjectStorageBreakdown.map(subj => (
+                    <div 
+                      key={subj.name}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '8px 12px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {subj.name}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>
+                          {subj.videoCount > 0 ? `${subj.videoCount} video${subj.videoCount > 1 ? 's' : ''}` : ''}
+                          {subj.videoCount > 0 && subj.pdfCount > 0 ? ' • ' : ''}
+                          {subj.pdfCount > 0 ? `${subj.pdfCount} doc${subj.pdfCount > 1 ? 's' : ''}` : ''}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent)' }}>
+                        {formatBytes(subj.totalBytes)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Items list sorted by size */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>

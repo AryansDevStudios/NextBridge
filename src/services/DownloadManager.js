@@ -671,6 +671,14 @@ class DownloadManagerService {
     }
   }
 
+  resumeInterrupted() {
+    this.activeDownloads.forEach((task, id) => {
+      if (task.status === 'paused' || task.status === 'error' || task.status === 'interrupted') {
+        this.resumeDownload(id);
+      }
+    });
+  }
+
   async cancelDownload(itemId) {
     const strId = String(itemId);
     if (Capacitor.isNativePlatform()) {

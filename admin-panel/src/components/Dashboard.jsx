@@ -358,6 +358,10 @@ export default function Dashboard({ onLogout }) {
                             <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full border bg-red-900/20 text-red-400 border-red-900/50">
                               Revoked
                             </span>
+                          ) : s.status === 'suspended' ? (
+                            <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full border bg-amber-900/20 text-amber-400 border-amber-900/50">
+                              Suspended
+                            </span>
                           ) : !expiry ? (
                             <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full border bg-emerald-900/20 text-emerald-400 border-emerald-900/50">
                               Unlimited
@@ -587,8 +591,14 @@ export default function Dashboard({ onLogout }) {
                           )}
                         </td>
                         <td className="p-4">
-                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${s.status === 'active' ? 'bg-green-900/20 text-green-400 border-green-900/50' : 'bg-red-900/20 text-red-400 border-red-900/50'}`}>
-                            {s.status}
+                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${
+                            s.status === 'active' 
+                              ? 'bg-green-900/20 text-green-400 border-green-900/50' 
+                              : s.status === 'suspended'
+                              ? 'bg-amber-900/20 text-amber-400 border-amber-900/50'
+                              : 'bg-red-900/20 text-red-400 border-red-900/50'
+                          }`}>
+                            {s.status === 'suspended' ? 'Suspended' : s.status}
                           </span>
                         </td>
                         <td className="p-4">

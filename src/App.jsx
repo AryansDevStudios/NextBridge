@@ -11,6 +11,7 @@ import { App as CapApp } from '@capacitor/app';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import UpdateLockoutScreen from './components/UpdateLockoutScreen';
 import { APP_VERSION, APP_VERSION_CODE, compareSemver, isUpdateRequired } from './utils/version';
+import { notificationService } from './services/NotificationService';
 
 const ADMIN_KEY = '_nb_admin_mode';
 
@@ -35,6 +36,8 @@ export default function App() {
   const [isDeviceBound, setIsDeviceBound] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [forcedUpdateInfo, setForcedUpdateInfo] = useState(null);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [suspensionMessage, setSuspensionMessage] = useState('');
 
   // Ref to hold the timestamp of when the app became active
   const sessionStartTime = useRef(null);
@@ -78,6 +81,7 @@ export default function App() {
           const DownloadService = registerPlugin('DownloadService');
           DownloadService.requestPermissions().catch(() => {});
         } catch (e) {}
+        notificationService.init().catch(() => {});
       }
     };
 
@@ -118,8 +122,17 @@ export default function App() {
         return;
       }
 
-      // 1. Check if revoked by admin
-      if (data.status !== 'active') {
+      // 1. Check if suspended or revoked by admin
+      if (data.status === 'suspended') {
+        setIsSuspended(true);
+        setSuspensionMessage(data.customMessage || 'Your student account has been temporarily placed on hold by the administrator.');
+        setUser(data);
+        return;
+      } else {
+        setIsSuspended(false);
+      }
+
+      if (data.status === 'revoked') {
         setErrorMsg(data.customMessage || 'Your access has been revoked by the admin.');
         localStorage.removeItem('student_user');
         setUser(null);
@@ -394,6 +407,11 @@ export default function App() {
             setUser(null);
             setIsDeviceBound(true);
           }
+        } else if (targetStudent.status === 'suspended') {
+          setUser(targetStudent);
+          setIsSuspended(true);
+          setSuspensionMessage(targetStudent.customMessage || 'Your student account has been temporarily placed on hold by the administrator.');
+          return;
         } else if (isExpired) {
           const formatted = new Date(targetStudent.subscriptionExpiresAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
           setErrorMsg(targetStudent.customMessage || `Your subscription access expired on ${formatted}. Please contact admin to renew.`);
@@ -607,6 +625,57 @@ export default function App() {
         onRefresh={checkAutoLogin}
         onLogout={handleLogout}
       />
+    );
+  }
+
+  if (isSuspended) {
+    return (
+      <div className="login-container">
+        <div className="login-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '36px 24px' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+            <ShieldAlert size={36} className="text-[#f59e0b]" />
+          </div>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '8px', color: '#f3f4f6' }}>
+            Account Temporarily Suspended
+          </h2>
+          <p style={{ fontSize: '0.88rem', color: '#9ca3af', lineHeight: 1.5, marginBottom: '24px' }}>
+            {suspensionMessage || 'Your student account has been temporarily placed on hold by the administrator. Please contact your center administrator to restore access.'}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button
+              onClick={checkAutoLogin}
+              style={{
+                width: '100%',
+                padding: '11px',
+                borderRadius: '8px',
+                background: 'var(--accent)',
+                color: '#000',
+                fontWeight: 700,
+                fontSize: '0.88rem',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              Check Status / Refresh
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '8px',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#9ca3af',
+                fontSize: '0.85rem',
+                cursor: 'pointer'
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 

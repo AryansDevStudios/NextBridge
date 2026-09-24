@@ -9,7 +9,7 @@ import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestor
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink, Share2, ChevronDown, HardDrive, Smartphone, Check, MoreVertical } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink, Share2, ChevronDown, HardDrive, Smartphone, Check, MoreVertical, Headphones, Bookmark, BookmarkPlus, Trash2, Sparkles, Volume2 } from 'lucide-react';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
@@ -35,10 +35,33 @@ function HlsPlayer({ url, item, user }) {
   const [isReady, setIsReady] = useState(false);
   const [skipIndicator, setSkipIndicator] = useState(null);
   const [seekPreview, setSeekPreview] = useState(null);
+  const [isAudioOnly, setIsAudioOnly] = useState(false);
   const previewVideoRef = useRef(null);
 
   useEffect(() => { userRef.current = user; }, [user]);
   useEffect(() => { itemRef.current = item; }, [item]);
+
+  useEffect(() => {
+    const handleToggleAudio = (e) => {
+      if (e.detail?.toggle !== undefined) {
+        setIsAudioOnly(prev => !prev);
+      } else if (e.detail?.active !== undefined) {
+        setIsAudioOnly(e.detail.active);
+      }
+    };
+    const handleSeek = (e) => {
+      if (videoRef.current && typeof e.detail?.time === 'number') {
+        videoRef.current.currentTime = e.detail.time;
+        videoRef.current.play().catch(() => {});
+      }
+    };
+    window.addEventListener('player:toggle-audio', handleToggleAudio);
+    window.addEventListener('player:seek-to', handleSeek);
+    return () => {
+      window.removeEventListener('player:toggle-audio', handleToggleAudio);
+      window.removeEventListener('player:seek-to', handleSeek);
+    };
+  }, []);
 
   useEffect(() => {
     const checkOffline = async () => {
@@ -122,6 +145,26 @@ function HlsPlayer({ url, item, user }) {
       if (!storageKey || !video || (video.paused && video.currentTime === 0)) return;
       if (video.currentTime > 0 && isFinite(video.currentTime)) {
         localStorage.setItem(storageKey, video.currentTime.toString());
+        try {
+          const curItem = itemRef.current;
+          if (curItem) {
+            const rawRecents = localStorage.getItem('recent_watched_lectures');
+            const recents = rawRecents ? JSON.parse(rawRecents) : [];
+            const filtered = recents.filter(r => String(r.id) !== String(curItem.id));
+            const entry = {
+              id: curItem.id,
+              title: curItem.title || 'Video Lecture',
+              type: 'video',
+              url: curItem.url,
+              duration: video.duration || curItem.duration || 0,
+              thumbnail: curItem.thumbnail || '',
+              subject_name: curItem.subject_name || curItem.subjectName || '',
+              lastPosition: video.currentTime,
+              lastWatched: new Date().toISOString()
+            };
+            localStorage.setItem('recent_watched_lectures', JSON.stringify([entry, ...filtered].slice(0, 30)));
+          }
+        } catch (_) {}
       }
     };
 
@@ -188,9 +231,12 @@ function HlsPlayer({ url, item, user }) {
     let hls;
     let player;
 
+    const savedSpeed = parseFloat(localStorage.getItem('app_playback_speed')) || 1;
     const defaultOptions = {
       clickToPlay: false,
-      controls: ['play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'pip', 'airplay', 'fullscreen'],
+      controls: ['play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+      settings: ['speed', 'quality'],
+      speed: { selected: savedSpeed, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
       keyboard: { focused: true, global: true },
       fullscreen: { enabled: true, fallback: true, iosNative: false }
     };
@@ -312,6 +358,42 @@ function HlsPlayer({ url, item, user }) {
     };
 
     const setupPlayerFeatures = (plyrInstance) => {
+      // 1. Persistent Playback Speed
+      try {
+        plyrInstance.speed = savedSpeed;
+        plyrInstance.on('ratechange', () => {
+          if (plyrInstance.speed) {
+            localStorage.setItem('app_playback_speed', plyrInstance.speed.toString());
+          }
+        });
+      } catch (_) {}
+
+      // 2. MediaSession API (Background Audio & Lockscreen Controls)
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: itemRef.current?.title || 'Video Lecture',
+            artist: 'NextBridge',
+            album: itemRef.current?.subject_name || itemRef.current?.subjectName || 'NextBridge Lecture',
+            artwork: itemRef.current?.thumbnail ? [{ src: itemRef.current.thumbnail, sizes: '512x512', type: 'image/jpeg' }] : []
+          });
+
+          navigator.mediaSession.setActionHandler('play', () => video.play().catch(() => {}));
+          navigator.mediaSession.setActionHandler('pause', () => video.pause());
+          navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+            const skip = details.seekOffset || 10;
+            video.currentTime = Math.max(0, video.currentTime - skip);
+          });
+          navigator.mediaSession.setActionHandler('seekforward', (details) => {
+            const skip = details.seekOffset || 10;
+            video.currentTime = Math.min(video.duration || Infinity, video.currentTime + skip);
+          });
+          navigator.mediaSession.setActionHandler('seekto', (details) => {
+            if (details.seekTime !== undefined) video.currentTime = details.seekTime;
+          });
+        } catch (_) {}
+      }
+
       setTimeout(() => {
         if (plyrInstance && plyrInstance.elements.container) plyrInstance.elements.container.focus();
         else if (video) video.focus();
@@ -580,31 +662,59 @@ function HlsPlayer({ url, item, user }) {
       const pendingMs = totalWatchTime.current;
       const currentUser = userRef.current;
       const currentItem = itemRef.current;
-      if (pendingMs >= 3000 && currentUser?.id) {
+      if (pendingMs >= 3000) {
         totalWatchTime.current = 0;
         const durationSecs = Math.floor(pendingMs / 1000);
         const cleanVidId = String(currentItem?.id || 'vid_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
-        
-        addDoc(collection(db, 'students', currentUser.id, 'logs'), {
-          type: 'watch',
-          videoId: currentItem?.id || '',
-          videoTitle: currentItem?.title || 'Unknown Video',
-          subjectName: currentItem?.subject_name || currentItem?.subjectName || '',
-          durationSecs: durationSecs,
-          timestamp: new Date().toISOString()
-        }).catch(() => {});
-
         const todayKey = new Date().toISOString().slice(0, 10);
-        updateDoc(doc(db, 'students', currentUser.id), {
-          totalVideoTime: increment(durationSecs),
-          lastActive: new Date().toISOString(),
-          [`dailyVideoTime.${todayKey}`]: increment(durationSecs),
-          [`videoStats.${cleanVidId}.title`]: currentItem?.title || 'Unknown Video',
-          [`videoStats.${cleanVidId}.subjectName`]: currentItem?.subject_name || currentItem?.subjectName || '',
-          [`videoStats.${cleanVidId}.watchTimeSecs`]: increment(durationSecs),
-          [`videoStats.${cleanVidId}.lastWatched`]: new Date().toISOString(),
-          [`videoStats.${cleanVidId}.playCount`]: increment(1)
-        }).catch(() => {});
+
+        try {
+          const rawDaily = localStorage.getItem('local_daily_video_time');
+          const localDaily = rawDaily ? JSON.parse(rawDaily) : {};
+          localDaily[todayKey] = (localDaily[todayKey] || 0) + durationSecs;
+          localStorage.setItem('local_daily_video_time', JSON.stringify(localDaily));
+
+          const rawStats = localStorage.getItem('local_video_stats');
+          const localStats = rawStats ? JSON.parse(rawStats) : {};
+          if (!localStats[cleanVidId]) {
+            localStats[cleanVidId] = {
+              id: currentItem?.id,
+              title: currentItem?.title || 'Unknown Video',
+              subjectName: currentItem?.subject_name || currentItem?.subjectName || '',
+              watchTimeSecs: 0,
+              duration: video?.duration || currentItem?.duration || 0,
+              thumbnail: currentItem?.thumbnail || '',
+              url: currentItem?.url || '',
+              lastWatched: new Date().toISOString()
+            };
+          }
+          localStats[cleanVidId].watchTimeSecs = (localStats[cleanVidId].watchTimeSecs || 0) + durationSecs;
+          localStats[cleanVidId].lastWatched = new Date().toISOString();
+          if (video?.duration) localStats[cleanVidId].duration = video.duration;
+          localStorage.setItem('local_video_stats', JSON.stringify(localStats));
+        } catch (_) {}
+
+        if (currentUser?.id) {
+          addDoc(collection(db, 'students', currentUser.id, 'logs'), {
+            type: 'watch',
+            videoId: currentItem?.id || '',
+            videoTitle: currentItem?.title || 'Unknown Video',
+            subjectName: currentItem?.subject_name || currentItem?.subjectName || '',
+            durationSecs: durationSecs,
+            timestamp: new Date().toISOString()
+          }).catch(() => {});
+
+          updateDoc(doc(db, 'students', currentUser.id), {
+            totalVideoTime: increment(durationSecs),
+            lastActive: new Date().toISOString(),
+            [`dailyVideoTime.${todayKey}`]: increment(durationSecs),
+            [`videoStats.${cleanVidId}.title`]: currentItem?.title || 'Unknown Video',
+            [`videoStats.${cleanVidId}.subjectName`]: currentItem?.subject_name || currentItem?.subjectName || '',
+            [`videoStats.${cleanVidId}.watchTimeSecs`]: increment(durationSecs),
+            [`videoStats.${cleanVidId}.lastWatched`]: new Date().toISOString(),
+            [`videoStats.${cleanVidId}.playCount`]: increment(1)
+          }).catch(() => {});
+        }
       }
     };
 
@@ -660,7 +770,57 @@ function HlsPlayer({ url, item, user }) {
 
   return (
     <div ref={wrapperRef} className="hls-player-wrapper" style={{ width: '100%', height: '100%', background: 'black', position: 'relative' }}>
-      <video ref={videoRef} playsInline crossOrigin="anonymous" style={{ width: '100%', height: '100%' }} />
+      <video ref={videoRef} playsInline crossOrigin="anonymous" style={{ width: '100%', height: '100%', display: isAudioOnly ? 'none' : 'block' }} />
+
+      {isAudioOnly && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center',
+          zIndex: 10
+        }}>
+          <div style={{
+            width: 76,
+            height: 76,
+            borderRadius: '50%',
+            background: 'rgba(245, 158, 11, 0.15)',
+            border: '2px solid rgba(245, 158, 11, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '14px',
+            boxShadow: '0 0 25px rgba(245, 158, 11, 0.2)'
+          }}>
+            <Headphones size={36} className="text-[#f59e0b] animate-pulse" />
+          </div>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f3f4f6', margin: '0 0 6px 0', maxWidth: '320px' }}>
+            {item.title}
+          </h3>
+          <p style={{ fontSize: '0.8rem', color: '#9ca3af', margin: '0 0 14px 0' }}>
+            {item.subject_name || item.subjectName || 'Lecture'} • Background Audio Active
+          </p>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '0.72rem',
+            color: '#10b981',
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            padding: '4px 10px',
+            borderRadius: '12px'
+          }}>
+            <Sparkles size={12} />
+            <span>Battery & Data Saver Mode</span>
+          </div>
+        </div>
+      )}
 
       {/* Skip indicator overlays */}
       {skipIndicator && (
@@ -989,7 +1149,42 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [showPdfDownloadMenu, setShowPdfDownloadMenu] = useState(false);
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
   const [isSharingPdf, setIsSharingPdf] = useState(false);
-  const [pdfActionToast, setPdfActionToast] = useState('');
+  const [isAudioOnlyMode, setIsAudioOnlyMode] = useState(false);
+  const [notes, setNotes] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`video_notes_${item.id}`) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [noteInput, setNoteInput] = useState('');
+  const [showNotesDrawer, setShowNotesDrawer] = useState(false);
+
+  const handleAddNote = (presetText) => {
+    const textToAdd = (presetText || noteInput || '').trim();
+    if (!textToAdd) return;
+    const currentPos = parseFloat(localStorage.getItem(`lecture_pos_${item.id}`)) || 0;
+    const newNote = {
+      id: Date.now().toString(),
+      time: currentPos,
+      text: textToAdd,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [newNote, ...notes].sort((a, b) => a.time - b.time);
+    setNotes(updated);
+    localStorage.setItem(`video_notes_${item.id}`, JSON.stringify(updated));
+    setNoteInput('');
+  };
+
+  const handleDeleteNote = (noteId) => {
+    const updated = notes.filter(n => n.id !== noteId);
+    setNotes(updated);
+    localStorage.setItem(`video_notes_${item.id}`, JSON.stringify(updated));
+  };
+
+  const handleSeekToNote = (time) => {
+    window.dispatchEvent(new CustomEvent('player:seek-to', { detail: { time } }));
+  };
 
   const showToast = (msg) => {
     setPdfActionToast(msg);
@@ -1520,12 +1715,193 @@ const VideoPlayer = ({ item, onClose, user }) => {
                 </span>
               )}
             </div>
-            <div className="yt-actions">
+            <div className="yt-actions" style={{ flexWrap: 'wrap', gap: '8px' }}>
               <VideoDownloader url={item.url} item={item} user={user} />
+
+              <button 
+                onClick={() => {
+                  const nextState = !isAudioOnlyMode;
+                  setIsAudioOnlyMode(nextState);
+                  window.dispatchEvent(new CustomEvent('player:toggle-audio', { detail: { active: nextState } }));
+                }}
+                className={`yt-action-btn ${isAudioOnlyMode ? 'active' : ''}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: isAudioOnlyMode ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
+                  border: isAudioOnlyMode ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
+                  color: isAudioOnlyMode ? '#f59e0b' : '#f3f4f6',
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+                title="Toggle battery-saving background audio mode"
+              >
+                <Headphones size={15} />
+                <span>{isAudioOnlyMode ? 'Video Mode' : 'Audio Mode'}</span>
+              </button>
+
+              <button 
+                onClick={() => setShowNotesDrawer(!showNotesDrawer)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: showNotesDrawer ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
+                  border: showNotesDrawer ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
+                  color: showNotesDrawer ? '#f59e0b' : '#f3f4f6',
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+                title="View or add timestamped lecture notes"
+              >
+                <BookmarkPlus size={15} />
+                <span>Notes ({notes.length})</span>
+              </button>
+
               <button className="yt-close-btn" onClick={onClose}>
                 <X size={18} /> Close Player
               </button>
             </div>
+
+            {/* Timestamped Bookmarks & Notes Section */}
+            {showNotesDrawer && (
+              <div style={{
+                marginTop: '16px',
+                background: '#121214',
+                border: '1px solid #26262b',
+                borderRadius: '12px',
+                padding: '16px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Bookmark size={18} className="text-[#f59e0b]" />
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f3f4f6', margin: 0 }}>
+                      Timestamped Notes & Bookmarks
+                    </h3>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                    {notes.length} saved
+                  </span>
+                </div>
+
+                {/* Quick Add Input */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                  <input
+                    type="text"
+                    placeholder="Add a note at current time..."
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(); }}
+                    style={{
+                      flex: 1,
+                      background: '#18181b',
+                      border: '1px solid #2e2e36',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: '#f3f4f6',
+                      fontSize: '0.82rem',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleAddNote()}
+                    style={{
+                      background: 'var(--accent)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 14px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                  {['📌 Formula', '⚠️ Exam Important', '❓ Review Later', '💡 Key Concept'].map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => handleAddNote(tag)}
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        fontSize: '0.72rem',
+                        color: '#9ca3af',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      +{tag}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Notes List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                  {notes.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '16px 0', fontSize: '0.8rem', color: '#6b7280' }}>
+                      No bookmarks saved yet. Pause or play video and tap Add to save a moment.
+                    </div>
+                  ) : (
+                    notes.map((n) => (
+                      <div
+                        key={n.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          background: '#18181b',
+                          border: '1px solid #27272a',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <div 
+                          onClick={() => handleSeekToNote(n.time)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1, minWidth: 0 }}
+                          title="Click to jump to this timestamp"
+                        >
+                          <span style={{
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            fontFamily: 'monospace'
+                          }}>
+                            {formatSeekTime(n.time)}
+                          </span>
+                          <span style={{ fontSize: '0.82rem', color: '#e4e4e7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {n.text}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteNote(n.id)}
+                          style={{ background: 'transparent', border: 'none', color: '#71717a', cursor: 'pointer', padding: '4px' }}
+                          title="Delete note"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
