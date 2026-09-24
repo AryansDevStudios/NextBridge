@@ -476,7 +476,9 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         source: item.source,
         subject_name: item.subject_name || item.subjectName,
         book_title: item.book_title,
-        chapter_title: item.chapter_title
+        chapter_title: item.chapter_title,
+        isSecure: item.isSecure,
+        preventScreenshots: item.preventScreenshots
       });
       return;
     }
@@ -493,7 +495,9 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       type: 'video',
       url: videoUrl,
       duration: item.duration,
-      thumbnail: item.thumbnail
+      thumbnail: item.thumbnail,
+      isSecure: item.isSecure,
+      preventScreenshots: item.preventScreenshots
     });
   };
 

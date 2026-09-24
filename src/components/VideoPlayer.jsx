@@ -87,25 +87,6 @@ function HlsPlayer({ url, item, user }) {
     checkOffline();
   }, [item.id]);
 
-  // Dynamic Screenshot & Screen Recording Protection
-  // If a video or PDF has isSecure: true, applies Android FLAG_SECURE at runtime.
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    const isProtected = Boolean(item?.isSecure || item?.preventScreenshots || item?.secureVideo);
-
-    if (isProtected) {
-      PrivacyScreen.enable().catch(console.warn);
-    } else {
-      PrivacyScreen.disable().catch(console.warn);
-    }
-
-    return () => {
-      if (Capacitor.isNativePlatform()) {
-        PrivacyScreen.disable().catch(console.warn);
-      }
-    };
-  }, [item?.id, item?.isSecure, item?.preventScreenshots, item?.secureVideo]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -1021,13 +1002,31 @@ const VideoPlayer = ({ item, onClose, user }) => {
     setTimeout(() => setPdfActionToast(''), 3500);
   };
 
+  // Dynamic Screenshot & Screen Recording Protection (FLAG_SECURE)
+  // DEFAULT BEHAVIOR:
+  // All media (both videos and PDFs) are UNPROTECTED by default (PrivacyScreen is disabled).
+  // Older content and newly uploaded items without explicit security flags remain completely unprotected.
+  // PrivacyScreen (FLAG_SECURE) is ONLY engaged if the admin explicitly toggles isSecure on.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const isProtected = Boolean(item?.isSecure || item?.preventScreenshots || item?.secureVideo);
+
+    if (isProtected) {
+      PrivacyScreen.enable().catch(console.warn);
+    } else {
+      PrivacyScreen.disable().catch(console.warn);
+    }
+
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        PrivacyScreen.disable().catch(console.warn);
+      }
+    };
+  }, [item?.id, item?.isSecure, item?.preventScreenshots, item?.secureVideo]);
+
   useEffect(() => {
     if (item.type === 'pdf') {
-      if (Capacitor.isNativePlatform()) {
-        // Explicitly allow screenshots on PDF files / notes as requested
-        PrivacyScreen.disable().catch(console.error);
-      }
-
       let isMounted = true;
       const syncPdfUrl = async () => {
         try {
@@ -1081,18 +1080,8 @@ const VideoPlayer = ({ item, onClose, user }) => {
         clearInterval(pdfInterval);
         flushPdfTime();
         unsub();
-        if (Capacitor.isNativePlatform()) {
-          PrivacyScreen.disable().catch(console.error);
-        }
       };
     }
-
-    return () => {
-      // Whenever leaving the player, guarantee PrivacyScreen is disabled
-      if (Capacitor.isNativePlatform()) {
-        PrivacyScreen.disable().catch(console.error);
-      }
-    };
   }, [item.type, item.id, isPdfDownloaded]);
 
   const handleDownloadPdfToApp = async () => {

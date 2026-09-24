@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronRight, Folder, Video, FileText, ArrowLeft, Download, Eye, EyeOff, X, Clock, Calendar } from 'lucide-react';
+import { ChevronRight, Folder, Video, FileText, ArrowLeft, Download, Eye, EyeOff, X, Clock, Calendar, ShieldCheck, ShieldOff } from 'lucide-react';
 import streamSaver from 'streamsaver';
 
 streamSaver.mitm = '/mitm.html';
@@ -275,6 +275,80 @@ const AdminCourseLibrary = () => {
     }
   };
 
+  const toggleSecurity = async (e, subjectId, itemId, currentIsSecure) => {
+    e.stopPropagation();
+    try {
+      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}/items/${itemId}.json`;
+      // By default items have NO security flags (null/omitted).
+      // Only when explicitly toggled on by admin, isSecure and preventScreenshots become true.
+      const payload = currentIsSecure 
+        ? { isSecure: null, preventScreenshots: null } 
+        : { isSecure: true, preventScreenshots: true };
+      
+      await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const newData = { ...courseData };
+      if (currentIsSecure) {
+        delete newData.subjects[subjectId].items[itemId].isSecure;
+        delete newData.subjects[subjectId].items[itemId].preventScreenshots;
+      } else {
+        newData.subjects[subjectId].items[itemId].isSecure = true;
+        newData.subjects[subjectId].items[itemId].preventScreenshots = true;
+      }
+      setCourseData(newData);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to update security setting");
+    }
+  };
+
+  const toggleSubjectSecurity = async (e, subjectId, currentIsSecure) => {
+    e.stopPropagation();
+    try {
+      const subject = courseData?.subjects?.[subjectId];
+      if (!subject?.items) return;
+
+      const newIsSecure = !currentIsSecure;
+      const updates = {};
+      Object.keys(subject.items).forEach(k => {
+        updates[`items/${k}/isSecure`] = newIsSecure ? true : null;
+        updates[`items/${k}/preventScreenshots`] = newIsSecure ? true : null;
+      });
+      updates['isSecure'] = newIsSecure ? true : null;
+
+      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}.json`;
+      await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+
+      const newData = { ...courseData };
+      const sub = newData.subjects[subjectId];
+      if (newIsSecure) {
+        sub.isSecure = true;
+        Object.keys(sub.items).forEach(k => {
+          sub.items[k].isSecure = true;
+          sub.items[k].preventScreenshots = true;
+        });
+      } else {
+        delete sub.isSecure;
+        Object.keys(sub.items).forEach(k => {
+          delete sub.items[k].isSecure;
+          delete sub.items[k].preventScreenshots;
+        });
+      }
+      setCourseData(newData);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to update subject security setting");
+    }
+  };
+
   const handleFolderClick = (subjectId, itemOrFolder) => {
     setCurrentPath([...currentPath, { subjectId, ...itemOrFolder }]);
   };
@@ -373,6 +447,17 @@ const AdminCourseLibrary = () => {
                     </div>
                     <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
                         <span className="text-xs sm:text-sm text-[#9ca3af] mr-2 sm:mr-4">{item.items ? Object.keys(item.items).length : 0} items</span>
+                        <button
+                            onClick={(e) => toggleSubjectSecurity(e, item.subject_id, item.isSecure)}
+                            className={`p-1.5 sm:p-2 rounded-lg transition ${
+                              item.isSecure
+                                ? 'text-amber-400 bg-amber-950/30 border border-amber-900/50'
+                                : 'text-[#71717a] hover:text-white hover:bg-[#262626]'
+                            }`}
+                            title={item.isSecure ? "All items in subject protected. Click to unprotect all." : "Subject unprotected by default. Click to protect all items in this subject."}
+                        >
+                            {item.isSecure ? <ShieldCheck size={16} /> : <ShieldOff size={16} />}
+                        </button>
                         <button 
                             onClick={(e) => toggleSubjectVisibility(e, item.subject_id, item.isHidden)}
                             className="p-1.5 sm:p-2 text-[#9ca3af] hover:text-white rounded-lg hover:bg-[#262626]"
@@ -421,14 +506,33 @@ const AdminCourseLibrary = () => {
                             <span className="uppercase bg-[#333] px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold">{item.type}</span>
                             {item.duration > 0 && <span className="flex items-center gap-1 text-[11px]"><Clock size={11} /> {formatDuration(item.duration)}</span>}
                             {item.created_at && <span className="flex items-center gap-1 text-[11px]"><Calendar size={11} /> {formatDate(item.created_at)}</span>}
+                            {Boolean(item.isSecure || item.preventScreenshots) && (
+                              <span className="flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 rounded">
+                                <ShieldCheck size={11} /> Protected
+                              </span>
+                            )}
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center justify-end space-x-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#262626]">
+                <div className="flex items-center justify-end space-x-1.5 sm:space-x-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#262626]">
+                    <button
+                        onClick={(e) => toggleSecurity(e, currentPath[currentPath.length-1].subjectId, item.id, Boolean(item.isSecure || item.preventScreenshots))}
+                        className={`p-2 rounded-lg transition ${
+                          item.isSecure || item.preventScreenshots 
+                            ? 'text-amber-400 bg-amber-950/30 border border-amber-900/50 hover:bg-amber-950/60' 
+                            : 'text-[#71717a] hover:text-[#f3f4f6] hover:bg-[#262626]'
+                        }`}
+                        title={item.isSecure || item.preventScreenshots 
+                          ? "Protected: Screenshots & recording blocked. Click to unprotect." 
+                          : "Unprotected (Default): Screenshots & recording allowed. Click to protect."}
+                    >
+                        {item.isSecure || item.preventScreenshots ? <ShieldCheck size={18} /> : <ShieldOff size={18} />}
+                    </button>
+
                     <button 
                         onClick={(e) => toggleVisibility(e, currentPath[currentPath.length-1].subjectId, item.id, item.isHidden)}
                         className="p-2 text-[#9ca3af] hover:text-white rounded-lg hover:bg-[#262626] transition"
-                        title="Toggle Visibility"
+                        title={item.isHidden ? "Unhide" : "Hide from students"}
                     >
                         {item.isHidden ? <EyeOff size={18} className="text-red-400" /> : <Eye size={18} />}
                     </button>
