@@ -225,6 +225,13 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
   useEffect(() => { downloadPathRef.current = downloadPath; }, [downloadPath]);
 
+  const closeVideo = () => {
+    if (Capacitor.isNativePlatform()) {
+      PrivacyScreen.disable().catch(() => {});
+    }
+    setPlayingVideo(null);
+  };
+
   // Load downloaded lectures from device registry
   const loadDownloadedLectures = async () => {
     await downloadManager.syncCompletedFromRegistry();
@@ -375,10 +382,6 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCourseData();
-  }, [user.class]);
-
   const fetchCourseData = async () => {
     setLoading(true);
     const classId = (user.class === "9" || user.class === "9th") ? "9" : "10";
@@ -408,6 +411,10 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchCourseData();
+  }, [user.class]);
 
   const handleFolderClick = (subjectId, itemOrFolder) => {
     if (!Capacitor.isNativePlatform()) {
@@ -504,13 +511,6 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
     const updated = downloadedLectures.filter(d => String(d.id) !== String(item.id));
     setDownloadedLectures(updated);
     localStorage.setItem('downloaded_lectures', JSON.stringify(updated));
-  };
-
-  const closeVideo = () => {
-    if (Capacitor.isNativePlatform()) {
-      PrivacyScreen.disable().catch(() => {});
-    }
-    setPlayingVideo(null);
   };
 
   // Flatten all items across all subjects into one big array for search

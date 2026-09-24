@@ -3,6 +3,7 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { App as CapApp } from '@capacitor/app';
 import { db } from '../firebase';
 import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import Hls from 'hls.js';
@@ -106,6 +107,12 @@ function HlsPlayer({ url, item, user }) {
       if (!storageKey) return;
       const saved = parseFloat(localStorage.getItem(storageKey));
       if (saved && saved > 0 && isFinite(saved)) {
+        const dur = video.duration || itemRef.current?.duration || 0;
+        // If saved position is within 5 seconds of the end, reset to 0
+        if (dur > 0 && saved >= dur - 5) {
+          localStorage.removeItem(storageKey);
+          return;
+        }
         video.currentTime = saved;
       }
     };
@@ -117,18 +124,65 @@ function HlsPlayer({ url, item, user }) {
       }
     };
 
+    // ── Screen WakeLock during video playback ──
+    let wakeLockSentinel = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator && !wakeLockSentinel) {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        }
+      } catch (err) {}
+    };
+
+    const releaseWakeLock = () => {
+      try {
+        if (wakeLockSentinel) {
+          wakeLockSentinel.release().catch(() => {});
+          wakeLockSentinel = null;
+        }
+      } catch (err) {}
+    };
+
+    // ── Native App State Listener (auto-pause on background / incoming call) ──
+    let appStateSub = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive && video && !video.paused) {
+          video.pause();
+          savePosition();
+          releaseWakeLock();
+        }
+      }).then(sub => { appStateSub = sub; }).catch(() => {});
+    }
+
     saveInterval = setInterval(savePosition, 3000);
     video.addEventListener('pause', savePosition);
 
-    const handlePlayTime = () => { lastPlayTime.current = Date.now(); };
+    const handlePlayTime = () => { 
+      lastPlayTime.current = Date.now();
+      requestWakeLock();
+    };
     const handlePauseTime = () => {
+      releaseWakeLock();
       if (lastPlayTime.current) {
         totalWatchTime.current += (Date.now() - lastPlayTime.current);
         lastPlayTime.current = null;
       }
     };
+    const handleEnded = () => {
+      if (storageKey) {
+        localStorage.removeItem(storageKey);
+      }
+      releaseWakeLock();
+      flushWatchTime();
+    };
+
     video.addEventListener('play', handlePlayTime);
     video.addEventListener('pause', handlePauseTime);
+    video.addEventListener('ended', handleEnded);
 
     let hls;
     let player;
@@ -564,13 +618,16 @@ function HlsPlayer({ url, item, user }) {
       clearInterval(saveInterval);
       clearInterval(watchSyncInterval);
       clearTimeout(pauseHideTimer);
-      flushWatchTime();
-
+      releaseWakeLock();
+      if (appStateSub) {
+        appStateSub.remove();
+      }
       video.removeEventListener('pause', savePosition);
       video.removeEventListener('pause', onPauseHide);
       video.removeEventListener('play', onPlayShow);
       video.removeEventListener('play', handlePlayTime);
       video.removeEventListener('pause', handlePauseTime);
+      video.removeEventListener('ended', handleEnded);
       document.removeEventListener('keydown', handleKeyboardSkip, true);
       if (handleDocFullscreenChange) {
         document.removeEventListener('fullscreenchange', handleDocFullscreenChange);
