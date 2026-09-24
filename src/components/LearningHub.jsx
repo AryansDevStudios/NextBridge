@@ -397,10 +397,11 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const displayWatchedLectures = useMemo(() => {
     if (!searchQuery.trim()) return watchedLecturesList;
     const q = searchQuery.toLowerCase().trim();
-    return watchedLecturesList.filter(l => 
-      (l.title || '').toLowerCase().includes(q) ||
-      (l.subject_name || '').toLowerCase().includes(q)
-    );
+    const parts = q.split(' ').filter(Boolean);
+    return watchedLecturesList.filter(l => {
+      const searchTarget = `${l.title || ''} ${l.name || ''} ${l.subject_name || ''} ${l.subjectName || ''} ${l.chapter || ''} ${l.chapter_title || ''} ${l.folder_path || ''} ${l.unified_path || ''}`.toLowerCase();
+      return parts.every(part => searchTarget.includes(part));
+    });
   }, [watchedLecturesList, searchQuery]);
 
   // "Continue Watching" carousel items (home screen)
@@ -1146,7 +1147,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
           </div>
 
           <div className="navbar-actions">
-            <div className="search-container">
+            <div className="search-container" style={{ position: 'relative' }}>
               <Search size={16} className="search-icon" />
               <input 
                 type="text" 
@@ -1160,7 +1161,31 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                 } 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ paddingRight: searchQuery ? '30px' : undefined }}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#9ca3af',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
             {subInfo.badge && (
               <div 
@@ -1321,6 +1346,8 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {isOnline && activeTab === 'textbook' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <NcertTextbookHub
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
             showRsAggarwal={true}
             isLocked={!allowedSections.textbooks}
             allowDownload={allowedSections.pdfDownload}
@@ -1342,6 +1369,8 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {isOnline && activeTab === 'pyq' && isClass10 && (
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <CbsePyqHub
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
             isLocked={!allowedSections.pyqs}
             allowDownload={allowedSections.pdfDownload}
             onOpenPdf={(item) => {
@@ -1898,107 +1927,181 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
       {/* WATCH HISTORY & ACTIVITY TAB VIEW */}
       {activeTab === 'history' && (
         <div className="main-content pb-24 custom-scrollbar" style={{ overflowY: 'auto', flex: 1, padding: '16px' }}>
-          {/* Header & 7-Day Overview */}
-          <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <History size={20} style={{ color: 'var(--accent)' }} />
-                <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Watch History & Activity
-                  </h3>
-                  <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Last 7 Days Study Time</span>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent)' }}>
-                  {formatDuration(sevenDayReport.total7DaySecs)}
-                </div>
-                <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>7-Day Total</span>
-              </div>
-            </div>
-
-            {/* 7-Day Day-by-Day Activity Bar Chart */}
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(7, 1fr)', 
-              gap: '6px', 
-              alignItems: 'flex-end', 
-              height: '110px', 
-              paddingTop: '20px', 
-              paddingBottom: '8px', 
-              borderBottom: '1px solid var(--border-color)' 
-            }}>
-              {sevenDayReport.days.map((day, idx) => {
-                const heightPct = day.seconds > 0 
-                  ? Math.max(12, Math.round((day.seconds / sevenDayReport.maxDaySecs) * 100)) 
-                  : 6;
-                return (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
-                    <span style={{ fontSize: '0.62rem', color: day.seconds > 0 ? 'var(--accent)' : '#6b7280', fontWeight: 600, marginBottom: '4px' }}>
-                      {day.seconds > 0 ? (day.seconds >= 3600 ? `${(day.seconds / 3600).toFixed(1)}h` : `${Math.round(day.seconds / 60)}m`) : '0m'}
-                    </span>
-                    <div style={{ 
-                      width: '100%', 
-                      maxWidth: '28px', 
-                      height: `${heightPct}%`, 
-                      background: day.isToday 
-                        ? 'var(--accent)' 
-                        : (day.seconds > 0 ? 'rgba(245, 158, 11, 0.45)' : 'rgba(255, 255, 255, 0.08)'), 
-                      borderRadius: '5px 5px 2px 2px',
-                      transition: 'height 0.3s ease'
-                    }} />
-                    <span style={{ fontSize: '0.68rem', color: day.isToday ? 'var(--accent)' : '#9ca3af', fontWeight: day.isToday ? 700 : 500, marginTop: '6px' }}>
-                      {day.dayLabel}
-                    </span>
+          {/* Header & 7-Day Overview — hidden while searching so search results are immediately visible */}
+          {!searchQuery.trim() && (
+            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <History size={20} style={{ color: 'var(--accent)' }} />
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                      Watch History & Activity
+                    </h3>
+                    <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Last 7 Days Study Time</span>
                   </div>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '0.72rem', color: '#9ca3af' }}>
-              <span>Day-by-day video watch time</span>
-              <span>Today: <strong style={{ color: 'var(--text-primary)' }}>{formatDuration(sevenDayReport.days[6]?.seconds || 0)}</strong></span>
-            </div>
-          </div>
-
-          {/* Watched Lectures Section */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Watched Lectures ({displayWatchedLectures.length})
-            </h4>
-            {displayWatchedLectures.length > 0 && (
-              <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>
-                Sorted by recent activity
-              </span>
-            )}
-          </div>
-
-          {displayWatchedLectures.length === 0 ? (
-            <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
-              <div style={{ background: 'rgba(255,255,255,0.05)', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                <History size={28} style={{ color: 'var(--text-secondary)' }} />
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent)' }}>
+                    {formatDuration(sevenDayReport.total7DaySecs)}
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>7-Day Total</span>
+                </div>
               </div>
-              <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '6px', fontWeight: 600 }}>No Watch History Yet</h4>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: '340px', margin: '0 auto 16px', lineHeight: '1.4' }}>
-                Start watching video lectures from Courses or Downloads. Your study time and progress will appear here automatically.
-              </p>
+
+              {/* 7-Day Day-by-Day Activity Bar Chart */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(7, 1fr)', 
+                gap: '6px', 
+                alignItems: 'flex-end', 
+                height: '110px', 
+                paddingTop: '20px', 
+                paddingBottom: '8px', 
+                borderBottom: '1px solid var(--border-color)' 
+              }}>
+                {sevenDayReport.days.map((day, idx) => {
+                  const heightPct = day.seconds > 0 
+                    ? Math.max(12, Math.round((day.seconds / sevenDayReport.maxDaySecs) * 100)) 
+                    : 6;
+                  return (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                      <span style={{ fontSize: '0.62rem', color: day.seconds > 0 ? 'var(--accent)' : '#6b7280', fontWeight: 600, marginBottom: '4px' }}>
+                        {day.seconds > 0 ? (day.seconds >= 3600 ? `${(day.seconds / 3600).toFixed(1)}h` : `${Math.round(day.seconds / 60)}m`) : '0m'}
+                      </span>
+                      <div style={{ 
+                        width: '100%', 
+                        maxWidth: '28px', 
+                        height: `${heightPct}%`, 
+                        background: day.isToday 
+                          ? 'var(--accent)' 
+                          : (day.seconds > 0 ? 'rgba(245, 158, 11, 0.45)' : 'rgba(255, 255, 255, 0.08)'), 
+                        borderRadius: '5px 5px 2px 2px',
+                        transition: 'height 0.3s ease'
+                      }} />
+                      <span style={{ fontSize: '0.68rem', color: day.isToday ? 'var(--accent)' : '#9ca3af', fontWeight: day.isToday ? 700 : 500, marginTop: '6px' }}>
+                        {day.dayLabel}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '0.72rem', color: '#9ca3af' }}>
+                <span>Day-by-day video watch time</span>
+                <span>Today: <strong style={{ color: 'var(--text-primary)' }}>{formatDuration(sevenDayReport.days[6]?.seconds || 0)}</strong></span>
+              </div>
+            </div>
+          )}
+
+          {/* Watched Lectures Section / Search Results Header */}
+          {searchQuery.trim() ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 2px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Search size={16} style={{ color: 'var(--accent)' }} />
+                  <span>Search Results in Watch History</span>
+                </h4>
+                <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                  Found {displayWatchedLectures.length} lecture{displayWatchedLectures.length === 1 ? '' : 's'} matching "{searchQuery}"
+                </span>
+              </div>
               <button
-                onClick={() => setActiveTab(isOnline ? 'courses' : 'downloads')}
+                onClick={() => setSearchQuery('')}
                 style={{
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '8px 18px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
+                  padding: '5px 12px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: '#9ca3af',
+                  fontSize: '0.75rem',
                   cursor: 'pointer'
                 }}
               >
-                Explore Lectures
+                Clear Search
               </button>
             </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                Watched Lectures ({displayWatchedLectures.length})
+              </h4>
+              {displayWatchedLectures.length > 0 && (
+                <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>
+                  Sorted by recent activity
+                </span>
+              )}
+            </div>
+          )}
+
+          {displayWatchedLectures.length === 0 ? (
+            searchQuery.trim() ? (
+              <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
+                <Search size={32} style={{ color: 'var(--text-secondary)', margin: '0 auto 12px' }} />
+                <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '6px', fontWeight: 600 }}>
+                  No Lectures in History Matching "{searchQuery}"
+                </h4>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: '380px', margin: '0 auto 16px', lineHeight: '1.4' }}>
+                  You haven't watched any lecture matching this search yet. Would you like to search across all courses instead?
+                </p>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear Search
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('courses')}
+                    style={{
+                      background: 'var(--accent)',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 18px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Search in Courses
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
+                <div style={{ background: 'rgba(255,255,255,0.05)', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  <History size={28} style={{ color: 'var(--text-secondary)' }} />
+                </div>
+                <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '6px', fontWeight: 600 }}>No Watch History Yet</h4>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: '340px', margin: '0 auto 16px', lineHeight: '1.4' }}>
+                  Start watching video lectures from Courses or Downloads. Your study time and progress will appear here automatically.
+                </p>
+                <button
+                  onClick={() => setActiveTab(isOnline ? 'courses' : 'downloads')}
+                  style={{
+                    background: 'var(--accent)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Explore Lectures
+                </button>
+              </div>
+            )
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {displayWatchedLectures.map((item, idx) => {

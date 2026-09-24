@@ -14,7 +14,8 @@ import {
   Loader2, 
   ArrowLeft,
   Layers,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
 
@@ -414,7 +415,7 @@ export default function CbsePyqHub({
               style={{
                 width: '100%',
                 height: '32px',
-                padding: '0 12px 0 30px',
+                padding: '0 28px 0 30px',
                 background: 'rgba(128, 128, 128, 0.1)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '6px',
@@ -423,6 +424,29 @@ export default function CbsePyqHub({
                 outline: 'none'
               }}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#9ca3af',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Clear search"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
 
           {/* View Controls */}
