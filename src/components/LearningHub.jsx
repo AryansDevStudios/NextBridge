@@ -74,7 +74,7 @@ function formatDate(timestamp) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
+const LearningHub = ({ user, runtimeVersion, onLogout, onOpenAdmin }) => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]); // Array of folder objects
   const [searchQuery, setSearchQuery] = useState('');
@@ -2710,7 +2710,12 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               </div>
               <div className="profile-detail-row">
                 <span className="profile-detail-label">App Version</span>
-                <span className="profile-detail-value">v{APP_VERSION}</span>
+                <span className="profile-detail-value">
+                  v{runtimeVersion?.appVersion || APP_VERSION}
+                  {runtimeVersion?.isNative && runtimeVersion?.otaVersion && runtimeVersion?.otaVersion !== runtimeVersion?.appVersion ? (
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7, marginLeft: '6px' }}>(OTA v{runtimeVersion.otaVersion})</span>
+                  ) : null}
+                </span>
               </div>
             </div>
 

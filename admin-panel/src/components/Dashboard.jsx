@@ -478,9 +478,16 @@ export default function Dashboard({ onLogout }) {
                               );
                             }
                             return (
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
-                                {vStatus.label}
-                              </span>
+                              <>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
+                                  {vStatus.label}
+                                </span>
+                                {s.otaVersion && s.otaVersion !== s.appVersion && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded font-mono border bg-blue-950/40 text-blue-300 border-blue-800" title={`Over-The-Air Web Bundle: v${s.otaVersion}`}>
+                                    OTA: v{s.otaVersion}
+                                  </span>
+                                )}
+                              </>
                             );
                           })()}
                           {s.forcedUpdate?.enabled && (
@@ -578,9 +585,16 @@ export default function Dashboard({ onLogout }) {
                                       );
                                     }
                                     return (
-                                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
-                                        {vStatus.label}
-                                      </span>
+                                      <>
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
+                                          {vStatus.label}
+                                        </span>
+                                        {s.otaVersion && s.otaVersion !== s.appVersion && (
+                                          <span className="text-[10px] px-1.5 py-0.2 rounded font-mono border bg-blue-950/40 text-blue-300 border-blue-800" title={`Over-The-Air Web Bundle: v${s.otaVersion}`}>
+                                            OTA: v{s.otaVersion}
+                                          </span>
+                                        )}
+                                      </>
                                     );
                                   })()}
                                 </div>

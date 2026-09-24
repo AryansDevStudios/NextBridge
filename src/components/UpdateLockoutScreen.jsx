@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Download, RefreshCw, AlertTriangle, ShieldAlert, LogOut, ExternalLink, Sparkles, CheckCircle2 } from 'lucide-react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, user, onRefresh, onCheckOta, onLogout }) {
+export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, currentOtaVersion, user, onRefresh, onCheckOta, onLogout }) {
   const [refreshing, setRefreshing] = useState(false);
   const [apkState, setApkState] = useState('idle'); // 'idle' | 'downloading' | 'done' | 'error'
   const [apkProgress, setApkProgress] = useState(0);
@@ -107,7 +107,9 @@ export default function UpdateLockoutScreen({ forcedUpdate, currentVersion, user
           <div>
             <div style={{ fontSize: '11px', color: '#71717a', textTransform: 'uppercase', fontWeight: 600 }}>Your Version</div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#ef4444', marginTop: '2px' }}>v{currentVersion || '\u2014'}</div>
-            <div style={{ fontSize: '10px', color: '#a1a1aa' }}>{isNative ? 'Android App' : 'Web App'}</div>
+            <div style={{ fontSize: '10px', color: '#a1a1aa' }}>
+              {isNative ? (currentOtaVersion && currentOtaVersion !== currentVersion ? `Android APK (OTA v${currentOtaVersion})` : 'Android App') : 'Web App'}
+            </div>
           </div>
           <div style={{ borderLeft: '1px solid #262626', paddingLeft: '12px' }}>
             <div style={{ fontSize: '11px', color: '#71717a', textTransform: 'uppercase', fontWeight: 600 }}>Required Version</div>

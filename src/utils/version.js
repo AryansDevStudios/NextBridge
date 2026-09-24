@@ -38,10 +38,60 @@
  * ============================================================
  */
 
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
 export const APP_VERSION = '2.7.5';
 export const APP_VERSION_CODE = 20705;
 // ───────────────────────────────────────────────────────────
+
+/**
+ * Resolves the true runtime version information:
+ * - On native Android: queries CapApp.getInfo() for the physical APK versionName & versionCode
+ * - On web: uses the static APP_VERSION and APP_VERSION_CODE
+ * - Tracks otaVersion (the web bundle version) separately
+ *
+ * @returns {Promise<{
+ *   appVersion: string,
+ *   versionCode: number,
+ *   otaVersion: string,
+ *   otaVersionCode: number,
+ *   platform: 'android' | 'web',
+ *   isNative: boolean
+ * }>}
+ */
+export async function getRuntimeVersionInfo() {
+  const isNative = Capacitor.isNativePlatform();
+  let appVersion = APP_VERSION;
+  let versionCode = APP_VERSION_CODE;
+
+  if (isNative) {
+    try {
+      const info = await CapApp.getInfo();
+      if (info?.version) {
+        appVersion = String(info.version).trim();
+      }
+      if (info?.build) {
+        const parsedCode = parseInt(info.build, 10);
+        if (!isNaN(parsedCode) && parsedCode > 0) {
+          versionCode = parsedCode;
+        }
+      }
+    } catch (e) {
+      console.warn('[Version] CapApp.getInfo() failed, fallback to bundle version:', e);
+    }
+  }
+
+  return {
+    appVersion,
+    versionCode,
+    otaVersion: APP_VERSION,
+    otaVersionCode: APP_VERSION_CODE,
+    platform: isNative ? 'android' : 'web',
+    isNative
+  };
+}
 
 /**
  * Strips timestamp/prerelease suffixes from compound OTA version strings.

@@ -735,9 +735,16 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
                         );
                       }
                       return (
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${vStatus.badgeClass}`}>
-                          {vStatus.label}
-                        </span>
+                        <>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${vStatus.badgeClass}`}>
+                            {vStatus.label}
+                          </span>
+                          {student.otaVersion && student.otaVersion !== student.appVersion && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full border font-mono bg-blue-950/40 text-blue-300 border-blue-800" title={`Over-The-Air Web Bundle: v${student.otaVersion}`}>
+                              OTA Bundle: v{student.otaVersion}
+                            </span>
+                          )}
+                        </>
                       );
                     })()}
                   </div>

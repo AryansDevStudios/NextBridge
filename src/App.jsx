@@ -10,7 +10,7 @@ import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, Extern
 import { App as CapApp } from '@capacitor/app';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import UpdateLockoutScreen from './components/UpdateLockoutScreen';
-import { APP_VERSION, APP_VERSION_CODE, extractCleanVersion, compareSemver, isUpdateRequired } from './utils/version';
+import { APP_VERSION, APP_VERSION_CODE, extractCleanVersion, compareSemver, isUpdateRequired, getRuntimeVersionInfo } from './utils/version';
 import { notificationService } from './services/NotificationService';
 
 const ADMIN_KEY = '_nb_admin_mode';
@@ -39,11 +39,36 @@ export default function App() {
   const [isSuspended, setIsSuspended] = useState(false);
   const [suspensionMessage, setSuspensionMessage] = useState('');
 
+  const [runtimeVersion, setRuntimeVersion] = useState({
+    appVersion: APP_VERSION,
+    versionCode: APP_VERSION_CODE,
+    otaVersion: APP_VERSION,
+    otaVersionCode: APP_VERSION_CODE,
+    platform: Capacitor.isNativePlatform() ? 'android' : 'web',
+    isNative: Capacitor.isNativePlatform()
+  });
+  const runtimeVersionRef = useRef(runtimeVersion);
+
+  const resolveRuntimeVersion = useCallback(async () => {
+    try {
+      const vInfo = await getRuntimeVersionInfo();
+      runtimeVersionRef.current = vInfo;
+      setRuntimeVersion(vInfo);
+      return vInfo;
+    } catch (e) {
+      console.warn('[Version] Failed resolving runtime version:', e);
+      return runtimeVersionRef.current;
+    }
+  }, []);
+
   // Ref to hold the timestamp of when the app became active
   const sessionStartTime = useRef(null);
 
   useEffect(() => {
     const init = async () => {
+      // 0. Resolve true native runtime version from Android OS / web
+      await resolveRuntimeVersion();
+
       // 1. Re-affirm notifyAppReady on component mount to ensure Capgo watchdog is satisfied
       try {
         await CapacitorUpdater.notifyAppReady();
@@ -154,7 +179,8 @@ export default function App() {
       }
 
       // 3. Check if remote forced update lockout is active
-      if (isUpdateRequired(data.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+      const v = runtimeVersionRef.current;
+      if (isUpdateRequired(data.forcedUpdate, v.appVersion, v.versionCode, v.isNative)) {
         setForcedUpdateInfo(data.forcedUpdate);
       } else {
         setForcedUpdateInfo(null);
@@ -390,10 +416,12 @@ export default function App() {
 
           // Device match validation: allowed if unbound or bound to this device
           if (!boundId || boundId === dev?.androidId) {
+            const vInfo = await resolveRuntimeVersion();
             const telemetryPayload = {
-              appVersion: APP_VERSION,
-              versionCode: APP_VERSION_CODE,
-              platform: Capacitor.isNativePlatform() ? 'android' : 'web',
+              appVersion: vInfo.appVersion,
+              versionCode: vInfo.versionCode,
+              otaVersion: vInfo.otaVersion,
+              platform: vInfo.platform,
               lastActive: new Date().toISOString()
             };
 
@@ -408,7 +436,7 @@ export default function App() {
             await updateDoc(doc(db, 'students', targetStudent.id), telemetryPayload).catch(console.warn);
 
             // Check if remote forced update lockout is active
-            if (isUpdateRequired(targetStudent.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+            if (isUpdateRequired(targetStudent.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative)) {
               setForcedUpdateInfo(targetStudent.forcedUpdate);
             } else {
               setForcedUpdateInfo(null);
@@ -425,8 +453,9 @@ export default function App() {
               type: 'login',
               timestamp: new Date().toISOString(),
               device: dev,
-              appVersion: APP_VERSION,
-              platform: Capacitor.isNativePlatform() ? 'android' : 'web'
+              appVersion: vInfo.appVersion,
+              otaVersion: vInfo.otaVersion,
+              platform: vInfo.platform
             }).catch(console.error);
           } else {
             setErrorMsg(`This account is bound to another device (${targetStudent.device?.model || 'Device'}).`);
@@ -567,10 +596,12 @@ export default function App() {
       }
 
       // Bind device if not currently bound, and sync version telemetry
+      const vInfo = await resolveRuntimeVersion();
       const telemetryPayload = {
-        appVersion: APP_VERSION,
-        versionCode: APP_VERSION_CODE,
-        platform: Capacitor.isNativePlatform() ? 'android' : 'web',
+        appVersion: vInfo.appVersion,
+        versionCode: vInfo.versionCode,
+        otaVersion: vInfo.otaVersion,
+        platform: vInfo.platform,
         lastActive: new Date().toISOString()
       };
       if (!boundId) {
@@ -581,7 +612,7 @@ export default function App() {
       await updateDoc(doc(db, 'students', studentDoc.id), telemetryPayload).catch(console.warn);
 
       // Check remote forced update requirement
-      if (isUpdateRequired(studentData.forcedUpdate, APP_VERSION, APP_VERSION_CODE, Capacitor.isNativePlatform())) {
+      if (isUpdateRequired(studentData.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative)) {
         setForcedUpdateInfo(studentData.forcedUpdate);
       } else {
         setForcedUpdateInfo(null);
@@ -592,8 +623,9 @@ export default function App() {
         type: 'login',
         timestamp: new Date().toISOString(),
         device: dev,
-        appVersion: APP_VERSION,
-        platform: Capacitor.isNativePlatform() ? 'android' : 'web'
+        appVersion: vInfo.appVersion,
+        otaVersion: vInfo.otaVersion,
+        platform: vInfo.platform
       }).catch(console.error);
 
       const authedStudent = { id: studentDoc.id, ...studentData, device: dev };
@@ -649,7 +681,8 @@ export default function App() {
     return (
       <UpdateLockoutScreen 
         forcedUpdate={forcedUpdateInfo}
-        currentVersion={APP_VERSION}
+        currentVersion={runtimeVersion.appVersion}
+        currentOtaVersion={runtimeVersion.otaVersion}
         user={user}
         onRefresh={checkAutoLogin}
         onCheckOta={checkForUpdates}
@@ -713,6 +746,7 @@ export default function App() {
     return (
       <LearningHub 
         user={user} 
+        runtimeVersion={runtimeVersion}
         onLogout={handleLogout} 
         onOpenAdmin={() => {
           try { localStorage.setItem(ADMIN_KEY, '1'); } catch (_) {}
@@ -872,7 +906,8 @@ export default function App() {
       {/* Anonymous Footer */}
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
         <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-          Secure Device-Bound Portal • v{APP_VERSION}
+          Secure Device-Bound Portal • v{runtimeVersion.appVersion}
+          {runtimeVersion.isNative && runtimeVersion.otaVersion && runtimeVersion.otaVersion !== runtimeVersion.appVersion ? ` (OTA v${runtimeVersion.otaVersion})` : ''}
         </p>
       </div>
     </div>
