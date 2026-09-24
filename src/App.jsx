@@ -89,7 +89,16 @@ export default function App() {
     if (!user?.id) return;
 
     const unsub = onSnapshot(doc(db, 'students', user.id), (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        // Account was deleted in Firestore
+        localStorage.removeItem('student_user');
+        localStorage.removeItem('student_pat');
+        localStorage.removeItem('student_device_bound_at');
+        setUser(null);
+        setErrorMsg('This account has been deleted by the administrator. Device is unlinked.');
+        setIsDeviceBound(false);
+        return;
+      }
       const data = { id: snap.id, ...snap.data() };
 
       const localDeviceId = deviceInfo?.androidId || localStorage.getItem('_app_device_id');
@@ -398,6 +407,13 @@ export default function App() {
           setUser(null);
           setIsDeviceBound(true);
         }
+      } else if (cachedId || savedPat) {
+        // Account no longer exists in Firestore (deleted by admin)
+        localStorage.removeItem('student_user');
+        localStorage.removeItem('student_pat');
+        localStorage.removeItem('student_device_bound_at');
+        setUser(null);
+        setIsDeviceBound(false);
       }
     } catch (err) {
       console.error('[Auth] Auto-login error (offline fallback preserved):', err);

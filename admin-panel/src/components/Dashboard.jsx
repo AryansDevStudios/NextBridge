@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { 
   LogOut, 
   Users, 
@@ -17,7 +17,8 @@ import {
   RefreshCw,
   Search,
   X,
-  Download
+  Download,
+  Trash2
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
@@ -123,6 +124,39 @@ export default function Dashboard({ onLogout }) {
     navigator.clipboard.writeText(pat);
     setCopiedPAT(pat);
     setTimeout(() => setCopiedPAT(null), 2000);
+  };
+
+  const handleDeleteStudent = async (studentToDelete, e) => {
+    if (e) e.stopPropagation();
+    const confirmMsg = `Are you sure you want to completely delete ${studentToDelete.name} (PAT: ${studentToDelete.pat})?\n\n` +
+      `⚠️ This will:\n` +
+      `1. Immediately UNBIND the linked device so it is free to log into another student account without conflict.\n` +
+      `2. Permanently erase all their activity logs and usage history from the database.\n` +
+      `3. Remove this student document entirely from the database.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      // 1. Unbind device and revoke status first to signal live app
+      await updateDoc(doc(db, 'students', studentToDelete.id), {
+        device: null,
+        deviceRevokedAt: new Date().toISOString(),
+        status: 'revoked'
+      }).catch(() => {});
+
+      // 2. Fetch and delete all logs in subcollection
+      const logsSnap = await getDocs(collection(db, 'students', studentToDelete.id, 'logs'));
+      const deletePromises = logsSnap.docs.map(logDoc => deleteDoc(logDoc.ref));
+      await Promise.all(deletePromises);
+
+      // 3. Delete student doc
+      await deleteDoc(doc(db, 'students', studentToDelete.id));
+
+      alert(`Student ${studentToDelete.name} and all data have been completely deleted.`);
+    } catch (err) {
+      console.error('Failed to delete student:', err);
+      alert('Failed to delete student: ' + err.message);
+    }
   };
 
   const [activeTab, setActiveTab] = useState('students'); // 'students', 'analytics', 'library', 'sync'
@@ -400,13 +434,22 @@ export default function Dashboard({ onLogout }) {
                           )}
                         </div>
 
-                        <button 
-                          onClick={() => setSelectedStudent(s)}
-                          className="flex items-center space-x-1 text-xs font-semibold text-[#f59e0b] hover:text-[#fbbf24] bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition shrink-0"
-                        >
-                          <Settings size={13} />
-                          <span>Manage</span>
-                        </button>
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <button 
+                            onClick={() => setSelectedStudent(s)}
+                            className="flex items-center space-x-1 text-xs font-semibold text-[#f59e0b] hover:text-[#fbbf24] bg-[#1a1a1a] hover:bg-[#222] border border-[#333] hover:border-[#f59e0b]/50 px-2.5 py-1.5 rounded-lg transition"
+                          >
+                            <Settings size={13} />
+                            <span>Manage</span>
+                          </button>
+                          <button 
+                            onClick={(e) => handleDeleteStudent(s, e)}
+                            className="p-1.5 text-xs text-[#71717a] hover:text-red-400 bg-[#1a1a1a] border border-[#333] hover:border-red-900/50 rounded-lg transition"
+                            title="Delete Student & Unbind Device"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -549,13 +592,23 @@ export default function Dashboard({ onLogout }) {
                           </span>
                         </td>
                         <td className="p-4">
-                          <button 
-                            onClick={() => setSelectedStudent(s)}
-                            className="flex items-center space-x-1 text-sm font-medium text-[#9ca3af] hover:text-[#f59e0b] bg-[#1a1a1a] border border-[#262626] hover:border-[#f59e0b]/50 px-3 py-1.5 rounded-lg transition"
-                          >
-                            <Settings size={16} />
-                            <span>Manage</span>
-                          </button>
+                          <div className="flex items-center space-x-1.5">
+                            <button 
+                              onClick={() => setSelectedStudent(s)}
+                              className="flex items-center space-x-1 text-xs font-semibold text-[#9ca3af] hover:text-[#f59e0b] bg-[#1a1a1a] border border-[#262626] hover:border-[#f59e0b]/50 px-2.5 py-1.5 rounded-lg transition"
+                              title="Manage Student Access & Profile"
+                            >
+                              <Settings size={14} />
+                              <span>Manage</span>
+                            </button>
+                            <button 
+                              onClick={(e) => handleDeleteStudent(s, e)}
+                              className="p-1.5 text-xs text-[#71717a] hover:text-red-400 bg-[#1a1a1a] border border-[#262626] hover:border-red-900/50 rounded-lg transition"
+                              title="Delete Student & Unbind Device"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

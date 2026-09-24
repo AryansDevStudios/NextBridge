@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { 
   X, 
   ShieldAlert, 
@@ -19,7 +19,8 @@ import {
   FileText,
   Filter,
   Download,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
 import { formatDuration, getStudentTimeForPeriod, getLast7DaysBreakdown } from '../utils/timeFormat';
 import { CURRENT_LATEST_VERSION, CURRENT_LATEST_CODE, compareSemver } from '../utils/version';
@@ -52,6 +53,7 @@ export default function StudentModal({ student, onClose }) {
   const [customDaysInput, setCustomDaysInput] = useState(30);
   const [customMessage, setCustomMessage] = useState(student.customMessage || '');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [allowedSections, setAllowedSections] = useState({
     courses: student.allowedSections?.courses ?? true,
     textbooks: student.allowedSections?.textbooks ?? true,
@@ -242,6 +244,42 @@ export default function StudentModal({ student, onClose }) {
     }
   };
 
+  const handleDeleteStudent = async () => {
+    const confirmMsg = `Are you sure you want to completely delete ${student.name} (PAT: ${student.pat})?\n\n` +
+      `⚠️ CRITICAL ACTIONS:\n` +
+      `1. The device currently linked to this student will be immediately UNBOUND so it is free to log into another account.\n` +
+      `2. All student activity history, watch sessions, and logs will be permanently wiped.\n` +
+      `3. The student document will be removed entirely from the database.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeleting(true);
+    try {
+      // 1. Unbind device and revoke status first to signal any live app session
+      await updateDoc(doc(db, 'students', student.id), {
+        device: null,
+        deviceRevokedAt: new Date().toISOString(),
+        status: 'revoked'
+      }).catch(() => {});
+
+      // 2. Query and delete all subcollection documents in students/{id}/logs
+      const logsSnap = await getDocs(collection(db, 'students', student.id, 'logs'));
+      const deletePromises = logsSnap.docs.map(logDoc => deleteDoc(logDoc.ref));
+      await Promise.all(deletePromises);
+
+      // 3. Delete the parent student document
+      await deleteDoc(doc(db, 'students', student.id));
+
+      alert(`Student ${student.name} and all associated records have been completely deleted.`);
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete student:', err);
+      alert('Failed to delete student: ' + err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'logs') {
       fetchLogs();
@@ -308,13 +346,24 @@ export default function StudentModal({ student, onClose }) {
             <p className="text-xs text-[#9ca3af] truncate">PAT: <code className="text-[#f59e0b] font-mono">{student.pat}</code> | Class {student.class}</p>
           </div>
         </div>
-        <button 
-          onClick={onClose} 
-          className="text-[#9ca3af] hover:text-[#ef4444] transition-colors p-2 rounded-lg hover:bg-[#1f1f1f] border border-transparent hover:border-[#333] shrink-0"
-          title="Close Manage Panel"
-        >
-          <X size={20} />
-        </button>
+        <div className="flex items-center space-x-2">
+          <button 
+            onClick={handleDeleteStudent}
+            disabled={deleting}
+            className="flex items-center space-x-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/50 border border-red-900/50 px-2.5 sm:px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+            title="Delete Student & Unbind Device"
+          >
+            <Trash2 size={13} />
+            <span className="hidden sm:inline">{deleting ? 'Deleting...' : 'Delete Student'}</span>
+          </button>
+          <button 
+            onClick={onClose} 
+            className="text-[#9ca3af] hover:text-[#ef4444] transition-colors p-2 rounded-lg hover:bg-[#1f1f1f] border border-transparent hover:border-[#333] shrink-0"
+            title="Close Manage Panel"
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -736,6 +785,32 @@ export default function StudentModal({ student, onClose }) {
                 >
                   {saving ? 'Saving...' : 'Save Profile'}
                 </button>
+              </div>
+
+              {/* Danger Zone: Permanent Account Deletion & Device Unbind */}
+              <div className="mt-8 pt-6 border-t border-red-950/40">
+                <div className="bg-red-950/15 border border-red-900/40 rounded-xl p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-red-400 flex items-center gap-2">
+                        <Trash2 size={16} />
+                        <span>Delete Student & Unbind Device</span>
+                      </h4>
+                      <p className="text-xs text-[#9ca3af] mt-1 max-w-lg">
+                        Permanently erases this student, all usage analytics, and activity logs from the database. The bound device will be immediately unlinked so it can be registered to any other student without conflict.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDeleteStudent}
+                      disabled={deleting}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition disabled:opacity-50 flex items-center space-x-1.5 shrink-0 shadow-md shadow-red-900/20"
+                    >
+                      <Trash2 size={14} />
+                      <span>{deleting ? 'Deleting...' : 'Delete Student Permanently'}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

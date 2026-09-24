@@ -87,6 +87,26 @@ function HlsPlayer({ url, item, user }) {
     checkOffline();
   }, [item.id]);
 
+  // Dynamic Screenshot & Screen Recording Protection
+  // If a video or PDF has isSecure: true, applies Android FLAG_SECURE at runtime.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const isProtected = Boolean(item?.isSecure || item?.preventScreenshots || item?.secureVideo);
+
+    if (isProtected) {
+      PrivacyScreen.enable().catch(console.warn);
+    } else {
+      PrivacyScreen.disable().catch(console.warn);
+    }
+
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        PrivacyScreen.disable().catch(console.warn);
+      }
+    };
+  }, [item?.id, item?.isSecure, item?.preventScreenshots, item?.secureVideo]);
+
   useEffect(() => {
     if (!isReady) return;
 
