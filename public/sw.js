@@ -5,7 +5,7 @@
  * - Network-first for API, cache-first for static assets
  */
 
-const CACHE_VERSION = 'nb-v2.6.5';
+const CACHE_VERSION = 'nb-v2.6.6';
 const SHELL_CACHE  = `${CACHE_VERSION}-shell`;
 const API_CACHE    = `${CACHE_VERSION}-api`;
 

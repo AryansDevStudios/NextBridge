@@ -708,7 +708,7 @@ export default function App() {
       {/* Anonymous Footer */}
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
         <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-          Secure Device-Bound Portal • v2.6.5
+          Secure Device-Bound Portal • v2.6.6
         </p>
       </div>
     </div>
