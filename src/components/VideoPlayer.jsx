@@ -136,12 +136,14 @@ function HlsPlayer({ url, item, user }) {
     const defaultOptions = {
       clickToPlay: false,
       controls: ['play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'pip', 'airplay', 'fullscreen'],
-      keyboard: { focused: true, global: true }
+      keyboard: { focused: true, global: true },
+      fullscreen: { enabled: true, fallback: true, iosNative: false }
     };
 
     let qualityLevels = [];
     let qualityLabels = {};
     let hlsRef = null;
+    let handleDocFullscreenChange = null;
 
     let pauseHideTimer = null;
     const PAUSE_HIDE_DELAY = 5000;
@@ -260,7 +262,7 @@ function HlsPlayer({ url, item, user }) {
         else if (video) video.focus();
       }, 100);
 
-      plyrInstance.on('enterfullscreen', () => {
+      const onEnterFullscreen = () => {
         if (Capacitor.isNativePlatform()) {
           try {
             ImmersiveMode.enter().catch(() => {});
@@ -269,8 +271,9 @@ function HlsPlayer({ url, item, user }) {
         } else if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
           window.screen.orientation.lock('landscape').catch(e => console.log('Orientation lock failed:', e));
         }
-      });
-      plyrInstance.on('exitfullscreen', () => {
+      };
+
+      const onExitFullscreen = () => {
         if (Capacitor.isNativePlatform()) {
           try {
             ImmersiveMode.exit().catch(() => {});
@@ -279,7 +282,19 @@ function HlsPlayer({ url, item, user }) {
         } else if (window.screen && window.screen.orientation && window.screen.orientation.unlock) {
           window.screen.orientation.unlock();
         }
-      });
+      };
+
+      plyrInstance.on('enterfullscreen', onEnterFullscreen);
+      plyrInstance.on('exitfullscreen', onExitFullscreen);
+
+      handleDocFullscreenChange = () => {
+        const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || (plyrInstance && plyrInstance.fullscreen && plyrInstance.fullscreen.active));
+        if (isFs) onEnterFullscreen();
+        else onExitFullscreen();
+      };
+
+      document.addEventListener('fullscreenchange', handleDocFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', handleDocFullscreenChange);
 
       document.addEventListener('keydown', handleKeyboardSkip, true);
       if (plyrInstance.elements.container) {
@@ -557,6 +572,10 @@ function HlsPlayer({ url, item, user }) {
       video.removeEventListener('play', handlePlayTime);
       video.removeEventListener('pause', handlePauseTime);
       document.removeEventListener('keydown', handleKeyboardSkip, true);
+      if (handleDocFullscreenChange) {
+        document.removeEventListener('fullscreenchange', handleDocFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', handleDocFullscreenChange);
+      }
       
       if (player && player.elements && player.elements.container) {
         player.elements.container.removeEventListener('click', handleDoubleTapSkip);
