@@ -1120,7 +1120,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
   if (item.type === 'pdf') {
     return (
       <div 
-        className="viewer-overlay pdf-mode" 
+        className="viewer-overlay pdf-mode selectable" 
         style={{ 
           position: 'fixed', 
           inset: 0, 
@@ -1130,7 +1130,9 @@ const VideoPlayer = ({ item, onClose, user }) => {
           background: '#121212',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          userSelect: 'text',
+          WebkitUserSelect: 'text'
         }}
       >
         {/* PDF Toast Notice */}
@@ -1409,7 +1411,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
         </div>
 
         {/* Local Mozilla PDF.js viewer */}
-        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124' }}>
+        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124', userSelect: 'text', WebkitUserSelect: 'text' }}>
           <iframe 
             src={`${window.location.origin || ''}/pdfjs/web/viewer.html?file=${encodeURIComponent(resolvedPdfUrl || item.url)}#zoom=page-width`} 
             style={{ 
@@ -1421,7 +1423,9 @@ const VideoPlayer = ({ item, onClose, user }) => {
               minWidth: '100%',
               minHeight: '100%',
               border: 'none', 
-              display: 'block' 
+              display: 'block',
+              userSelect: 'text',
+              WebkitUserSelect: 'text'
             }} 
             title={item.title}
             allowFullScreen

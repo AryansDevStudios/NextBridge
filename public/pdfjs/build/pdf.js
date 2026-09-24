@@ -5502,7 +5502,7 @@ function isValidFetchUrl(url, baseUrl) {
   }
 }
 function noContextMenu(e) {
-  e.preventDefault();
+  // Allow native contextmenu so students can copy text and open options
 }
 function loadScript(src, removeScriptElement = false) {
   return new Promise((resolve, reject) => {

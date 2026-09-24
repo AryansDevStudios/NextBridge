@@ -106,12 +106,28 @@ body {
   -webkit-touch-callout: none;
 }
 
-/* Allow text selection on inputs, textareas, and content marked as selectable */
+/* Allow text selection and copy popup on inputs, textareas, PDFs, notes, and content marked as selectable */
 input,
 textarea,
 [contenteditable="true"],
 .selectable,
-.selectable * {
+.selectable *,
+.pdf-mode,
+.pdf-mode *,
+.viewer-overlay,
+.viewer-overlay.pdf-mode,
+.viewer-overlay.pdf-mode *,
+.textLayer,
+.textLayer *,
+.pdfViewer,
+.pdfViewer *,
+iframe,
+.lecture-notes,
+.lecture-notes *,
+.note-content,
+.note-content *,
+.document-view,
+.document-view * {
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;

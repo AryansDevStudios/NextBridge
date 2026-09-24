@@ -33,6 +33,33 @@ See https://github.com/adobe-type-tools/cmap-resources
 
     <link rel="stylesheet" href="viewer.css">
 
+    <style>
+      /* Ensure unrestricted text selection, copying, and context menu */
+      html, body, #outerContainer, #mainContainer, #viewerContainer, #viewer, .pdfViewer, .page, .textLayer {
+        -webkit-user-select: text !important;
+        -moz-user-select: text !important;
+        -ms-user-select: text !important;
+        user-select: text !important;
+        -webkit-touch-callout: default !important;
+      }
+      .textLayer :is(span, br), .textLayer span {
+        -webkit-user-select: text !important;
+        -moz-user-select: text !important;
+        -ms-user-select: text !important;
+        user-select: text !important;
+        -webkit-touch-callout: default !important;
+        cursor: text !important;
+      }
+      .textLayer ::selection {
+        background: rgba(56, 189, 248, 0.45) !important;
+        color: inherit !important;
+      }
+      .textLayer ::-moz-selection {
+        background: rgba(56, 189, 248, 0.45) !important;
+        color: inherit !important;
+      }
+    </style>
+
   <script src="viewer.js"></script>
   </head>
 
