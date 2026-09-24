@@ -1,5 +1,46 @@
-export const CURRENT_LATEST_VERSION = '2.7.4';
-export const CURRENT_LATEST_CODE = 20704;
+/**
+ * ============================================================
+ * NextBridge Admin Panel — Version Constants
+ * ============================================================
+ *
+ * ⚠️  SYNC RULE — CRITICAL:
+ *   CURRENT_LATEST_VERSION and CURRENT_LATEST_CODE here MUST always
+ *   match APP_VERSION and APP_VERSION_CODE in:
+ *     → src/utils/version.js  (the Android/web app)
+ *
+ *   These are TWO SEPARATE Vite projects with no shared package.
+ *   You must manually keep them in sync on EVERY release.
+ *
+ * WHAT BREAKS IF THEY DIVERGE:
+ *   • Version badges on the Dashboard show wrong green/amber/outdated state
+ *   • "Outdated Only" lockout scope targets the wrong students
+ *   • Default lockout message text shows the wrong version number
+ *   • "< vX.Y.Z" legacy label shows a stale floor version
+ *
+ * HOW TO BUMP:
+ *   1. Update CURRENT_LATEST_VERSION and CURRENT_LATEST_CODE below
+ *   2. Update APP_VERSION and APP_VERSION_CODE in src/utils/version.js
+ *   3. Update version.json at deploy_dist/buildcode/version.json
+ *   4. If APK update: also bump versionCode/versionName in android/app/build.gradle
+ *
+ * See UPDATING.md at the project root for the full release checklist.
+ * ============================================================
+ */
+
+// ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
+export const CURRENT_LATEST_VERSION = '2.7.5';
+export const CURRENT_LATEST_CODE = 20705;
+// ───────────────────────────────────────────────────────────
+
+export const DEFAULT_ANDROID_VERSION_CONFIG = {
+  minAppVersion: '2.7.0',
+  minVersionCode: 20700,
+  latestAppVersion: '2.7.5',
+  latestVersionCode: 20705,
+  apkDownloadUrl: '',
+  defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
+  releaseNotes: '• Performance and stability enhancements'
+};
 
 /**
  * Compare two semantic version strings.
@@ -33,3 +74,103 @@ export function compareSemver(v1, v2) {
   }
   return 0;
 }
+
+/**
+ * Evaluates the version status of a student against the dynamic database config.
+ * 
+ * Rules:
+ * - Web students: returned with neutral status (no warning badges).
+ * - Android students:
+ *   • 🔴 RED ('critical'):
+ *       Version is missing/legacy OR semver < minAppVersion OR (code > 0 and code < minVersionCode)
+ *   • 🟡 YELLOW ('outdated'):
+ *       Version >= min (both semver and code) BUT semver < latestAppVersion OR (code > 0 and code < latestVersionCode)
+ *   • 🟢 GREEN ('latest'):
+ *       Version >= latestAppVersion AND (code >= latestVersionCode or code not tracked)
+ *
+ * @param {Object} student
+ * @param {Object} config - The dynamic version config from Firestore
+ * @returns {Object} { status: 'critical'|'outdated'|'latest'|'web', color: 'red'|'yellow'|'green'|'zinc', label: string, badgeClass: string, isAndroid: boolean }
+ */
+export function getAndroidVersionStatus(student, config = DEFAULT_ANDROID_VERSION_CONFIG) {
+  if (!student) {
+    return {
+      status: 'unknown',
+      color: 'zinc',
+      label: 'Unknown',
+      badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800',
+      isAndroid: false
+    };
+  }
+
+  // Determine if this is an Android student
+  const isAndroid = student.platform === 'android' || (student.device && (!student.platform || student.platform === 'android'));
+
+  // Web students are isolated: they automatically fetch fresh code on browser reload
+  if (!isAndroid) {
+    return {
+      status: 'web',
+      isAndroid: false,
+      color: 'zinc',
+      label: 'Web Browser',
+      badgeClass: 'bg-zinc-900/60 text-zinc-400 border-zinc-800'
+    };
+  }
+
+  const studentVersion = student.appVersion;
+  const studentCode = Number(student.versionCode || 0);
+
+  const minVersion = config?.minAppVersion || '2.7.0';
+  const minCode = Number(config?.minVersionCode || 0);
+  const latestVersion = config?.latestAppVersion || '2.7.4';
+  const latestCode = Number(config?.latestVersionCode || 0);
+
+  // 1. Missing or unparseable version string -> RED
+  if (!studentVersion || typeof studentVersion !== 'string' || studentVersion.trim() === '') {
+    return {
+      status: 'critical',
+      isAndroid: true,
+      color: 'red',
+      label: `Legacy (< v${minVersion})`,
+      badgeClass: 'bg-red-950/60 text-red-400 border-red-800 animate-pulse font-semibold'
+    };
+  }
+
+  // 2. Below Minimum -> RED
+  const belowMinSemver = compareSemver(studentVersion, minVersion) < 0;
+  const belowMinCode = minCode > 0 && studentCode > 0 && studentCode < minCode;
+
+  if (belowMinSemver || belowMinCode) {
+    return {
+      status: 'critical',
+      isAndroid: true,
+      color: 'red',
+      label: `v${studentVersion} (Critical / < Min)`,
+      badgeClass: 'bg-red-950/60 text-red-400 border-red-800 font-semibold'
+    };
+  }
+
+  // 3. Below Latest (but >= Minimum) -> YELLOW
+  const belowLatestSemver = compareSemver(studentVersion, latestVersion) < 0;
+  const belowLatestCode = latestCode > 0 && studentCode > 0 && studentCode < latestCode;
+
+  if (belowLatestSemver || belowLatestCode) {
+    return {
+      status: 'outdated',
+      isAndroid: true,
+      color: 'yellow',
+      label: `v${studentVersion} (Update Avail)`,
+      badgeClass: 'bg-amber-950/50 text-amber-400 border-amber-800 font-semibold'
+    };
+  }
+
+  // 4. Equal to or greater than Latest -> GREEN
+  return {
+    status: 'latest',
+    isAndroid: true,
+    color: 'green',
+    label: `v${studentVersion} (Latest)`,
+    badgeClass: 'bg-emerald-950/50 text-emerald-400 border-emerald-800 font-semibold'
+  };
+}
+

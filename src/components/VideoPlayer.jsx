@@ -9,7 +9,7 @@ import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestor
 import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink, Share2, ChevronDown, HardDrive, Smartphone, Check, MoreVertical, Headphones, Bookmark, BookmarkPlus, Trash2, Sparkles, Volume2 } from 'lucide-react';
+import { Download, X, Calendar, Clock, CheckCircle, Loader2, ArrowLeft, Play, Pause, AlertCircle, RefreshCw, ExternalLink, Share2, ChevronDown, HardDrive, Smartphone, Check, MoreVertical, Headphones, Bookmark, BookmarkPlus, Trash2, Sparkles, Volume2, Tv } from 'lucide-react';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining } from '../services/DownloadManager';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
@@ -372,13 +372,29 @@ function HlsPlayer({ url, item, user }) {
 
     const setupPlayerFeatures = (plyrInstance) => {
       // 1. Persistent Playback Speed
+      const applySpeed = () => {
+        const curSpeed = parseFloat(localStorage.getItem('app_playback_speed')) || savedSpeed;
+        if (plyrInstance && plyrInstance.speed !== curSpeed) {
+          try { plyrInstance.speed = curSpeed; } catch (_) {}
+        }
+        if (video && video.playbackRate !== curSpeed) {
+          try { video.playbackRate = curSpeed; } catch (_) {}
+        }
+      };
+
       try {
-        plyrInstance.speed = savedSpeed;
+        applySpeed();
         plyrInstance.on('ratechange', () => {
           if (plyrInstance.speed) {
             localStorage.setItem('app_playback_speed', plyrInstance.speed.toString());
+            if (video && video.playbackRate !== plyrInstance.speed) {
+              video.playbackRate = plyrInstance.speed;
+            }
           }
         });
+        video.addEventListener('loadedmetadata', applySpeed);
+        video.addEventListener('canplay', applySpeed);
+        video.addEventListener('play', applySpeed);
       } catch (_) {}
 
       // 2. MediaSession API (Background Audio & Lockscreen Controls)
@@ -528,8 +544,8 @@ function HlsPlayer({ url, item, user }) {
             </button>
             <div class="custom-settings-popup">
               <div class="settings-section">
-                <div class="settings-section-title">Speed: <span class="speed-label">1.0x</span></div>
-                <input type="range" min="0.5" max="4" step="0.25" value="1" class="speed-slider" />
+                <div class="settings-section-title">Speed: <span class="speed-label">${savedSpeed.toFixed(1)}x</span></div>
+                <input type="range" min="0.5" max="4" step="0.25" value="${savedSpeed}" class="speed-slider" />
               </div>
               ${qualityHTML}
             </div>
@@ -560,12 +576,15 @@ function HlsPlayer({ url, item, user }) {
           const val = parseFloat(e.target.value);
           speedLabel.textContent = val.toFixed(1) + 'x';
           plyrInstance.speed = val;
+          if (video) video.playbackRate = val;
+          localStorage.setItem('app_playback_speed', val.toString());
         });
 
         plyrInstance.on('ratechange', () => {
           const val = plyrInstance.speed;
           slider.value = val;
           speedLabel.textContent = val.toFixed(1) + 'x';
+          localStorage.setItem('app_playback_speed', val.toString());
         });
 
         if (hlsRef) {
@@ -737,6 +756,19 @@ function HlsPlayer({ url, item, user }) {
       }
     }, 30000);
 
+    const notifyNativePlaying = (playing) => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          ImmersiveMode.setVideoPlaying({ playing }).catch(() => {});
+        } catch (_) {}
+      }
+    };
+    const onNativePlay = () => notifyNativePlaying(true);
+    const onNativePause = () => notifyNativePlaying(false);
+    video.addEventListener('play', onNativePlay);
+    video.addEventListener('pause', onNativePause);
+    video.addEventListener('ended', onNativePause);
+
     return () => {
       savePosition();
       clearInterval(saveInterval);
@@ -746,6 +778,10 @@ function HlsPlayer({ url, item, user }) {
       if (appStateSub) {
         appStateSub.remove();
       }
+      video.removeEventListener('play', onNativePlay);
+      video.removeEventListener('pause', onNativePause);
+      video.removeEventListener('ended', onNativePause);
+      notifyNativePlaying(false);
       video.removeEventListener('pause', savePosition);
       video.removeEventListener('pause', onPauseHide);
       video.removeEventListener('play', onPlayShow);
@@ -1225,6 +1261,40 @@ const VideoPlayer = ({ item, onClose, user }) => {
         showToast('Hidden from watch history');
       }
     } catch (_) {}
+  };
+
+  const [isInPip, setIsInPip] = useState(false);
+
+  useEffect(() => {
+    const handlePipChange = (e) => {
+      setIsInPip(Boolean(e.detail?.isPip));
+    };
+    window.addEventListener('app:pip-mode-change', handlePipChange);
+    return () => window.removeEventListener('app:pip-mode-change', handlePipChange);
+  }, []);
+
+  const handleTogglePip = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await ImmersiveMode.enterPip();
+        return;
+      } catch (err) {
+        console.warn('Native PiP enter error:', err);
+      }
+    }
+
+    try {
+      const v = document.querySelector('.video-container video') || document.querySelector('video');
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (v && v.requestPictureInPicture) {
+        await v.requestPictureInPicture();
+      } else {
+        showToast('Picture-in-Picture is not supported by your browser');
+      }
+    } catch (e) {
+      showToast('Could not start Picture-in-Picture');
+    }
   };
 
   // PDF Download & Device Export Permissions (Default: true)
@@ -1731,8 +1801,11 @@ const VideoPlayer = ({ item, onClose, user }) => {
   }
 
   return (
-    <div className="viewer-overlay video-mode">
-      {pdfActionToast && (
+    <div 
+      className={`viewer-overlay video-mode ${isInPip ? 'pip-active' : ''}`}
+      style={isInPip ? { background: '#000', padding: 0, margin: 0, overflow: 'hidden' } : {}}
+    >
+      {!isInPip && pdfActionToast && (
         <div style={{
           position: 'fixed',
           top: '52px',
@@ -1756,162 +1829,189 @@ const VideoPlayer = ({ item, onClose, user }) => {
           <span>{pdfActionToast}</span>
         </div>
       )}
-      <div className="viewer-content">
-        <div className="yt-layout">
+      <div className="viewer-content" style={isInPip ? { padding: 0, margin: 0, height: '100vh', width: '100vw' } : {}}>
+        <div className="yt-layout" style={isInPip ? { padding: 0, margin: 0, height: '100%', display: 'flex', flexDirection: 'column' } : {}}>
           {/* Mobile-friendly top header with Back navigation */}
-          <div style={{ 
-            padding: '8px 12px', 
-            background: '#0e0e0e', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            gap: '8px', 
-            borderBottom: '1px solid #222',
-            flexShrink: 0
-          }}>
-            <button 
-              onClick={onClose}
-              style={{ 
-                background: 'transparent', 
-                border: 'none', 
-                color: '#f3f4f6', 
-                cursor: 'pointer', 
-                padding: '6px', 
-                display: 'flex', 
-                alignItems: 'center', 
-                borderRadius: '6px' 
-              }}
-              title="Go Back"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <span style={{ 
-              fontSize: '0.875rem', 
-              fontWeight: 600, 
-              color: '#f3f4f6', 
-              overflow: 'hidden', 
-              textOverflow: 'ellipsis', 
-              whiteSpace: 'nowrap',
-              flex: 1,
-              margin: '0 8px'
+          {!isInPip && (
+            <div style={{ 
+              padding: '8px 12px', 
+              background: '#0e0e0e', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              gap: '8px', 
+              borderBottom: '1px solid #222',
+              flexShrink: 0
             }}>
-              {item.title}
-            </span>
-            <button 
-              onClick={onClose}
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: 'none',
-                color: '#9ca3af',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <X size={14} /> Close
-            </button>
-          </div>
-          <div className="yt-video-section">
-            <div className="video-container">
+              <button 
+                onClick={onClose}
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  color: '#f3f4f6', 
+                  cursor: 'pointer', 
+                  padding: '6px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  borderRadius: '6px' 
+                }}
+                title="Go Back"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <span style={{ 
+                fontSize: '0.875rem', 
+                fontWeight: 600, 
+                color: '#f3f4f6', 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap',
+                flex: 1,
+                margin: '0 8px'
+              }}>
+                {item.title}
+              </span>
+              <button 
+                onClick={onClose}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  color: '#9ca3af',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
+          )}
+
+          <div className="yt-video-section" style={isInPip ? { flex: 1, width: '100vw', height: '100vh', margin: 0, padding: 0 } : {}}>
+            <div className="video-container" style={isInPip ? { width: '100%', height: '100%', borderRadius: 0 } : {}}>
               <HlsPlayer url={item.url} item={item} user={user} />
             </div>
           </div>
-          <div className="yt-info-section">
-            <h1 className="yt-title">{item.title}</h1>
-            <div className="yt-meta">
-              {item.created_at && (
-                <span className="yt-meta-item">
-                  <Calendar size={16} />
-                  {formatDate(item.created_at)}
-                </span>
-              )}
-              {item.duration > 0 && (
-                <span className="yt-meta-item">
-                  <Clock size={16} />
-                  {formatDuration(item.duration)}
-                </span>
-              )}
-            </div>
-            <div className="yt-actions" style={{ flexWrap: 'wrap', gap: '8px' }}>
-              <VideoDownloader url={item.url} item={item} user={user} />
 
-              <button 
-                onClick={() => {
-                  const nextState = !isAudioOnlyMode;
-                  setIsAudioOnlyMode(nextState);
-                  window.dispatchEvent(new CustomEvent('player:toggle-audio', { detail: { active: nextState } }));
-                }}
-                className={`yt-action-btn ${isAudioOnlyMode ? 'active' : ''}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: isAudioOnlyMode ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
-                  border: isAudioOnlyMode ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
-                  color: isAudioOnlyMode ? '#f59e0b' : '#f3f4f6',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-                title="Toggle battery-saving background audio mode"
-              >
-                <Headphones size={15} />
-                <span>{isAudioOnlyMode ? 'Video Mode' : 'Audio Mode'}</span>
-              </button>
+          {!isInPip && (
+            <div className="yt-info-section">
+              <h1 className="yt-title">{item.title}</h1>
+              <div className="yt-meta">
+                {item.created_at && (
+                  <span className="yt-meta-item">
+                    <Calendar size={16} />
+                    {formatDate(item.created_at)}
+                  </span>
+                )}
+                {item.duration > 0 && (
+                  <span className="yt-meta-item">
+                    <Clock size={16} />
+                    {formatDuration(item.duration)}
+                  </span>
+                )}
+              </div>
+              <div className="yt-actions" style={{ flexWrap: 'wrap', gap: '8px' }}>
+                <VideoDownloader url={item.url} item={item} user={user} />
 
-              <button 
-                onClick={() => setShowNotesDrawer(!showNotesDrawer)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: showNotesDrawer ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
-                  border: showNotesDrawer ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
-                  color: showNotesDrawer ? '#f59e0b' : '#f3f4f6',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-                title="View or add timestamped lecture notes"
-              >
-                <BookmarkPlus size={15} />
-                <span>Notes ({notes.length})</span>
-              </button>
+                <button 
+                  onClick={handleTogglePip}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#f3f4f6',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Picture in Picture (Floating window)"
+                >
+                  <Tv size={15} />
+                  <span>Pop-out (PiP)</span>
+                </button>
 
-              <button 
-                onClick={handleToggleHistoryHide}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: isHistoryHidden ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.06)',
-                  border: isHistoryHidden ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.12)',
-                  color: isHistoryHidden ? '#ef4444' : '#f3f4f6',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                title={isHistoryHidden ? "Hidden from your watch history (click to restore)" : "Hide from your watch history"}
-              >
-                <X size={15} />
-                <span>{isHistoryHidden ? 'Hidden from History' : 'Hide from History'}</span>
-              </button>
+                <button 
+                  onClick={() => {
+                    const nextState = !isAudioOnlyMode;
+                    setIsAudioOnlyMode(nextState);
+                    window.dispatchEvent(new CustomEvent('player:toggle-audio', { detail: { active: nextState } }));
+                  }}
+                  className={`yt-action-btn ${isAudioOnlyMode ? 'active' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: isAudioOnlyMode ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
+                    border: isAudioOnlyMode ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
+                    color: isAudioOnlyMode ? '#f59e0b' : '#f3f4f6',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Toggle battery-saving background audio mode"
+                >
+                  <Headphones size={15} />
+                  <span>{isAudioOnlyMode ? 'Video Mode' : 'Audio Mode'}</span>
+                </button>
 
-              <button className="yt-close-btn" onClick={onClose}>
-                <X size={18} /> Close Player
-              </button>
-            </div>
+                <button 
+                  onClick={() => setShowNotesDrawer(!showNotesDrawer)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: showNotesDrawer ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
+                    border: showNotesDrawer ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.12)',
+                    color: showNotesDrawer ? '#f59e0b' : '#f3f4f6',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="View or add timestamped lecture notes"
+                >
+                  <BookmarkPlus size={15} />
+                  <span>Notes ({notes.length})</span>
+                </button>
+
+                <button 
+                  onClick={handleToggleHistoryHide}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: isHistoryHidden ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.06)',
+                    border: isHistoryHidden ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.12)',
+                    color: isHistoryHidden ? '#ef4444' : '#f3f4f6',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title={isHistoryHidden ? "Hidden from your watch history (click to restore)" : "Hide from your watch history"}
+                >
+                  <X size={15} />
+                  <span>{isHistoryHidden ? 'Hidden from History' : 'Hide from History'}</span>
+                </button>
+
+                <button className="yt-close-btn" onClick={onClose}>
+                  <X size={18} /> Close Player
+                </button>
+              </div>
 
             {/* Timestamped Bookmarks & Notes Section */}
             {showNotesDrawer && (
@@ -2046,6 +2146,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

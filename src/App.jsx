@@ -10,7 +10,7 @@ import { ShieldAlert, Loader2, Download, Lock, RefreshCw, KeyRound, Send, Extern
 import { App as CapApp } from '@capacitor/app';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import UpdateLockoutScreen from './components/UpdateLockoutScreen';
-import { APP_VERSION, APP_VERSION_CODE, compareSemver, isUpdateRequired } from './utils/version';
+import { APP_VERSION, APP_VERSION_CODE, extractCleanVersion, compareSemver, isUpdateRequired } from './utils/version';
 import { notificationService } from './services/NotificationService';
 
 const ADMIN_KEY = '_nb_admin_mode';
@@ -219,48 +219,73 @@ export default function App() {
     };
   }, [user?.id]);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────
+   * Over-The-Air (OTA) Live Update Check (Capgo)
+   * ─────────────────────────────────────────────────────────────────
+   * • Fetches Netlify's version.json on every app launch.
+   * • Compares clean SemVer `data.appVersion` against currently running version.
+   * • If remoteVersion > runningVersion: downloads update.zip and calls
+   *   CapacitorUpdater.set(update) which dynamically reloads the WebView.
+   * • NOTE: OTA only updates frontend JS/CSS assets. Native Android changes
+   *   (permissions, plugins, Java services) REQUIRE an APK update and will
+   *   be enforced via Firestore `forcedUpdate` lockout.
+   * • See UPDATING.md for full release workflow.
+   * ─────────────────────────────────────────────────────────────────
+   */
   const checkForUpdates = async () => {
     if (Capacitor.getPlatform() !== 'android' && Capacitor.getPlatform() !== 'ios') {
       return;
     }
-    
+
     try {
       console.log('[OTA] Checking for remote updates...');
       const response = await fetch('https://nextbridgeweb.netlify.app/buildcode/version.json?t=' + Date.now());
       if (!response.ok) return;
       const data = await response.json();
-      
-      let runningVersion = localStorage.getItem('app_version') || '0';
+
+      // Use data.appVersion (clean semver like "2.7.2") for comparison.
+      // data.version is a compound timestamp string ("2.4.9-1789976471117") — never use it for semver compare.
+      const remoteVersion = extractCleanVersion(data.appVersion || data.version || '0');
+
+      // Determine currently running version: prefer what Capgo reports, else fall back to APP_VERSION constant
+      let runningVersion = APP_VERSION;
       try {
         const current = await CapacitorUpdater.current();
         if (current?.bundle?.version && current.bundle.version !== 'builtin') {
-          runningVersion = current.bundle.version;
-          localStorage.setItem('app_version', runningVersion);
+          // The bundle version Capgo tracks is a clean semver set by us when we called download()
+          runningVersion = extractCleanVersion(current.bundle.version);
         }
       } catch (e) {}
 
-      console.log(`[OTA] Local: ${runningVersion} | Remote: ${data.version}`);
-      
-      if (data.version && String(data.version) !== String(runningVersion)) {
+      console.log(`[OTA] Running: ${runningVersion} | Remote: ${remoteVersion}`);
+
+      if (remoteVersion && compareSemver(remoteVersion, runningVersion) > 0) {
         setUpdateMsg('Updating to latest version...');
         const downloadUrl = 'https://nextbridgeweb.netlify.app' + data.url;
-        
+
         console.log('[OTA] Downloading bundle:', downloadUrl);
-        const update = await CapacitorUpdater.download({
-          url: downloadUrl,
-          version: String(data.version)
-        });
-        
-        console.log('[OTA] Download complete, applying update...');
-        localStorage.setItem('app_version', String(data.version));
-        
-        // This reloads the WebView with the new bundle
-        await CapacitorUpdater.set(update);
+        try {
+          const update = await CapacitorUpdater.download({
+            url: downloadUrl,
+            version: remoteVersion   // store clean semver so next boot comparison works
+          });
+
+          console.log('[OTA] Download complete, applying update...');
+          // Apply the new bundle — this will reload the WebView
+          await CapacitorUpdater.set(update);
+        } catch (dlErr) {
+          console.error('[OTA] Download/apply failed:', dlErr);
+          // Clear the update message so the spinner doesn't get permanently stuck
+          setUpdateMsg('');
+        }
       }
     } catch (err) {
       console.error('[OTA] Error during update check (offline or network error):', err);
+      setUpdateMsg('');
     }
   };
+
 
   const getDeviceData = async () => {
     try {
@@ -399,7 +424,9 @@ export default function App() {
             addDoc(collection(db, 'students', targetStudent.id, 'logs'), {
               type: 'login',
               timestamp: new Date().toISOString(),
-              device: dev
+              device: dev,
+              appVersion: APP_VERSION,
+              platform: Capacitor.isNativePlatform() ? 'android' : 'web'
             }).catch(console.error);
           } else {
             setErrorMsg(`This account is bound to another device (${targetStudent.device?.model || 'Device'}).`);
@@ -564,7 +591,9 @@ export default function App() {
       addDoc(collection(db, 'students', studentDoc.id, 'logs'), {
         type: 'login',
         timestamp: new Date().toISOString(),
-        device: dev
+        device: dev,
+        appVersion: APP_VERSION,
+        platform: Capacitor.isNativePlatform() ? 'android' : 'web'
       }).catch(console.error);
 
       const authedStudent = { id: studentDoc.id, ...studentData, device: dev };
@@ -623,6 +652,7 @@ export default function App() {
         currentVersion={APP_VERSION}
         user={user}
         onRefresh={checkAutoLogin}
+        onCheckOta={checkForUpdates}
         onLogout={handleLogout}
       />
     );
@@ -738,9 +768,9 @@ export default function App() {
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 setLoading(true);
-                checkAutoLogin();
+                try { await checkAutoLogin(); } catch (_) { setLoading(false); }
               }}
               className="login-button"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}

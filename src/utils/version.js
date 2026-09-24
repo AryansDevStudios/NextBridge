@@ -1,5 +1,47 @@
-export const APP_VERSION = '2.7.4';
-export const APP_VERSION_CODE = 20704;
+/**
+ * ============================================================
+ * NextBridge — App Version & Update Utility
+ * ============================================================
+ *
+ * HOW VERSION NUMBERS WORK
+ * ─────────────────────────
+ * APP_VERSION      → Semantic version string: "MAJOR.MINOR.PATCH"
+ * APP_VERSION_CODE → Integer: MAJOR*10000 + MINOR*100 + PATCH
+ *                    e.g.  2.7.4  →  20704
+ *                          2.8.0  →  20800
+ *
+ * WHEN TO BUMP THESE
+ * ─────────────────────────────────────────────────────────────
+ * ✅ OTA (web bundle only — no APK needed):
+ *   • React UI changes, new screens, Firestore logic, bug fixes
+ *   → Bump PATCH or MINOR
+ *   → Rebuild web app, zip dist/, update version.json, deploy
+ *
+ * ⚠️  APK REQUIRED (cannot be pushed via OTA):
+ *   • New Android permissions (AndroidManifest.xml)
+ *   • New Java plugin methods (DownloadServicePlugin.java, etc.)
+ *   • PiP / foreground service / manifest config changes
+ *   • New Capacitor plugins (requires `cap sync android`)
+ *   → Bump MINOR or MAJOR here AND in build.gradle
+ *   → Build new APK → admin sets forced-update lockout with APK URL
+ *
+ * ⚠️  SYNC RULE — CRITICAL:
+ *   This file (src/utils/version.js) and admin-panel/src/utils/version.js
+ *   MUST always have the same version numbers.
+ *   They are separate Vite projects with no shared package.
+ *   If you forget to update the admin panel copy:
+ *     - Admin sees ALL students as "Outdated"
+ *     - Default lockout messages show wrong version
+ *     - "Outdated Only" broadcast targets the wrong students
+ *
+ * See UPDATING.md at the project root for the full release checklist.
+ * ============================================================
+ */
+
+// ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
+export const APP_VERSION = '2.7.5';
+export const APP_VERSION_CODE = 20705;
+// ───────────────────────────────────────────────────────────
 
 /**
  * Strips timestamp/prerelease suffixes from compound OTA version strings.

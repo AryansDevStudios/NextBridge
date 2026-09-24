@@ -18,14 +18,22 @@ import {
   Search,
   X,
   Download,
-  Trash2
+  Trash2,
+  Megaphone
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
 import RenderSyncPanel from './RenderSyncPanel';
 import AdminAnalytics from './AdminAnalytics';
 import BroadcastUpdateModal from './BroadcastUpdateModal';
-import { CURRENT_LATEST_VERSION, compareSemver } from '../utils/version';
+import AdminNoticeBoard from './AdminNoticeBoard';
+import AppVersionSettingsModal from './AppVersionSettingsModal';
+import { 
+  CURRENT_LATEST_VERSION, 
+  DEFAULT_ANDROID_VERSION_CONFIG, 
+  getAndroidVersionStatus, 
+  compareSemver 
+} from '../utils/version';
 
 function generatePAT() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -40,6 +48,8 @@ export default function Dashboard({ onLogout }) {
   const [students, setStudents] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [versionConfig, setVersionConfig] = useState(DEFAULT_ANDROID_VERSION_CONFIG);
   const [copiedPAT, setCopiedPAT] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
 
@@ -85,11 +95,24 @@ export default function Dashboard({ onLogout }) {
   }, [students, searchFilter, classFilter, statusFilter]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'students'), (snapshot) => {
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setStudents(data);
     });
-    return () => unsub();
+
+    // Real-time listener for Android Version Control settings in Firestore
+    const unsubConfig = onSnapshot(doc(db, 'system_config', 'app_versions'), (snapshot) => {
+      if (snapshot.exists()) {
+        setVersionConfig({ ...DEFAULT_ANDROID_VERSION_CONFIG, ...snapshot.data() });
+      }
+    }, (err) => {
+      console.warn('[Dashboard] Could not fetch system_config/app_versions:', err);
+    });
+
+    return () => {
+      unsubStudents();
+      unsubConfig();
+    };
   }, []);
 
   const handleAddStudent = async (e) => {
@@ -187,36 +210,43 @@ export default function Dashboard({ onLogout }) {
             </button>
           </div>
 
-          {/* Navigation Tabs (Full width 4-column grid on mobile, inline on desktop) */}
+          {/* Navigation Tabs (Full width 5-column grid on mobile, inline on desktop) */}
           <div className="w-full md:w-auto flex items-center gap-2">
-            <div className="grid grid-cols-4 gap-1 w-full md:flex md:w-auto bg-[#181818] md:bg-transparent p-1 md:p-0 rounded-xl md:rounded-none border md:border-0 border-[#262626]">
+            <div className="grid grid-cols-5 gap-1 w-full md:flex md:w-auto bg-[#181818] md:bg-transparent p-1 md:p-0 rounded-xl md:rounded-none border md:border-0 border-[#262626]">
               <button 
                 onClick={() => setActiveTab('students')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'students' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Users size={14} />
-                <span>Students</span>
+                <span className="hidden sm:inline">Students</span>
               </button>
               <button 
                 onClick={() => setActiveTab('analytics')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'analytics' ? 'bg-[#262626] text-[#f59e0b] border border-[#f59e0b]/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Trophy size={14} />
-                <span>Analytics</span>
+                <span className="hidden sm:inline">Analytics</span>
               </button>
               <button 
                 onClick={() => setActiveTab('library')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'library' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <BookOpen size={14} />
-                <span>Library</span>
+                <span className="hidden sm:inline">Library</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('notices')}
+                className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'notices' ? 'bg-[#262626] text-amber-400 border border-amber-500/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <Megaphone size={14} />
+                <span className="hidden sm:inline">Notices</span>
               </button>
               <button 
                 onClick={() => setActiveTab('sync')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'sync' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <RefreshCw size={14} />
-                <span>Sync</span>
+                <span className="hidden sm:inline">Sync</span>
               </button>
             </div>
             
@@ -247,6 +277,17 @@ export default function Dashboard({ onLogout }) {
                 <p className="text-xs text-[#9ca3af] mt-0.5">Manage tokens, devices, and tiered section access</p>
               </div>
               <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button 
+                  onClick={() => setShowVersionModal(true)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#181818] hover:bg-[#222] text-[#f3f4f6] border border-[#333] hover:border-[#f59e0b] px-3 py-2 rounded-lg transition font-semibold text-xs sm:text-sm shadow-md"
+                  title="Configure Android app version criteria (Red, Yellow, Green)"
+                >
+                  <Settings size={15} className="text-[#f59e0b]" />
+                  <span>Version Rules</span>
+                  <span className="hidden md:inline text-[10px] text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30 px-1.5 py-0.2 rounded font-mono">
+                    v{versionConfig.latestAppVersion}
+                  </span>
+                </button>
                 <button 
                   onClick={() => setShowBroadcastModal(true)}
                   className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#181818] hover:bg-[#222] text-[#f59e0b] border border-[#f59e0b]/40 hover:border-[#f59e0b] px-3.5 py-2 rounded-lg transition font-semibold text-xs sm:text-sm shadow-md"
@@ -427,15 +468,21 @@ export default function Dashboard({ onLogout }) {
                           <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold border bg-zinc-900 border-zinc-700 text-zinc-300 uppercase">
                             {s.platform || (s.device ? 'android' : 'web')}
                           </span>
-                          {s.appVersion ? (
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${compareSemver(s.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
-                              v{s.appVersion}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900 text-zinc-500 border-zinc-800">
-                              &lt; v2.7.0
-                            </span>
-                          )}
+                          {(() => {
+                            const vStatus = getAndroidVersionStatus(s, versionConfig);
+                            if (vStatus.status === 'web') {
+                              return (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900/60 text-zinc-400 border-zinc-800 font-mono">
+                                  WEB
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
+                                {vStatus.label}
+                              </span>
+                            );
+                          })()}
                           {s.forcedUpdate?.enabled && (
                             <span className="text-[10px] px-1.5 py-0.2 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 animate-pulse">
                               Lockout
@@ -521,15 +568,21 @@ export default function Dashboard({ onLogout }) {
                                   <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold border bg-zinc-900 border-zinc-700 text-zinc-300 uppercase">
                                     {s.platform || (s.device ? 'android' : 'web')}
                                   </span>
-                                  {s.appVersion ? (
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${compareSemver(s.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
-                                      v{s.appVersion}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900 text-zinc-500 border-zinc-800" title="Legacy version (< 2.7.0)">
-                                      &lt; v2.7.0
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const vStatus = getAndroidVersionStatus(s, versionConfig);
+                                    if (vStatus.status === 'web') {
+                                      return (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded border bg-zinc-900/60 text-zinc-400 border-zinc-800 font-mono">
+                                          WEB
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${vStatus.badgeClass}`} title={vStatus.label}>
+                                        {vStatus.label}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-xs text-[#9ca3af] break-all w-36 font-mono mt-0.5">{s.device.androidId}</div>
                                 {s.forcedUpdate?.enabled && (
@@ -648,6 +701,10 @@ export default function Dashboard({ onLogout }) {
 
         {activeTab === 'library' && (
           <AdminCourseLibrary />
+        )}
+
+        {activeTab === 'notices' && (
+          <AdminNoticeBoard />
         )}
 
         {activeTab === 'sync' && (
@@ -794,6 +851,7 @@ export default function Dashboard({ onLogout }) {
       {selectedStudent && (
         <StudentModal 
           student={selectedStudent} 
+          versionConfig={versionConfig}
           onClose={() => setSelectedStudent(null)} 
         />
       )}
@@ -802,9 +860,18 @@ export default function Dashboard({ onLogout }) {
       {showBroadcastModal && (
         <BroadcastUpdateModal
           students={students}
+          versionConfig={versionConfig}
           onClose={() => setShowBroadcastModal(false)}
         />
       )}
+
+      {/* App Version Settings Modal */}
+      <AppVersionSettingsModal
+        isOpen={showVersionModal}
+        currentConfig={versionConfig}
+        onClose={() => setShowVersionModal(false)}
+        onSaveSuccess={(newConfig) => setVersionConfig(newConfig)}
+      />
     </div>
   );
 }

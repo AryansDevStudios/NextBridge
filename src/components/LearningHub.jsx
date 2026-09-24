@@ -29,7 +29,9 @@ import {
   History,
   RotateCcw,
   BarChart2,
-  Check
+  Check,
+  Bell,
+  Megaphone
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
@@ -41,6 +43,9 @@ import { Network } from '@capacitor/network';
 import { PrivacyScreen } from '@capacitor-community/privacy-screen';
 import { downloadManager, formatBytes, formatSpeed, formatTimeRemaining, parseDownloadSubjectAndFolder } from '../services/DownloadManager';
 import { APP_VERSION } from '../utils/version';
+import { db } from '../firebase';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { notificationService } from '../services/NotificationService';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
@@ -85,6 +90,63 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [deleteModalItem, setDeleteModalItem] = useState(null);
   const [blockedDownloadItem, setBlockedDownloadItem] = useState(null);
+
+  // ── Notice Board & Announcements ──
+  const [announcements, setAnnouncements] = useState([]);
+  const [showNoticeBoard, setShowNoticeBoard] = useState(false);
+  const [unreadNoticesCount, setUnreadNoticesCount] = useState(0);
+
+  useEffect(() => {
+    try {
+      const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(q, (snapshot) => {
+        const list = [];
+        snapshot.forEach((d) => {
+          list.push({ id: d.id, ...d.data() });
+        });
+        setAnnouncements(list);
+
+        try {
+          const notifiedIds = JSON.parse(localStorage.getItem('notified_announcement_ids') || '[]');
+          const lastReadTime = parseInt(localStorage.getItem('last_read_announcement_time') || '0', 10);
+          
+          let unread = 0;
+          let newlyNotified = [...notifiedIds];
+
+          list.forEach((item) => {
+            const itemTime = item.timestamp || (item.createdAt ? new Date(item.createdAt).getTime() : 0);
+            if (itemTime > lastReadTime) {
+              unread++;
+            }
+
+            if (!notifiedIds.includes(item.id)) {
+              newlyNotified.push(item.id);
+              notificationService.sendImmediateNotification(
+                item.title || 'NextBridge Notice',
+                item.message || 'You have a new announcement from your teacher.'
+              );
+            }
+          });
+
+          localStorage.setItem('notified_announcement_ids', JSON.stringify(newlyNotified));
+          setUnreadNoticesCount(unread);
+        } catch (_) {}
+      }, (err) => {
+        console.warn('[LearningHub] Announcements listener error:', err);
+      });
+
+      return () => unsub();
+    } catch (e) {
+      console.warn('[LearningHub] Announcements setup error:', e);
+    }
+  }, []);
+
+  const handleMarkAnnouncementsRead = () => {
+    try {
+      localStorage.setItem('last_read_announcement_time', Date.now().toString());
+      setUnreadNoticesCount(0);
+    } catch (_) {}
+  };
 
   const getDownloadItemSection = (item) => {
     if (!item) return 'courses';
@@ -1123,6 +1185,55 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                 <span>{subInfo.badge}</span>
               </div>
             )}
+            {/* Notice Board Bell Button */}
+            <button
+              className="student-notice-btn"
+              onClick={() => {
+                setShowNoticeBoard(true);
+                setUnreadNoticesCount(0);
+                localStorage.setItem('last_read_announcement_time', Date.now().toString());
+              }}
+              title="Announcements & Notices"
+              aria-label="Announcements"
+              style={{
+                position: 'relative',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#e2e8f0',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+            >
+              <Bell size={18} />
+              {unreadNoticesCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  borderRadius: '10px',
+                  padding: '1px 5px',
+                  minWidth: '16px',
+                  height: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 6px rgba(239, 68, 68, 0.8)'
+                }}>
+                  {unreadNoticesCount > 9 ? '9+' : unreadNoticesCount}
+                </span>
+              )}
+            </button>
+
             {/* Avatar button — long-press 5s to unlock admin panel */}
             <button 
               className="student-avatar-btn" 
@@ -2513,6 +2624,97 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
               <div style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: '8px' }}>
                 Support, token queries & device transfer: @nextbridge19
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notice Board / Announcements Modal */}
+      {showNoticeBoard && (
+        <div className="modal-backdrop" onClick={() => setShowNoticeBoard(false)}>
+          <div 
+            className="profile-modal-card custom-scrollbar" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '480px', width: '92%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Megaphone size={20} style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Notice Board
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowNoticeBoard(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {announcements.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-secondary)' }}>
+                  <Bell size={36} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
+                  <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>No announcements yet</p>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', opacity: 0.7 }}>You are all caught up with your classes and updates.</p>
+                </div>
+              ) : (
+                announcements.map((notice) => {
+                  const priorityColors = {
+                    urgent: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' },
+                    important: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.3)', text: '#f59e0b' },
+                    info: { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.3)', text: '#60a5fa' }
+                  };
+                  const color = priorityColors[notice.priority] || priorityColors.info;
+                  const dateStr = notice.createdAt 
+                    ? new Date(notice.createdAt).toLocaleString(undefined, { 
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                      }) 
+                    : '';
+
+                  return (
+                    <div 
+                      key={notice.id} 
+                      style={{ 
+                        background: 'rgba(255, 255, 255, 0.03)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '12px', 
+                        padding: '14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ 
+                          fontSize: '0.7rem', 
+                          fontWeight: 700, 
+                          textTransform: 'uppercase', 
+                          padding: '2px 8px', 
+                          borderRadius: '8px', 
+                          background: color.bg, 
+                          color: color.text, 
+                          border: `1px solid ${color.border}` 
+                        }}>
+                          {notice.priority || 'Info'}
+                        </span>
+                        {dateStr && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {dateStr}
+                          </span>
+                        )}
+                      </div>
+                      <h4 style={{ margin: '4px 0 2px', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {notice.title}
+                      </h4>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.45', whiteSpace: 'pre-wrap' }}>
+                        {notice.message}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

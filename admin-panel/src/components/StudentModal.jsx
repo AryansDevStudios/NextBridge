@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, query, orderBy, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { 
@@ -23,7 +23,13 @@ import {
   Trash2
 } from 'lucide-react';
 import { formatDuration, getStudentTimeForPeriod, getLast7DaysBreakdown } from '../utils/timeFormat';
-import { CURRENT_LATEST_VERSION, CURRENT_LATEST_CODE, compareSemver } from '../utils/version';
+import { 
+  CURRENT_LATEST_VERSION, 
+  CURRENT_LATEST_CODE, 
+  DEFAULT_ANDROID_VERSION_CONFIG, 
+  getAndroidVersionStatus, 
+  compareSemver 
+} from '../utils/version';
 
 function toDateTimeLocalString(timestamp) {
   if (!timestamp) return '';
@@ -37,7 +43,7 @@ function toDateTimeLocalString(timestamp) {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-export default function StudentModal({ student, onClose }) {
+export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_VERSION_CONFIG, onClose }) {
   const [activeTab, setActiveTab] = useState('access');
   const [logs, setLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -76,7 +82,7 @@ export default function StudentModal({ student, onClose }) {
     student.forcedUpdate?.downloadUrl || ''
   );
   const [updateMessage, setUpdateMessage] = useState(
-    student.forcedUpdate?.message || 'A mandatory app update (v2.7.0) is required to continue using NextBridge.'
+    student.forcedUpdate?.message || `A mandatory app update (v${CURRENT_LATEST_VERSION}) is required to continue using NextBridge.`
   );
   const [releaseNotes, setReleaseNotes] = useState(
     student.forcedUpdate?.releaseNotes || '• High-performance immersive full-screen mode\n• Video player stability enhancements\n• Offline PDF & document improvements'
@@ -97,6 +103,25 @@ export default function StudentModal({ student, onClose }) {
   // Analytics & Logs State
   const [analyticsPeriod, setAnalyticsPeriod] = useState('today'); // 'today', 'week', 'all'
   const [logFilter, setLogFilter] = useState('all'); // 'all', 'watch', 'notes', 'login', 'download'
+
+  // Bug 5 fix: sync lockout state from parent prop when Firestore updates arrive via onSnapshot
+  // (e.g. a batch broadcast was applied while this modal was open)
+  const prevForcedUpdateRef = useRef(student.forcedUpdate);
+  useEffect(() => {
+    const prev = prevForcedUpdateRef.current;
+    const next = student.forcedUpdate;
+    // Only resync if the lockout data itself actually changed to avoid overwriting in-flight edits
+    if (JSON.stringify(prev) !== JSON.stringify(next)) {
+      prevForcedUpdateRef.current = next;
+      setForcedUpdateEnabled(next?.enabled ?? false);
+      setMinVersion(next?.minVersion || CURRENT_LATEST_VERSION);
+      setMinVersionCode(next?.minVersionCode || CURRENT_LATEST_CODE);
+      setDownloadUrl(next?.downloadUrl || '');
+      setUpdateMessage(next?.message || `A mandatory app update (v${CURRENT_LATEST_VERSION}) is required to continue using NextBridge.`);
+      setReleaseNotes(next?.releaseNotes || '• High-performance immersive full-screen mode\n• Video player stability enhancements\n• Offline PDF & document improvements');
+      setTargetPlatform(next?.targetPlatform || 'android');
+    }
+  }, [student.forcedUpdate]);
 
   // Period stats calculation for this individual student
   const periodStats = useMemo(() => {
@@ -700,15 +725,21 @@ export default function StudentModal({ student, onClose }) {
                     <span className="text-[11px] px-2 py-0.5 rounded-full border bg-[#141414] border-[#333] text-[#9ca3af]">
                       Platform: <strong className="text-white uppercase">{student.platform || (student.device ? 'android' : 'web')}</strong>
                     </span>
-                    {student.appVersion ? (
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${compareSemver(student.appVersion, CURRENT_LATEST_VERSION) >= 0 ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' : 'bg-amber-950/40 text-amber-400 border-amber-800'}`}>
-                        v{student.appVersion} {compareSemver(student.appVersion, CURRENT_LATEST_VERSION) >= 0 ? '(Latest)' : '(Outdated)'}
-                      </span>
-                    ) : (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-zinc-900 text-zinc-500 border-zinc-800">
-                        Version: Legacy (&lt; v2.7.0)
-                      </span>
-                    )}
+                    {(() => {
+                      const vStatus = getAndroidVersionStatus(student, versionConfig);
+                      if (vStatus.status === 'web') {
+                        return (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full border bg-zinc-900/60 text-zinc-400 border-zinc-800 font-mono">
+                            Web Browser
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${vStatus.badgeClass}`}>
+                          {vStatus.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -738,6 +769,34 @@ export default function StudentModal({ student, onClose }) {
 
                 {/* Lockout Configuration Inputs */}
                 <div className={`space-y-3 transition-opacity ${forcedUpdateEnabled ? 'opacity-100' : 'opacity-60'}`}>
+                  {/* Database Presets Quick Fill */}
+                  <div className="flex items-center justify-between text-xs pb-1">
+                    <span className="text-[#9ca3af] text-[11px]">Database Presets:</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMinVersion(versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION);
+                          setMinVersionCode(versionConfig?.latestVersionCode || CURRENT_LATEST_CODE);
+                          if (versionConfig?.apkDownloadUrl) setDownloadUrl(versionConfig.apkDownloadUrl);
+                        }}
+                        className="px-2 py-0.5 rounded bg-[#262626] hover:bg-[#333] text-emerald-400 border border-emerald-900/40 text-[10px] font-semibold"
+                      >
+                        Set to Latest (v{versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMinVersion(versionConfig?.minAppVersion || '2.7.0');
+                          setMinVersionCode(versionConfig?.minVersionCode || 20700);
+                          if (versionConfig?.apkDownloadUrl) setDownloadUrl(versionConfig.apkDownloadUrl);
+                        }}
+                        className="px-2 py-0.5 rounded bg-[#262626] hover:bg-[#333] text-red-400 border border-red-900/40 text-[10px] font-semibold"
+                      >
+                        Set to Min (v{versionConfig?.minAppVersion || '2.7.0'})
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-[#9ca3af] mb-1">Target Platform</label>
@@ -905,8 +964,14 @@ export default function StudentModal({ student, onClose }) {
                   <div className="space-y-2 text-sm text-[#9ca3af]">
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Model:</span> <span>{currentDevice.model}</span></div>
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">OS Version:</span> <span>{currentDevice.osVersion}</span></div>
-                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Android ID:</span> <span className="font-mono bg-[#121212] px-1 border border-[#262626] rounded text-xs break-all text-[#f59e0b]">{currentDevice.androidId}</span></div>
-                    <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">App Version:</span> <span className="font-mono text-xs">{student.appVersion ? `v${student.appVersion}` : 'Not reported yet (< v2.7.0)'}</span></div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium text-[#f3f4f6]">App Version:</span>
+                      {(() => {
+                        const vStatus = getAndroidVersionStatus(student, versionConfig);
+                        if (vStatus.status === 'web') return <span className="font-mono text-xs text-zinc-400">Web App</span>;
+                        return <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${vStatus.badgeClass}`}>{vStatus.label}</span>;
+                      })()}
+                    </div>
                     <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Platform:</span> <span className="uppercase text-xs font-semibold text-white">{student.platform || (student.device ? 'android' : 'web')}</span></div>
                     {student.lastActive && (
                       <div className="flex justify-between"><span className="font-medium text-[#f3f4f6]">Last Active:</span> <span className="text-xs">{new Date(student.lastActive).toLocaleString()}</span></div>

@@ -2,35 +2,52 @@ import React, { useState, useMemo } from 'react';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { X, ShieldAlert, Download, CheckCircle2, AlertTriangle, Layers, Radio } from 'lucide-react';
-import { CURRENT_LATEST_VERSION, CURRENT_LATEST_CODE, compareSemver } from '../utils/version';
+import { 
+  CURRENT_LATEST_VERSION, 
+  CURRENT_LATEST_CODE, 
+  DEFAULT_ANDROID_VERSION_CONFIG, 
+  getAndroidVersionStatus, 
+  compareSemver 
+} from '../utils/version';
 
-export default function BroadcastUpdateModal({ students, onClose, onSuccess }) {
-  const [targetScope, setTargetScope] = useState('outdated'); // 'outdated', 'android', 'all'
-  const [minVersion, setMinVersion] = useState(CURRENT_LATEST_VERSION);
-  const [minVersionCode, setMinVersionCode] = useState(CURRENT_LATEST_CODE);
-  const [downloadUrl, setDownloadUrl] = useState('');
+export default function BroadcastUpdateModal({ students, versionConfig = DEFAULT_ANDROID_VERSION_CONFIG, onClose, onSuccess }) {
+  const [targetScope, setTargetScope] = useState('outdated'); // 'outdated', 'critical', 'android', 'all'
+  const [minVersion, setMinVersion] = useState(versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION);
+  const [minVersionCode, setMinVersionCode] = useState(versionConfig?.latestVersionCode || CURRENT_LATEST_CODE);
+  const [downloadUrl, setDownloadUrl] = useState(versionConfig?.apkDownloadUrl || '');
   const [targetPlatform, setTargetPlatform] = useState('android');
-  const [message, setMessage] = useState('A mandatory app update (v2.7.0) is required to continue using NextBridge.');
-  const [releaseNotes, setReleaseNotes] = useState('• High-performance immersive full-screen mode\n• Video player stability enhancements\n• Offline PDF & document improvements');
+  const [message, setMessage] = useState(
+    versionConfig?.defaultMessage || `A mandatory app update (v${versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION}) is required to continue using NextBridge.`
+  );
+  const [releaseNotes, setReleaseNotes] = useState(
+    versionConfig?.releaseNotes || '• High-performance immersive full-screen mode\n• Video player stability enhancements\n• Offline PDF & document improvements'
+  );
   const [processing, setProcessing] = useState(false);
   const [progressText, setProgressText] = useState('');
 
-  // Calculate targeted students
+  // Calculate targeted students — web users are isolated so they are never falsely locked out
   const targetedStudents = useMemo(() => {
     return students.filter(s => {
+      const isAndroid = s.platform === 'android' || (s.device && (!s.platform || s.platform === 'android'));
+
       if (targetScope === 'all') return true;
       if (targetScope === 'android') {
-        const plat = s.platform || (s.device ? 'android' : '');
-        return plat === 'android';
+        return isAndroid;
+      }
+      if (targetScope === 'critical') {
+        if (!isAndroid) return false;
+        const vStatus = getAndroidVersionStatus(s, versionConfig);
+        return vStatus.status === 'critical';
       }
       if (targetScope === 'outdated') {
-        // Outdated if appVersion is missing or less than minVersion
-        if (!s.appVersion) return true;
-        return compareSemver(s.appVersion, minVersion) < 0;
+        // Only target Android students who are Red or Yellow
+        if (!isAndroid) return false;
+        const vStatus = getAndroidVersionStatus(s, versionConfig);
+        return vStatus.status === 'critical' || vStatus.status === 'outdated' || compareSemver(s.appVersion, minVersion) < 0;
       }
       return false;
     });
-  }, [students, targetScope, minVersion]);
+  }, [students, targetScope, minVersion, versionConfig]);
 
   const handleApplyLockout = async () => {
     if (!downloadUrl.trim()) {
@@ -89,9 +106,19 @@ export default function BroadcastUpdateModal({ students, onClose, onSuccess }) {
     try {
       for (const student of targetedStudents) {
         setProgressText(`Unlocking ${updatedCount + 1} of ${targetedStudents.length}...`);
+        // Write the full object so no stale minVersion/downloadUrl fields remain,
+        // preventing students from being re-targeted on the next "Outdated Only" broadcast
         await updateDoc(doc(db, 'students', student.id), {
-          'forcedUpdate.enabled': false,
-          'forcedUpdate.updatedAt': new Date().toISOString()
+          forcedUpdate: {
+            enabled: false,
+            minVersion: '',
+            minVersionCode: 0,
+            downloadUrl: '',
+            message: '',
+            releaseNotes: '',
+            targetPlatform: 'android',
+            updatedAt: new Date().toISOString()
+          }
         });
         updatedCount++;
       }
@@ -136,20 +163,29 @@ export default function BroadcastUpdateModal({ students, onClose, onSuccess }) {
             <label className="block text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-2">
               Target Audience ({targetedStudents.length} students matched)
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => setTargetScope('outdated')}
-                className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'outdated' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'outdated' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
               >
-                <div className="font-semibold text-xs text-[#f3f4f6]">Outdated Only</div>
-                <div className="text-[11px] opacity-75 mt-1">&lt; v{minVersion}</div>
+                <div className="font-semibold text-xs text-[#f3f4f6]">Outdated (Yellow/Red)</div>
+                <div className="text-[11px] opacity-75 mt-1">&lt; v{versionConfig?.latestAppVersion || minVersion}</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTargetScope('critical')}
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'critical' ? 'bg-red-950/30 border-red-500 text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
+              >
+                <div className="font-semibold text-xs text-red-400">Critical (&lt; Min) Only</div>
+                <div className="text-[11px] opacity-75 mt-1">&lt; v{versionConfig?.minAppVersion || '2.7.0'}</div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setTargetScope('android')}
-                className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'android' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'android' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
               >
                 <div className="font-semibold text-xs text-[#f3f4f6]">All Android</div>
                 <div className="text-[11px] opacity-75 mt-1">Mobile users</div>
@@ -158,10 +194,37 @@ export default function BroadcastUpdateModal({ students, onClose, onSuccess }) {
               <button
                 type="button"
                 onClick={() => setTargetScope('all')}
-                className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'all' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${targetScope === 'all' ? 'bg-amber-950/20 border-[#f59e0b] text-white' : 'bg-[#181818] border-[#262626] text-[#9ca3af] hover:border-[#333]'}`}
               >
                 <div className="font-semibold text-xs text-[#f3f4f6]">All Students</div>
                 <div className="text-[11px] opacity-75 mt-1">Everyone</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Pre-fill Helpers */}
+          <div className="flex items-center justify-between text-xs pt-1">
+            <span className="text-[#9ca3af]">Database Preset Shortcuts:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMinVersion(versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION);
+                  setMinVersionCode(versionConfig?.latestVersionCode || CURRENT_LATEST_CODE);
+                }}
+                className="px-2.5 py-1 rounded bg-[#262626] hover:bg-[#333] text-emerald-400 border border-emerald-900/40 text-[11px] font-medium"
+              >
+                Use Latest (v{versionConfig?.latestAppVersion || CURRENT_LATEST_VERSION})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMinVersion(versionConfig?.minAppVersion || '2.7.0');
+                  setMinVersionCode(versionConfig?.minVersionCode || 20700);
+                }}
+                className="px-2.5 py-1 rounded bg-[#262626] hover:bg-[#333] text-red-400 border border-red-900/40 text-[11px] font-medium"
+              >
+                Use Floor Min (v{versionConfig?.minAppVersion || '2.7.0'})
               </button>
             </div>
           </div>
