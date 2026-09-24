@@ -58,6 +58,8 @@ export default function StudentModal({ student, onClose }) {
     courses: student.allowedSections?.courses ?? true,
     textbooks: student.allowedSections?.textbooks ?? true,
     pyqs: student.allowedSections?.pyqs ?? true,
+    pdfDownload: student.allowedSections?.pdfDownload ?? student.pdfDownload ?? true,
+    pdfExportShare: student.allowedSections?.pdfExportShare ?? student.pdfExportShare ?? true,
   });
 
   // Remote Forced Update Lockout State
@@ -479,6 +481,41 @@ export default function StudentModal({ student, onClose }) {
                     </div>
                     <span className="text-[11px] opacity-75">Past Year Papers</span>
                   </label>
+                </div>
+
+                {/* PDF Download & Share Capabilities */}
+                <div className="mt-3 pt-3 border-t border-[#262626]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-[#f3f4f6]">PDF Permissions</span>
+                    <span className="text-[11px] text-[#38bdf8] font-medium bg-[#38bdf8]/10 px-2 py-0.5 rounded border border-[#38bdf8]/30">Document Rights</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className={`flex flex-col p-3 rounded-lg border transition-all cursor-pointer ${allowedSections.pdfDownload ? 'bg-[#121212] border-[#38bdf8]/50 text-white shadow-sm' : 'bg-[#141414] border-[#262626] text-[#71717a]'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-sm">In-App PDF Download</span>
+                        <input 
+                          type="checkbox" 
+                          checked={allowedSections.pdfDownload} 
+                          onChange={e => setAllowedSections(prev => ({ ...prev, pdfDownload: e.target.checked }))}
+                          className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#1a1a1a]"
+                        />
+                      </div>
+                      <span className="text-[11px] opacity-75">Save & read offline inside app</span>
+                    </label>
+
+                    <label className={`flex flex-col p-3 rounded-lg border transition-all cursor-pointer ${allowedSections.pdfExportShare ? 'bg-[#121212] border-[#38bdf8]/50 text-white shadow-sm' : 'bg-[#141414] border-[#262626] text-[#71717a]'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-sm">Download to Device & Share</span>
+                        <input 
+                          type="checkbox" 
+                          checked={allowedSections.pdfExportShare} 
+                          onChange={e => setAllowedSections(prev => ({ ...prev, pdfExportShare: e.target.checked }))}
+                          className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#1a1a1a]"
+                        />
+                      </div>
+                      <span className="text-[11px] opacity-75">Save to Downloads folder & share externally</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 

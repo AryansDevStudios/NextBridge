@@ -1147,9 +1147,15 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [pdfDownloadError, setPdfDownloadError] = useState('');
   const [resolvedPdfUrl, setResolvedPdfUrl] = useState(item.url || '');
   const [showPdfDownloadMenu, setShowPdfDownloadMenu] = useState(false);
+  const [pdfActionToast, setPdfActionToast] = useState('');
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
   const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [isAudioOnlyMode, setIsAudioOnlyMode] = useState(false);
+
+  // PDF Download & Device Export Permissions (Default: true)
+  const allowPdfDownload = user?.allowedSections?.pdfDownload ?? user?.pdfDownload ?? true;
+  const allowPdfExportShare = user?.allowedSections?.pdfExportShare ?? user?.pdfExportShare ?? true;
+  const hasPdfActions = allowPdfDownload || allowPdfExportShare;
   const [notes, setNotes] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`video_notes_${item.id}`) || '[]');
@@ -1274,6 +1280,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
   }, [item.type, item.id, isPdfDownloaded]);
 
   const handleDownloadPdfToApp = async () => {
+    if (!allowPdfDownload) return;
     setShowPdfDownloadMenu(false);
     setPdfDownloadError('');
     try {
@@ -1285,6 +1292,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
   };
 
   const handleSavePdfToDevice = async () => {
+    if (!allowPdfExportShare) return;
     setShowPdfDownloadMenu(false);
     setIsSavingToDevice(true);
     setPdfDownloadError('');
@@ -1299,6 +1307,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
   };
 
   const handleSharePdf = async () => {
+    if (!allowPdfExportShare) return;
     setIsSharingPdf(true);
     setPdfDownloadError('');
     try {
@@ -1409,29 +1418,31 @@ const VideoPlayer = ({ item, onClose, user }) => {
 
           {/* Right Action Icons: [⋯ More Menu] and [✕ Close] */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, position: 'relative' }}>
-            {/* More Menu Trigger */}
-            <button
-              onClick={() => setShowPdfDownloadMenu(prev => !prev)}
-              style={{
-                background: showPdfDownloadMenu ? '#262626' : 'rgba(255, 255, 255, 0.07)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#f3f4f6',
-                padding: '5px 7px',
-                borderRadius: '7px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.15s ease'
-              }}
-              title="More Actions (Share, Save to App, Save to Device)"
-              aria-label="More Actions"
-            >
-              <MoreVertical size={16} />
-            </button>
+            {/* More Menu Trigger (rendered only if at least one PDF action is permitted) */}
+            {hasPdfActions && (
+              <button
+                onClick={() => setShowPdfDownloadMenu(prev => !prev)}
+                style={{
+                  background: showPdfDownloadMenu ? '#262626' : 'rgba(255, 255, 255, 0.07)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#f3f4f6',
+                  padding: '5px 7px',
+                  borderRadius: '7px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease'
+                }}
+                title="More Actions (Share, Save to App, Save to Device)"
+                aria-label="More Actions"
+              >
+                <MoreVertical size={16} />
+              </button>
+            )}
 
             {/* Dropdown Menu */}
-            {showPdfDownloadMenu && (
+            {hasPdfActions && showPdfDownloadMenu && (
               <>
                 <div 
                   style={{ position: 'fixed', inset: 0, zIndex: 10000 }} 
@@ -1455,98 +1466,109 @@ const VideoPlayer = ({ item, onClose, user }) => {
                     animation: 'modalFadeIn 0.15s ease-out'
                   }}
                 >
-                  {/* Share Option */}
-                  <button
-                    onClick={() => { setShowPdfDownloadMenu(false); handleSharePdf(); }}
-                    disabled={isSharingPdf}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: '#f3f4f6',
-                      fontSize: '0.8rem',
-                      fontWeight: 500,
-                      cursor: isSharingPdf ? 'default' : 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                      transition: 'background 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {isSharingPdf ? <Loader2 size={16} className="spin-icon text-[#f59e0b]" /> : <Share2 size={16} className="text-[#38bdf8]" />}
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontWeight: 600 }}>{isSharingPdf ? 'Sharing...' : 'Share Document'}</span>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Via WhatsApp, Telegram, etc.</span>
-                    </div>
-                  </button>
+                  {/* Share Option (Device Export & Sharing permission) */}
+                  {allowPdfExportShare && (
+                    <button
+                      onClick={() => { setShowPdfDownloadMenu(false); handleSharePdf(); }}
+                      disabled={isSharingPdf}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '9px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#f3f4f6',
+                        fontSize: '0.8rem',
+                        fontWeight: 500,
+                        cursor: isSharingPdf ? 'default' : 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      {isSharingPdf ? <Loader2 size={16} className="spin-icon text-[#f59e0b]" /> : <Share2 size={16} className="text-[#38bdf8]" />}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600 }}>{isSharingPdf ? 'Sharing...' : 'Share Document'}</span>
+                        <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Via WhatsApp, Telegram, etc.</span>
+                      </div>
+                    </button>
+                  )}
 
-                  <div style={{ height: '1px', background: '#262626', margin: '3px 6px' }} />
+                  {allowPdfExportShare && allowPdfDownload && (
+                    <div style={{ height: '1px', background: '#262626', margin: '3px 6px' }} />
+                  )}
 
-                  {/* Download to App Option */}
-                  <button
-                    onClick={handleDownloadPdfToApp}
-                    disabled={isPdfDownloading}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: '#f3f4f6',
-                      fontSize: '0.8rem',
-                      fontWeight: 500,
-                      cursor: isPdfDownloading ? 'default' : 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                      transition: 'background 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {isPdfDownloading ? <Loader2 size={16} className="spin-icon text-[#f59e0b]" /> : <Smartphone size={16} className="text-[#f59e0b]" />}
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                      <span style={{ fontWeight: 600 }}>{isPdfDownloaded ? 'Downloaded to App' : 'Download to App'}</span>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Read 100% offline inside app</span>
-                    </div>
-                    {isPdfDownloaded && <Check size={14} style={{ color: '#4ade80', marginLeft: 'auto' }} />}
-                  </button>
+                  {/* Download to App Option (In-App PDF Download permission) */}
+                  {allowPdfDownload && (
+                    <button
+                      onClick={handleDownloadPdfToApp}
+                      disabled={isPdfDownloading}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '9px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#f3f4f6',
+                        fontSize: '0.8rem',
+                        fontWeight: 500,
+                        cursor: isPdfDownloading ? 'default' : 'pointer',
+                        textAlign: 'left',
+                        width: '100%',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      {isPdfDownloading ? <Loader2 size={16} className="spin-icon text-[#f59e0b]" /> : <Smartphone size={16} className="text-[#f59e0b]" />}
+                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                        <span style={{ fontWeight: 600 }}>{isPdfDownloaded ? 'Downloaded to App' : 'Download to App'}</span>
+                        <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Read 100% offline inside app</span>
+                      </div>
+                      {isPdfDownloaded && <Check size={14} style={{ color: '#4ade80', marginLeft: 'auto' }} />}
+                    </button>
+                  )}
 
-                  {/* Save to Device Option */}
-                  <button
-                    onClick={handleSavePdfToDevice}
-                    disabled={isSavingToDevice}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: 'transparent',
-                      color: '#f3f4f6',
-                      fontSize: '0.8rem',
-                      fontWeight: 500,
-                      cursor: isSavingToDevice ? 'default' : 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                      transition: 'background 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {isSavingToDevice ? <Loader2 size={16} className="spin-icon text-[#38bdf8]" /> : <HardDrive size={16} className="text-[#38bdf8]" />}
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontWeight: 600 }}>Save to Device</span>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Public Downloads folder</span>
-                    </div>
-                  </button>
+                  {/* Save to Device Option (Device Export & Sharing permission) */}
+                  {allowPdfExportShare && (
+                    <>
+                      {allowPdfDownload && <div style={{ height: '1px', background: '#262626', margin: '3px 6px' }} />}
+                      <button
+                        onClick={handleSavePdfToDevice}
+                        disabled={isSavingToDevice}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '9px 12px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#f3f4f6',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          cursor: isSavingToDevice ? 'default' : 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#28282b'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {isSavingToDevice ? <Loader2 size={16} className="spin-icon text-[#38bdf8]" /> : <HardDrive size={16} className="text-[#38bdf8]" />}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontWeight: 600 }}>Save to Device</span>
+                          <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Public Downloads folder</span>
+                        </div>
+                      </button>
+                    </>
+                  )}
 
                   {/* Open in External Reader Option (if available) */}
                   {isPdfDownloaded && Capacitor.isNativePlatform() && (

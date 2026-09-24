@@ -98,12 +98,14 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
   // Class 10 only for textbook content
   const isClass10 = String(user?.class || user?.className || '').trim() === '10';
 
-  // Granular section access control (defaults to true for backwards compatibility)
+  // Granular section & feature access control (defaults to true for backwards compatibility)
   const allowedSections = useMemo(() => ({
     courses: user?.allowedSections?.courses ?? true,
     textbooks: user?.allowedSections?.textbooks ?? true,
     pyqs: user?.allowedSections?.pyqs ?? true,
-  }), [user?.allowedSections]);
+    pdfDownload: user?.allowedSections?.pdfDownload ?? user?.pdfDownload ?? true,
+    pdfExportShare: user?.allowedSections?.pdfExportShare ?? user?.pdfExportShare ?? true,
+  }), [user?.allowedSections, user?.pdfDownload, user?.pdfExportShare]);
 
   // If default 'courses' tab is not permitted, auto-switch to first accessible tab on initial load
   const hasAutoSwitchedRef = useRef(false);
@@ -1112,6 +1114,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
           <NcertTextbookHub
             showRsAggarwal={true}
             isLocked={!allowedSections.textbooks}
+            allowDownload={allowedSections.pdfDownload}
             onOpenPdf={(item) => {
               if (!allowedSections.textbooks) {
                 setBlockedDownloadItem({ item: { title: item.title || item.name || 'NCERT Textbook Chapter', ...item }, section: 'textbooks' });
@@ -1131,6 +1134,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
         <div style={{ flex: 1, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <CbsePyqHub
             isLocked={!allowedSections.pyqs}
+            allowDownload={allowedSections.pdfDownload}
             onOpenPdf={(item) => {
               if (!allowedSections.pyqs) {
                 setBlockedDownloadItem({ item: { title: item.name || item.title || 'CBSE PYQ Paper', ...item }, section: 'pyqs' });
@@ -2120,7 +2124,7 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                     </div>
                   )}
 
-                  {item.type === 'pdf' && allowedSections.courses && (
+                  {item.type === 'pdf' && allowedSections.courses && (allowedSections.pdfDownload || downloadManager.isDownloaded(item.id)) && (
                     <button
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -2272,6 +2276,28 @@ const LearningHub = ({ user, onLogout, onOpenAdmin }) => {
                     border: `1px solid ${allowedSections.pyqs ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
                   }}>
                     PYQ {allowedSections.pyqs ? '✓' : '✕'}
+                  </span>
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    background: allowedSections.pdfDownload ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: allowedSections.pdfDownload ? '#4ade80' : '#f87171',
+                    border: `1px solid ${allowedSections.pdfDownload ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    PDF Download {allowedSections.pdfDownload ? '✓' : '✕'}
+                  </span>
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    background: allowedSections.pdfExportShare ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: allowedSections.pdfExportShare ? '#4ade80' : '#f87171',
+                    border: `1px solid ${allowedSections.pdfExportShare ? 'rgba(74, 222, 128, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    Device Export/Share {allowedSections.pdfExportShare ? '✓' : '✕'}
                   </span>
                 </div>
               </div>

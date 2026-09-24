@@ -22,7 +22,7 @@ const PYQ_INDEX_URL = 'https://class10pyq.netlify.app/file-index.json';
 const CDN_PYQ_BASE = 'https://cdn.jsdelivr.net/gh/code-verse-star/CBSE_PYQ@main/public';
 const RAW_PYQ_BASE = 'https://github.com/code-verse-star/CBSE_PYQ/raw/main/public';
 
-export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false }) {
+export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false, allowDownload = true }) {
   const [files, setFiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPath, setCurrentPath] = useState('');
@@ -167,7 +167,7 @@ export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false }) {
 
   const handleDownloadItem = async (e, item, isMS = false) => {
     e.stopPropagation();
-    if (isLocked) return;
+    if (isLocked || !allowDownload) return;
     const docItem = formatPyqItem(item, isMS);
     try {
       await downloadManager.downloadPdf(docItem);
@@ -271,7 +271,7 @@ export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false }) {
                         <Lock size={12} />
                         <span>Locked</span>
                       </div>
-                    ) : (
+                    ) : (allowDownload || isDownloaded) ? (
                       <button
                         onClick={(e) => handleDownloadItem(e, item, isMS)}
                         disabled={isDownloading || isDownloaded}
@@ -296,7 +296,7 @@ export default function CbsePyqHub({ onOpenPdf, onBack, isLocked = false }) {
                           <Download size={15} />
                         )}
                       </button>
-                    )}
+                    ) : null}
                     <button
                       onClick={() => handleItemClick(item, isMS)}
                       style={{

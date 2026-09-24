@@ -57,6 +57,8 @@ export default function Dashboard({ onLogout }) {
   const [accessCourses, setAccessCourses] = useState(true);
   const [accessTextbooks, setAccessTextbooks] = useState(true);
   const [accessPyqs, setAccessPyqs] = useState(true);
+  const [accessPdfDownload, setAccessPdfDownload] = useState(true);
+  const [accessPdfExportShare, setAccessPdfExportShare] = useState(true);
 
   const filteredStudents = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
@@ -108,7 +110,9 @@ export default function Dashboard({ onLogout }) {
       allowedSections: {
         courses: accessCourses,
         textbooks: accessTextbooks,
-        pyqs: accessPyqs
+        pyqs: accessPyqs,
+        pdfDownload: accessPdfDownload,
+        pdfExportShare: accessPdfExportShare
       },
       customMessage: '',
       totalVideoTime: 0,
@@ -118,6 +122,7 @@ export default function Dashboard({ onLogout }) {
     setShowAddModal(false);
     setName(''); setSchool(''); setArea(''); setStudentClass('9'); setInitialSubscriptionDays(5);
     setAccessCourses(true); setAccessTextbooks(true); setAccessPyqs(true);
+    setAccessPdfDownload(true); setAccessPdfExportShare(true);
   };
 
   const copyToClipboard = (pat) => {
@@ -743,6 +748,26 @@ export default function Dashboard({ onLogout }) {
                     />
                     <span className="text-[#f3f4f6]">CBSE PYQs Hub</span>
                     <span className="text-[11px] text-[#9ca3af] ml-auto">Past Papers</span>
+                  </label>
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={accessPdfDownload} 
+                      onChange={e => setAccessPdfDownload(e.target.checked)}
+                      className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
+                    />
+                    <span className="text-[#f3f4f6]">In-App PDF Download</span>
+                    <span className="text-[11px] text-[#9ca3af] ml-auto">Save & Read Offline</span>
+                  </label>
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={accessPdfExportShare} 
+                      onChange={e => setAccessPdfExportShare(e.target.checked)}
+                      className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
+                    />
+                    <span className="text-[#f3f4f6]">Download to Device & Share</span>
+                    <span className="text-[11px] text-[#9ca3af] ml-auto">Downloads Folder + Share</span>
                   </label>
                 </div>
               </div>

@@ -119,7 +119,7 @@ const RSA_BOOK = {
   }))
 };
 
-export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false, isLocked = false }) {
+export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = false, isLocked = false, allowDownload = true }) {
   const [allBooks, setAllBooks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -240,6 +240,7 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
 
   const handleDownloadChapter = async (e, chapter, book, subject) => {
     e.stopPropagation();
+    if (isLocked || !allowDownload) return;
     const isRsa = chapter._rsa || book.id === '__rsa__';
     const itemId = isRsa
       ? `rsa_${(chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
@@ -921,7 +922,7 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
                               <Lock size={12} />
                               <span>Locked</span>
                             </div>
-                          ) : (
+                          ) : (allowDownload || isDownloaded) ? (
                             <button
                               onClick={(e) => handleDownloadChapter(e, ch, selectedBook, selectedSubject)}
                               disabled={isDownloading || isDownloaded}
@@ -946,7 +947,7 @@ export default function NcertTextbookHub({ onOpenPdf, onBack, showRsAggarwal = f
                                 <Download size={15} />
                               )}
                             </button>
-                          )}
+                          ) : null}
 
                           <button
                             onClick={() => handleOpenChapter(ch, selectedBook, selectedSubject)}
