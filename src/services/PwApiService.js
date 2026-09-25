@@ -75,34 +75,59 @@ export const pwApiService = {
     });
 
     const units = data?.data || [];
-    return units.map(u => ({
-      id: u._id,
-      title: u.name,
-      isFolder: true,
-      isDynamicPwFolder: true,
-      batchId,
-      subjectId,
-      masterId,
-      batchSubjectId,
-      chapterId: u._id,
-      itemCount: `${(u.videos || 0) + (u.notes || 0)} items (${u.videos || 0} vids, ${u.notes || 0} notes)`
-    }));
+    return units.map((u, idx) => {
+      const orderNum = u.order || (idx + 1);
+      const chPill = `CH - ${String(orderNum).padStart(2, '0')}`;
+      const smPill = `SM - ${String(orderNum).padStart(2, '0')}`;
+      const vids = u.videos || 0;
+      const dpp = u.exercises || 0;
+      const notes = u.notes || 0;
+
+      return {
+        id: u._id,
+        title: u.name,
+        isFolder: true,
+        isDynamicPwFolder: true,
+        batchId,
+        subjectId,
+        masterId,
+        batchSubjectId,
+        chapterId: u._id,
+        order: orderNum,
+        chPill,
+        smPill,
+        videos: vids,
+        dpp: dpp,
+        notes: notes,
+        itemCount: `Lectures: ${vids} • DPP: ${dpp} • Notes: ${notes}`
+      };
+    });
   },
 
   /**
-   * Fetch lectures & notes for a chapter
+   * Fetch lectures, DPPs, and notes for a chapter
    */
   async getChapterItems(batchId, subject, chapterId, folderTitle = '') {
     const subjectId = typeof subject === 'string' ? subject : (subject.subjectId || subject.subject_id);
     const masterId = subject.masterId;
 
-    // Fetch lectures & notes in parallel
-    const [lecturesRes, notesRes] = await Promise.allSettled([
+    // Fetch lectures, notes, and DPP PDFs in parallel
+    const [lecturesRes, notesRes, dppPdfRes] = await Promise.allSettled([
       callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'LECTURE', skip: 0, limit: 100 }),
-      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'NOTES', skip: 0, limit: 100 })
+      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'NOTES', skip: 0, limit: 100 }),
+      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'DPP_PDF', skip: 0, limit: 100 })
     ]);
 
     const items = [];
+
+    const formatDateStr = (dateVal) => {
+      if (!dateVal) return '';
+      try {
+        return new Date(dateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      } catch (_) {
+        return '';
+      }
+    };
 
     // Parse Lectures
     if (lecturesRes.status === 'fulfilled' && Array.isArray(lecturesRes.value)) {
@@ -119,6 +144,8 @@ export const pwApiService = {
           id: item._id || d._id,
           title: d.topic || 'Video Lecture',
           type: 'video',
+          subCategory: 'LECTURE',
+          badgeText: 'VIDEO',
           isDynamicPw: true,
           batchId,
           subjectId,
@@ -127,6 +154,7 @@ export const pwApiService = {
           folder_path: folderTitle,
           thumbnail: d.videoDetails?.image || '',
           duration: durationSecs,
+          dateStr: formatDateStr(d.date),
           created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
           subject_name: subject.subject_name || subject.subject || 'Physics'
         });
@@ -146,12 +174,43 @@ export const pwApiService = {
           id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
           title: d.topic || homework?.topic || 'Class Notes',
           type: 'pdf',
+          subCategory: 'NOTES',
+          badgeText: 'NOTES',
           isDynamicPw: true,
           batchId,
           subjectId,
           url: pdfUrl,
           raw_file_url: pdfUrl,
           folder_path: folderTitle,
+          dateStr: formatDateStr(d.date),
+          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+          subject_name: subject.subject_name || subject.subject || 'Physics'
+        });
+      });
+    }
+
+    // Parse DPP PDFs
+    if (dppPdfRes.status === 'fulfilled' && Array.isArray(dppPdfRes.value)) {
+      dppPdfRes.value.forEach(item => {
+        const d = item.data || {};
+        const homework = d.homeworkIds?.[0];
+        const attach = homework?.attachmentIds?.[0];
+        const rawUrl = attach?.baseUrl || '';
+        const pdfUrl = rawUrl.startsWith('http') ? rawUrl : `${PW_BASE_URL}${rawUrl}`;
+
+        items.push({
+          id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,
+          title: d.topic || homework?.topic || 'Daily Practice Problem (DPP)',
+          type: 'pdf',
+          subCategory: 'DPP_PDF',
+          badgeText: 'DPP PDF',
+          isDynamicPw: true,
+          batchId,
+          subjectId,
+          url: pdfUrl,
+          raw_file_url: pdfUrl,
+          folder_path: folderTitle,
+          dateStr: formatDateStr(d.date),
           created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
           subject_name: subject.subject_name || subject.subject || 'Physics'
         });

@@ -40,6 +40,7 @@ import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
 import CbsePyqHub from './CbsePyqHub';
 import BatchesHub from './BatchesHub';
+import PwBatchExplorer from './PwBatchExplorer';
 import { 
   BATCH_CATALOG, 
   getAllowedBatchIdsForUser, 
@@ -2562,8 +2563,17 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
       {/* COURSES TAB VIEW */}
       {isOnline && activeTab === 'courses' && (
-        <div className="main-content pb-24">
-          {/* In-Development Batch Lockout (if devClass11Enabled is OFF) */}
+        activeBatchObj?.is_dynamic_pw || activeBatchObj?.provider === 'Physics Wallah' ? (
+          <PwBatchExplorer
+            batch={activeBatchObj}
+            user={user}
+            onPlayVideo={handlePlayVideo}
+            onBackToBatches={() => setActiveTab('batches')}
+            allowedSections={allowedSections}
+          />
+        ) : (
+          <div className="main-content pb-24">
+            {/* In-Development Batch Lockout (if devClass11Enabled is OFF) */}
           {activeBatchObj && isBatchInDevelopment(activeBatchObj) && !devClass11Enabled ? (
             <div style={{
               padding: '54px 24px',
@@ -3131,6 +3141,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
           </>
           )}
         </div>
+        )
       )}
 
       {/* Student Profile & Support Modal */}
