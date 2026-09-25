@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   ChevronRight, 
@@ -8,7 +8,6 @@ import {
   Video, 
   Calendar, 
   Check, 
-  CheckCircle2, 
   Megaphone, 
   Sparkles, 
   FlaskConical, 
@@ -22,15 +21,17 @@ import {
   Award, 
   Loader2, 
   Download, 
-  ExternalLink, 
   X,
   Layers,
-  FileCheck
+  Info,
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 import { pwApiService } from '../services/PwApiService';
+import { getBatchDisplayName } from '../utils/batchConfig';
 
 /**
- * Subject visual config matching authentic PW palette and icons (Screenshot 1)
+ * Subject visual config matching dark-themed aesthetics with glowing accents
  */
 function getSubjectVisual(name = '') {
   const n = name.toLowerCase();
@@ -38,77 +39,88 @@ function getSubjectVisual(name = '') {
   if (n.includes('notice')) {
     return {
       icon: Megaphone,
-      bg: '#FEF3C7',
-      color: '#D97706'
+      bg: 'rgba(245, 158, 11, 0.12)',
+      border: 'rgba(245, 158, 11, 0.25)',
+      color: '#f59e0b'
     };
   }
   if (n.includes('physics')) {
     return {
       icon: Sparkles,
-      bg: '#FEE2E2',
-      color: '#DC2626'
+      bg: 'rgba(239, 68, 68, 0.12)',
+      border: 'rgba(239, 68, 68, 0.25)',
+      color: '#f87171'
     };
   }
   if (n.includes('chemistry')) {
     return {
       icon: FlaskConical,
-      bg: '#FEF3C7',
-      color: '#D97706'
+      bg: 'rgba(245, 158, 11, 0.12)',
+      border: 'rgba(245, 158, 11, 0.25)',
+      color: '#fbbf24'
     };
   }
   if (n.includes('biology')) {
     return {
       icon: Leaf,
-      bg: '#DCFCE7',
-      color: '#16A34A'
+      bg: 'rgba(34, 197, 94, 0.12)',
+      border: 'rgba(34, 197, 94, 0.25)',
+      color: '#4ade80'
     };
   }
   if (n.includes('math')) {
     return {
       icon: Divide,
-      bg: '#FFEDD5',
-      color: '#EA580C'
+      bg: 'rgba(249, 115, 22, 0.12)',
+      border: 'rgba(249, 115, 22, 0.25)',
+      color: '#fb923c'
     };
   }
   if (n.includes('english')) {
     return {
       icon: BookOpen,
-      bg: '#FDE68A',
-      color: '#B45309'
+      bg: 'rgba(251, 191, 36, 0.12)',
+      border: 'rgba(251, 191, 36, 0.25)',
+      color: '#fde047'
     };
   }
   if (n.includes('sst') || n.includes('social')) {
     return {
       icon: Globe,
-      bg: '#FED7AA',
-      color: '#C2410C'
+      bg: 'rgba(234, 88, 12, 0.12)',
+      border: 'rgba(234, 88, 12, 0.25)',
+      color: '#fdba74'
     };
   }
   if (n.includes('computer') || n.includes('information')) {
     return {
       icon: Laptop,
-      bg: '#DBEAFE',
-      color: '#2563EB'
+      bg: 'rgba(59, 130, 246, 0.12)',
+      border: 'rgba(59, 130, 246, 0.25)',
+      color: '#60a5fa'
     };
   }
   if (n.includes('artificial') || n.includes('ai')) {
     return {
       icon: Cpu,
-      bg: '#E0E7FF',
-      color: '#4F46E5'
+      bg: 'rgba(99, 102, 241, 0.12)',
+      border: 'rgba(99, 102, 241, 0.25)',
+      color: '#818cf8'
     };
   }
   if (n.includes('hindi') || n.includes('sanskrit')) {
     return {
       icon: Languages,
-      bg: '#FFE4E6',
-      color: '#E11D48'
+      bg: 'rgba(244, 63, 94, 0.12)',
+      border: 'rgba(244, 63, 94, 0.25)',
+      color: '#fb7185'
     };
   }
   return {
     icon: Award,
-    bg: '#F3E8FF',
-    color: '#9333EA'
+    bg: 'rgba(168, 85, 247, 0.12)',
+    border: 'rgba(168, 85, 247, 0.25)',
+    color: '#c084fc'
   };
 }
 
@@ -117,6 +129,8 @@ export default function PwBatchExplorer({
   user,
   onPlayVideo,
   onBackToBatches,
+  onSwitchBatch,
+  allowedBatchCount = 1,
   allowedSections = {}
 }) {
   const batchId = batch?.pw_batch_id || batch?.original_id || '6a071d17f84ddfb496a59f76';
@@ -138,7 +152,7 @@ export default function PwBatchExplorer({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Watched state tracking
+  // Watched state tracking in localStorage
   const [watchedSet, setWatchedSet] = useState(() => {
     try {
       const saved = localStorage.getItem('nb_pw_watched_ids');
@@ -151,7 +165,11 @@ export default function PwBatchExplorer({
   const markWatched = (id) => {
     setWatchedSet(prev => {
       const next = new Set(prev);
-      next.add(String(id));
+      if (next.has(String(id))) {
+        next.delete(String(id));
+      } else {
+        next.add(String(id));
+      }
       try {
         localStorage.setItem('nb_pw_watched_ids', JSON.stringify([...next]));
       } catch (_) {}
@@ -299,575 +317,805 @@ export default function PwBatchExplorer({
   }, [selectedChapter, contentMap, activeContentFilter, searchQuery]);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#FAF7F2',
-      color: '#2D2218',
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-      paddingBottom: '90px'
-    }}>
-      {/* ── TOP HEADER ── */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 40,
-        backgroundColor: '#FAF7F2',
-        borderBottom: '1px solid #ECE3D4',
-        padding: '12px 16px 0 16px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
-          {/* Round Back Button */}
+    <div className="main-content pb-24" style={{ animation: 'fadeIn 0.2s ease' }}>
+      {/* ── BREADCRUMBS BAR (App Consistent Navigation) ── */}
+      <div className="breadcrumbs" style={{ marginBottom: '14px' }}>
+        <button
+          onClick={handleBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--accent)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '2px 6px',
+            marginRight: '6px',
+            borderRadius: '4px'
+          }}
+          title="Go Back"
+        >
+          <ArrowLeft size={18} />
+        </button>
+
+        <span
+          className="breadcrumb-item"
+          onClick={() => {
+            setLevel('subjects');
+            setSelectedSubject(null);
+            setSelectedChapter(null);
+            setSearchQuery('');
+          }}
+        >
+          {getBatchDisplayName(batch)}
+        </span>
+
+        {selectedSubject && (
+          <>
+            <ChevronRight size={16} className="breadcrumb-separator" />
+            <span
+              className="breadcrumb-item"
+              onClick={() => {
+                setLevel('chapters');
+                setSelectedChapter(null);
+                setSearchQuery('');
+              }}
+            >
+              {selectedSubject.subject_name}
+            </span>
+          </>
+        )}
+
+        {selectedChapter && (
+          <>
+            <ChevronRight size={16} className="breadcrumb-separator" />
+            <span className="breadcrumb-item" style={{ color: 'var(--text-primary)' }}>
+              {selectedChapter.title}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* ── ACTIVE BATCH TOP PANEL (Matching NextBridge Design) ── */}
+      {level === 'subjects' && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: '14px',
+          padding: '14px 16px',
+          marginBottom: '18px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+            {batch?.thumbnail ? (
+              <img 
+                src={batch.thumbnail} 
+                alt={batch.batch_name}
+                style={{ 
+                  width: '50px', 
+                  height: '50px', 
+                  borderRadius: '10px', 
+                  objectFit: 'cover',
+                  border: '1px solid rgba(255,255,255,0.1)'
+                }} 
+              />
+            ) : (
+              <div style={{ 
+                width: '50px', 
+                height: '50px', 
+                borderRadius: '10px', 
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                color: '#60a5fa'
+              }}>
+                <Layers size={24} />
+              </div>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
+                <span style={{ 
+                  fontSize: '0.68rem', 
+                  fontWeight: 800, 
+                  padding: '2px 7px', 
+                  borderRadius: '6px',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                  color: '#fff'
+                }}>
+                  PW Live
+                </span>
+                <span style={{ 
+                  fontSize: '0.68rem', 
+                  fontWeight: 700, 
+                  padding: '2px 7px', 
+                  borderRadius: '6px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#6ee7b7',
+                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                }}>
+                  {batch?.session || '2026-27'}
+                </span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  {batch?.class_name || 'Class 10'}
+                </span>
+              </div>
+              <div style={{ 
+                fontSize: '1.05rem', 
+                fontWeight: 700, 
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '440px'
+              }}>
+                {getBatchDisplayName(batch)}
+              </div>
+            </div>
+          </div>
+
+          {/* Switch Batch CTA */}
           <button
-            onClick={handleBack}
+            type="button"
+            onClick={onSwitchBatch || onBackToBatches}
             style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '50%',
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #E5DCD0',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              background: 'rgba(59, 130, 246, 0.15)',
+              color: '#93c5fd',
+              fontSize: '0.82rem',
+              fontWeight: 600,
               cursor: 'pointer',
-              color: '#2D2218',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
               transition: 'all 0.15s ease'
             }}
-            title="Back"
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)'}
           >
-            <ArrowLeft size={18} />
+            <Layers size={14} />
+            <span>Switch Batch {allowedBatchCount > 1 ? `(${allowedBatchCount})` : ''}</span>
           </button>
-
-          {/* View Title */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{
-              fontSize: '1.25rem',
-              fontWeight: 800,
-              color: '#2B1E12',
-              margin: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
-              {level === 'subjects' ? 'Subjects' :
-               level === 'chapters' ? (selectedSubject?.subject_name || 'Chapters') :
-               (selectedChapter?.title || 'Chapter Content')}
-            </h1>
-          </div>
         </div>
+      )}
 
-        {/* ── TABS BAR ── */}
-        {/* Level 1: Subjects Tabs (All Classes | Resources) */}
+      {/* ── SEARCH INPUT ── */}
+      <div style={{ position: 'relative', marginBottom: '14px' }}>
+        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+        <input
+          type="text"
+          placeholder={
+            level === 'subjects' ? 'Search subjects in this batch...' :
+            level === 'chapters' ? `Search chapters in ${selectedSubject?.subject_name || 'subject'}...` :
+            `Search lectures, notes in ${selectedChapter?.title || 'chapter'}...`
+          }
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '10px 14px 10px 38px',
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '10px',
+            color: 'var(--text-primary)',
+            fontSize: '0.875rem',
+            outline: 'none',
+            boxSizing: 'border-box'
+          }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: '1rem'
+            }}
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
+      {/* ── PW LEVEL TABS (Styled in Dark Theme with Gold/Amber Accents) ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '20px',
+        borderBottom: '1px solid var(--border-color)',
+        marginBottom: '16px',
+        overflowX: 'auto',
+        scrollbarWidth: 'none'
+      }}>
+        {/* Level 1 Tabs */}
         {level === 'subjects' && (
-          <div style={{ display: 'flex', gap: '24px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          <>
             <button
+              type="button"
               onClick={() => setActiveSubjectTab('classes')}
               style={{
                 background: 'transparent',
                 border: 'none',
                 padding: '8px 4px 10px 4px',
-                fontSize: '0.9rem',
+                fontSize: '0.92rem',
                 fontWeight: 700,
-                color: activeSubjectTab === 'classes' ? '#C2611D' : '#8A7B6D',
-                borderBottom: activeSubjectTab === 'classes' ? '2.5px solid #C2611D' : '2.5px solid transparent',
+                color: activeSubjectTab === 'classes' ? 'var(--accent)' : 'var(--text-secondary)',
+                borderBottom: activeSubjectTab === 'classes' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              All Classes
+              All Classes ({subjects.filter(s => !s.subject_name.toLowerCase().includes('notice') && !s.subject_name.toLowerCase().includes('guidance')).length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveSubjectTab('resources')}
               style={{
                 background: 'transparent',
                 border: 'none',
                 padding: '8px 4px 10px 4px',
-                fontSize: '0.9rem',
+                fontSize: '0.92rem',
                 fontWeight: 700,
-                color: activeSubjectTab === 'resources' ? '#C2611D' : '#8A7B6D',
-                borderBottom: activeSubjectTab === 'resources' ? '2.5px solid #C2611D' : '2.5px solid transparent',
+                color: activeSubjectTab === 'resources' ? 'var(--accent)' : 'var(--text-secondary)',
+                borderBottom: activeSubjectTab === 'resources' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              Resources
+              Resources & Notices ({subjects.filter(s => s.subject_name.toLowerCase().includes('notice') || s.subject_name.toLowerCase().includes('guidance')).length})
             </button>
-          </div>
+          </>
         )}
 
-        {/* Level 2: Chapters Tabs (Chapters | Study Material) */}
+        {/* Level 2 Tabs */}
         {level === 'chapters' && (
-          <div style={{ display: 'flex', gap: '24px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          <>
             <button
+              type="button"
               onClick={() => setActiveChapterTab('chapters')}
               style={{
                 background: 'transparent',
                 border: 'none',
                 padding: '8px 4px 10px 4px',
-                fontSize: '0.9rem',
+                fontSize: '0.92rem',
                 fontWeight: 700,
-                color: activeChapterTab === 'chapters' ? '#C2611D' : '#8A7B6D',
-                borderBottom: activeChapterTab === 'chapters' ? '2.5px solid #C2611D' : '2.5px solid transparent',
+                color: activeChapterTab === 'chapters' ? 'var(--accent)' : 'var(--text-secondary)',
+                borderBottom: activeChapterTab === 'chapters' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              Chapters
+              Chapters ({activeChapters.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveChapterTab('study_material')}
               style={{
                 background: 'transparent',
                 border: 'none',
                 padding: '8px 4px 10px 4px',
-                fontSize: '0.9rem',
+                fontSize: '0.92rem',
                 fontWeight: 700,
-                color: activeChapterTab === 'study_material' ? '#C2611D' : '#8A7B6D',
-                borderBottom: activeChapterTab === 'study_material' ? '2.5px solid #C2611D' : '2.5px solid transparent',
+                color: activeChapterTab === 'study_material' ? 'var(--accent)' : 'var(--text-secondary)',
+                borderBottom: activeChapterTab === 'study_material' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
               Study Material
             </button>
-          </div>
+          </>
         )}
 
-        {/* Level 3: Content Filter Tabs (All | Lectures | DPPs | Notes | DPP PDFs | DPP Videos) */}
+        {/* Level 3 Tabs */}
         {level === 'content' && (
-          <div style={{ 
-            display: 'flex', 
-            gap: '18px', 
-            overflowX: 'auto', 
-            scrollbarWidth: 'none',
-            WebkitOverflowScrolling: 'touch',
-            paddingBottom: '2px'
-          }}>
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'lectures', label: 'Lectures' },
-              { id: 'dpps', label: 'DPPs' },
-              { id: 'notes', label: 'Notes' },
-              { id: 'dpp_pdfs', label: 'DPP PDFs' },
-              { id: 'dpp_videos', label: 'DPP Videos' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveContentFilter(tab.id)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  padding: '8px 2px 10px 2px',
-                  fontSize: '0.88rem',
-                  fontWeight: 700,
-                  color: activeContentFilter === tab.id ? '#C2611D' : '#8A7B6D',
-                  borderBottom: activeContentFilter === tab.id ? '2.5px solid #C2611D' : '2.5px solid transparent',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.18s ease'
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          [
+            { id: 'all', label: `All (${contentMap[selectedChapter?.chapterId || selectedChapter?.id]?.length || 0})` },
+            { id: 'lectures', label: `Lectures (${(contentMap[selectedChapter?.chapterId || selectedChapter?.id] || []).filter(i => i.subCategory === 'LECTURE').length})` },
+            { id: 'dpps', label: `DPPs (${(contentMap[selectedChapter?.chapterId || selectedChapter?.id] || []).filter(i => i.subCategory === 'DPP_PDF' || i.subCategory === 'DPP_VIDEO').length})` },
+            { id: 'notes', label: `Notes (${(contentMap[selectedChapter?.chapterId || selectedChapter?.id] || []).filter(i => i.subCategory === 'NOTES').length})` },
+            { id: 'dpp_pdfs', label: `DPP PDFs (${(contentMap[selectedChapter?.chapterId || selectedChapter?.id] || []).filter(i => i.subCategory === 'DPP_PDF').length})` },
+            { id: 'dpp_videos', label: `DPP Videos (${(contentMap[selectedChapter?.chapterId || selectedChapter?.id] || []).filter(i => i.subCategory === 'DPP_VIDEO').length})` },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveContentFilter(tab.id)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: '8px 2px 10px 2px',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                color: activeContentFilter === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
+                borderBottom: activeContentFilter === tab.id ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))
         )}
       </div>
 
-      {/* ── MAIN CONTENT CONTAINER ── */}
-      <div style={{ maxWidth: '640px', margin: '0 auto', padding: '16px 14px' }}>
-        {/* Loading Spinner */}
-        {loading && (
-          <div style={{
-            padding: '48px 20px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Loader2 size={36} className="animate-spin" style={{ color: '#C2611D', marginBottom: '12px' }} />
-            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#7C6F61' }}>
-              Fetching from Physics Wallah...
-            </span>
-          </div>
-        )}
+      {/* ── LOADING SPINNER ── */}
+      {loading && (
+        <div style={{
+          padding: '54px 20px',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--panel-bg)',
+          borderRadius: '14px',
+          border: '1px dashed var(--border-color)',
+          margin: '16px 0'
+        }}>
+          <Loader2 size={36} className="animate-spin" style={{ color: 'var(--accent)', marginBottom: '14px' }} />
+          <h3 style={{ fontSize: '1.05rem', color: 'var(--text-primary)', margin: '0 0 4px', fontWeight: 700 }}>
+            Loading from Physics Wallah...
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: 0 }}>
+            Fetching latest lessons, notes, and study materials on demand
+          </p>
+        </div>
+      )}
 
-        {/* ── LEVEL 1: SUBJECTS LIST (Screenshot 1) ── */}
-        {!loading && level === 'subjects' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredSubjects.length === 0 ? (
-              <div style={{
-                padding: '48px 20px',
-                textAlign: 'center',
-                backgroundColor: '#FFFFFF',
-                borderRadius: '16px',
-                border: '1px solid #EBE3D5'
-              }}>
-                <BookOpen size={36} style={{ color: '#8D7B68', opacity: 0.4, margin: '0 auto 10px' }} />
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#2B1E12', margin: '0 0 4px' }}>No Subjects Found</h3>
-                <p style={{ fontSize: '0.8rem', color: '#7C6F61', margin: 0 }}>There are no items currently available in this tab.</p>
-              </div>
-            ) : (
-              filteredSubjects.map(sub => {
-                const visual = getSubjectVisual(sub.subject_name);
-                const IconComponent = visual.icon;
+      {/* ── LEVEL 1: SUBJECTS CARDS (Screenshot 1 - Dark Themed) ── */}
+      {!loading && level === 'subjects' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+          {filteredSubjects.length === 0 ? (
+            <div style={{
+              gridColumn: '1 / -1',
+              padding: '48px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--panel-bg)',
+              borderRadius: '14px',
+              border: '1px dashed var(--border-color)'
+            }}>
+              <BookOpen size={36} style={{ color: 'var(--text-secondary)', opacity: 0.4, margin: '0 auto 10px' }} />
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>No Subjects Found</h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                {searchQuery ? `No subjects match "${searchQuery}".` : 'No items available in this category.'}
+              </p>
+            </div>
+          ) : (
+            filteredSubjects.map(sub => {
+              const visual = getSubjectVisual(sub.subject_name);
+              const IconComponent = visual.icon;
 
-                return (
-                  <div
-                    key={sub.id}
-                    onClick={() => handleOpenSubject(sub)}
-                    style={{
-                      backgroundColor: '#FFFFFF',
-                      border: '1px solid #ECE3D4',
-                      borderRadius: '16px',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '14px',
-                      cursor: 'pointer',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.borderColor = '#DFD3BF';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.borderColor = '#ECE3D4';
-                    }}
-                  >
-                    {/* Subject Icon */}
-                    <div style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      backgroundColor: visual.bg,
-                      color: visual.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      <IconComponent size={20} />
-                    </div>
-
-                    {/* Subject Details */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h3 style={{
-                        fontSize: '1rem',
-                        fontWeight: 700,
-                        color: '#2B1E12',
-                        margin: '0 0 2px 0',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {sub.subject_name}
-                      </h3>
-                      <p style={{ fontSize: '0.78rem', color: '#8A7B6D', margin: 0 }}>
-                        Tap to view chapters
-                      </p>
-                    </div>
-
-                    {/* Chevron Right */}
-                    <ChevronRight size={18} style={{ color: '#8A7B6D', flexShrink: 0 }} />
+              return (
+                <div
+                  key={sub.id}
+                  onClick={() => handleOpenSubject(sub)}
+                  style={{
+                    backgroundColor: 'var(--panel-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    cursor: 'pointer',
+                    transition: 'transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.3)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                  }}
+                >
+                  {/* Subject Icon Container */}
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '12px',
+                    backgroundColor: visual.bg,
+                    border: `1px solid ${visual.border}`,
+                    color: visual.color,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <IconComponent size={22} />
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
 
-        {/* ── LEVEL 2: CHAPTERS LIST (Screenshots 2 & 3) ── */}
-        {!loading && level === 'chapters' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {activeChapters.length === 0 ? (
-              <div style={{
-                padding: '48px 20px',
-                textAlign: 'center',
-                backgroundColor: '#FFFFFF',
-                borderRadius: '16px',
-                border: '1px solid #EBE3D5'
-              }}>
-                <Layers size={36} style={{ color: '#8D7B68', opacity: 0.4, margin: '0 auto 10px' }} />
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#2B1E12', margin: '0 0 4px' }}>No Chapters Found</h3>
-                <p style={{ fontSize: '0.8rem', color: '#7C6F61', margin: 0 }}>This subject currently has no registered chapters.</p>
-              </div>
-            ) : (
-              activeChapters.map(chap => {
-                const isStudyMaterial = activeChapterTab === 'study_material';
-                const pillLabel = isStudyMaterial ? chap.smPill : chap.chPill;
+                  {/* Subject Details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{
+                      fontSize: '0.95rem',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      margin: '0 0 3px 0',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {sub.subject_name}
+                    </h3>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0 }}>
+                      Tap to view chapters
+                    </p>
+                  </div>
 
-                return (
-                  <div
-                    key={chap.id}
-                    onClick={() => handleOpenChapter(chap, isStudyMaterial ? 'notes' : 'all')}
-                    style={{
-                      backgroundColor: '#FFFFFF',
-                      border: '1px solid #ECE3D4',
-                      borderRadius: '16px',
-                      padding: '16px 18px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      cursor: 'pointer',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.borderColor = '#DFD3BF';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.borderColor = '#ECE3D4';
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {/* Pill Tag (CH - 01 / SM - 01) */}
+                  {/* Chevron Right */}
+                  <ChevronRight size={18} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── LEVEL 2: CHAPTERS CARDS (Screenshots 2 & 3 - Dark Themed) ── */}
+      {!loading && level === 'chapters' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
+          {activeChapters.length === 0 ? (
+            <div style={{
+              gridColumn: '1 / -1',
+              padding: '48px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--panel-bg)',
+              borderRadius: '14px',
+              border: '1px dashed var(--border-color)'
+            }}>
+              <Layers size={36} style={{ color: 'var(--text-secondary)', opacity: 0.4, margin: '0 auto 10px' }} />
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>No Chapters Found</h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                {searchQuery ? `No chapters match "${searchQuery}".` : 'This subject has no registered chapters.'}
+              </p>
+            </div>
+          ) : (
+            activeChapters.map(chap => {
+              const isStudyMaterial = activeChapterTab === 'study_material';
+              const pillLabel = isStudyMaterial ? chap.smPill : chap.chPill;
+
+              return (
+                <div
+                  key={chap.id}
+                  onClick={() => handleOpenChapter(chap, isStudyMaterial ? 'notes' : 'all')}
+                  style={{
+                    backgroundColor: 'var(--panel-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '14px',
+                    padding: '16px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '14px',
+                    cursor: 'pointer',
+                    transition: 'transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.3)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Pill Tag (CH - 01 / SM - 01) */}
+                    <div style={{ marginBottom: '6px' }}>
                       <span style={{
                         display: 'inline-block',
                         fontSize: '0.72rem',
                         fontWeight: 800,
                         padding: '2px 8px',
                         borderRadius: '6px',
-                        backgroundColor: '#FDF1DF',
-                        color: '#C2611D',
-                        marginBottom: '6px'
+                        backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        color: 'var(--accent)'
                       }}>
                         {pillLabel}
                       </span>
-
-                      {/* Chapter Title */}
-                      <h3 style={{
-                        fontSize: '0.98rem',
-                        fontWeight: 700,
-                        color: '#2B1E12',
-                        margin: '0 0 4px 0',
-                        lineHeight: 1.35
-                      }}>
-                        {chap.title}
-                      </h3>
-
-                      {/* Chapter Stats */}
-                      <div style={{ fontSize: '0.8rem', color: '#7C6F61', fontWeight: 500 }}>
-                        {chap.itemCount}
-                      </div>
                     </div>
 
-                    {/* Chevron Right */}
-                    <ChevronRight size={18} style={{ color: '#8A7B6D', flexShrink: 0 }} />
+                    {/* Chapter Title */}
+                    <h3 style={{
+                      fontSize: '0.96rem',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      margin: '0 0 6px 0',
+                      lineHeight: 1.35
+                    }}>
+                      {chap.title}
+                    </h3>
+
+                    {/* Chapter Stats */}
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {chap.itemCount}
+                    </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
 
-        {/* ── LEVEL 3: CHAPTER CONTENT LIST (Screenshot 4) ── */}
-        {!loading && level === 'content' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {activeContentItems.length === 0 ? (
-              <div style={{
-                padding: '48px 20px',
-                textAlign: 'center',
-                backgroundColor: '#FFFFFF',
-                borderRadius: '16px',
-                border: '1px solid #EBE3D5'
-              }}>
-                <Video size={36} style={{ color: '#8D7B68', opacity: 0.4, margin: '0 auto 10px' }} />
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#2B1E12', margin: '0 0 4px' }}>No Content Found</h3>
-                <p style={{ fontSize: '0.8rem', color: '#7C6F61', margin: 0 }}>There are no items matching this category filter.</p>
-              </div>
-            ) : (
-              activeContentItems.map((item, idx) => {
-                const isVideo = item.type === 'video' || item.subCategory === 'LECTURE';
-                const isWatched = watchedSet.has(String(item.id));
+                  {/* Chevron Right */}
+                  <ChevronRight size={18} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
-                return (
-                  <div
-                    key={item.id || idx}
-                    style={{
-                      backgroundColor: '#FFFFFF',
-                      border: '1px solid #ECE3D4',
-                      borderRadius: '16px',
-                      padding: '14px',
+      {/* ── LEVEL 3: CONTENT ITEMS CARDS (Screenshot 4 - Dark Themed) ── */}
+      {!loading && level === 'content' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          {activeContentItems.length === 0 ? (
+            <div style={{
+              gridColumn: '1 / -1',
+              padding: '48px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--panel-bg)',
+              borderRadius: '14px',
+              border: '1px dashed var(--border-color)'
+            }}>
+              <Video size={36} style={{ color: 'var(--text-secondary)', opacity: 0.4, margin: '0 auto 10px' }} />
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>No Content Found</h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                {searchQuery ? `No items match "${searchQuery}".` : 'No items found in this filter category.'}
+              </p>
+            </div>
+          ) : (
+            activeContentItems.map((item, idx) => {
+              const isVideo = item.type === 'video' || item.subCategory === 'LECTURE';
+              const isWatched = watchedSet.has(String(item.id));
+
+              return (
+                <div
+                  key={item.id || idx}
+                  style={{
+                    backgroundColor: 'var(--panel-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '14px',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+                    transition: 'border-color 0.18s ease'
+                  }}
+                >
+                  {/* Top Row: Thumbnail + Details + Status Checkmark */}
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    {/* Left: Thumbnail Container */}
+                    <div style={{
+                      width: '115px',
+                      aspectRatio: '16 / 9',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      backgroundColor: '#0a0a0a',
+                      flexShrink: 0,
+                      position: 'relative',
+                      border: '1px solid rgba(255,255,255,0.08)',
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                    }}
-                  >
-                    {/* Top Row: Thumbnail + Details + Status Checkmark */}
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                      {/* Left: Thumbnail container */}
-                      <div style={{
-                        width: '105px',
-                        aspectRatio: '16 / 9',
-                        borderRadius: '8px',
-                        overflow: 'hidden',
-                        backgroundColor: '#1E1610',
-                        flexShrink: 0,
-                        position: 'relative',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      {item.thumbnail ? (
+                        <img
+                          src={item.thumbnail}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          loading="lazy"
+                        />
+                      ) : isVideo ? (
+                        <Video size={24} style={{ color: 'var(--accent)' }} />
+                      ) : (
+                        <FileText size={24} style={{ color: '#38bdf8' }} />
+                      )}
+
+                      {/* Duration Tag if video */}
+                      {item.duration > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: '4px',
+                          right: '4px',
+                          background: 'rgba(0,0,0,0.85)',
+                          color: '#fff',
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          padding: '1px 4px',
+                          borderRadius: '4px'
+                        }}>
+                          {Math.floor(item.duration / 60)}m
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Middle: Details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Tag Pill (VIDEO / NOTES / DPP PDF) */}
+                      <div style={{ marginBottom: '4px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: isVideo 
+                            ? 'rgba(245, 158, 11, 0.15)' 
+                            : item.subCategory === 'NOTES' 
+                              ? 'rgba(34, 197, 94, 0.15)' 
+                              : 'rgba(168, 85, 247, 0.15)',
+                          border: `1px solid ${
+                            isVideo 
+                              ? 'rgba(245, 158, 11, 0.3)' 
+                              : item.subCategory === 'NOTES' 
+                                ? 'rgba(34, 197, 94, 0.3)' 
+                                : 'rgba(168, 85, 247, 0.3)'
+                          }`,
+                          color: isVideo 
+                            ? 'var(--accent)' 
+                            : item.subCategory === 'NOTES' 
+                              ? '#4ade80' 
+                              : '#c084fc',
+                          letterSpacing: '0.3px'
+                        }}>
+                          {item.badgeText || (isVideo ? 'VIDEO' : 'PDF')}
+                        </span>
+                      </div>
+
+                      {/* Title */}
+                      <h4 style={{
+                        fontSize: '0.88rem',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                        margin: '0 0 6px 0',
+                        lineHeight: 1.35,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}>
+                        {item.title}
+                      </h4>
+
+                      {/* Date */}
+                      {item.dateStr && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                          <Calendar size={12} />
+                          <span>{item.dateStr}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: Circular Checkmark */}
+                    <div
+                      onClick={() => markWatched(item.id)}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        backgroundColor: isWatched ? '#22c55e' : 'rgba(255, 255, 255, 0.06)',
+                        border: isWatched ? 'none' : '1px solid var(--border-color)',
+                        color: isWatched ? '#000' : 'var(--text-secondary)',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        {item.thumbnail ? (
-                          <img
-                            src={item.thumbnail}
-                            alt=""
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            loading="lazy"
-                          />
-                        ) : isVideo ? (
-                          <Video size={22} style={{ color: '#C2611D' }} />
-                        ) : (
-                          <FileText size={22} style={{ color: '#2563EB' }} />
-                        )}
-                      </div>
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        boxShadow: isWatched ? '0 0 8px rgba(34, 197, 94, 0.4)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={isWatched ? 'Mark as unwatched' : 'Mark as watched'}
+                    >
+                      <Check size={14} strokeWidth={3} />
+                    </div>
+                  </div>
 
-                      {/* Middle: Details */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {/* Tag Pill (VIDEO / NOTES / DPP PDF) */}
-                        <div style={{ marginBottom: '4px' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.68rem',
-                            fontWeight: 800,
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: isVideo ? '#FDF1DF' : '#E8F5E9',
-                            color: isVideo ? '#C2611D' : '#2E7D32',
-                            letterSpacing: '0.4px'
-                          }}>
-                            {item.badgeText || (isVideo ? 'VIDEO' : 'PDF')}
-                          </span>
-                        </div>
-
-                        {/* Title */}
-                        <h4 style={{
-                          fontSize: '0.88rem',
-                          fontWeight: 700,
-                          color: '#2B1E12',
-                          margin: '0 0 6px 0',
-                          lineHeight: 1.35,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden'
-                        }}>
-                          {item.title}
-                        </h4>
-
-                        {/* Date info */}
-                        {item.dateStr && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', color: '#8A7B6D' }}>
-                            <Calendar size={12} />
-                            <span>{item.dateStr}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Right: Circular Checkmark */}
-                      <div
-                        onClick={() => markWatched(item.id)}
+                  {/* Bottom Row: Full Width CTA Button (Screenshot 4 - Dark App Styled) */}
+                  <div>
+                    {isVideo ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          markWatched(item.id);
+                          if (onPlayVideo) onPlayVideo(item);
+                        }}
                         style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          backgroundColor: isWatched ? '#22C55E' : '#EFEAE2',
-                          color: isWatched ? '#FFFFFF' : '#8A7B6D',
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: 'var(--accent)',
+                          color: '#000',
+                          fontSize: '0.86rem',
+                          fontWeight: 700,
+                          border: 'none',
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          cursor: 'pointer',
-                          flexShrink: 0
+                          gap: '6px',
+                          boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
+                          transition: 'all 0.15s ease'
                         }}
-                        title={isWatched ? 'Completed' : 'Mark as completed'}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = 'var(--accent-hover)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'var(--accent)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
                       >
-                        <Check size={14} strokeWidth={2.5} />
-                      </div>
-                    </div>
-
-                    {/* Bottom Row: Full Width CTA Button (Screenshot 4) */}
-                    <div>
-                      {isVideo ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            markWatched(item.id);
-                            if (onPlayVideo) onPlayVideo(item);
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '10px 14px',
-                            borderRadius: '10px',
-                            backgroundColor: '#2D1D13', // Signature rich dark brown button
-                            color: '#FFFFFF',
-                            fontSize: '0.86rem',
-                            fontWeight: 700,
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            boxShadow: '0 2px 6px rgba(45, 29, 19, 0.25)',
-                            transition: 'background-color 0.15s ease'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#1D130C'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2D1D13'}
-                        >
-                          <Play size={15} fill="#FFFFFF" />
-                          <span>Watch</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            markWatched(item.id);
-                            if (item.url) window.open(item.url, '_blank');
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '10px 14px',
-                            borderRadius: '10px',
-                            backgroundColor: '#2D1D13',
-                            color: '#FFFFFF',
-                            fontSize: '0.86rem',
-                            fontWeight: 700,
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            boxShadow: '0 2px 6px rgba(45, 29, 19, 0.25)',
-                            transition: 'background-color 0.15s ease'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#1D130C'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2D1D13'}
-                        >
-                          <FileText size={15} />
-                          <span>View Notes</span>
-                        </button>
-                      )}
-                    </div>
+                        <Play size={15} fill="#000" />
+                        <span>Watch</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          markWatched(item.id);
+                          if (item.url) window.open(item.url, '_blank');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: 'rgba(56, 189, 248, 0.12)',
+                          border: '1px solid rgba(56, 189, 248, 0.35)',
+                          color: '#38bdf8',
+                          fontSize: '0.86rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = 'rgba(56, 189, 248, 0.2)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <FileText size={15} />
+                        <span>View Notes</span>
+                      </button>
+                    )}
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
