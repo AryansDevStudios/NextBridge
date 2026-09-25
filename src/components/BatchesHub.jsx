@@ -263,18 +263,35 @@ export default function BatchesHub({
                     alignItems: 'center',
                     pointerEvents: 'none'
                   }}>
-                    <span style={{
-                      fontSize: '0.68rem',
-                      fontWeight: 700,
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      backdropFilter: 'blur(6px)',
-                      background: isArchive ? 'rgba(88, 28, 135, 0.85)' : 'rgba(16, 185, 129, 0.85)',
-                      color: '#fff',
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
-                    }}>
-                      {isArchive ? '2025-26 Archive' : (batch.session || '2026-27')}
-                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        backdropFilter: 'blur(6px)',
+                        background: isArchive ? 'rgba(88, 28, 135, 0.85)' : 'rgba(16, 185, 129, 0.85)',
+                        color: '#fff',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
+                      }}>
+                        {isArchive ? '2025-26 Archive' : (batch.session || '2026-27')}
+                      </span>
+
+                      {batch.provider === 'Physics Wallah' && (
+                        <span style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          backdropFilter: 'blur(6px)',
+                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                          color: '#fff',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
+                        }}>
+                          PW Live
+                        </span>
+                      )}
+                    </div>
 
                     {isCurrentlyActive && (
                       <span style={{

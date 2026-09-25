@@ -44,6 +44,7 @@ import {
   getBatchById, 
   getBatchDisplayName 
 } from '../utils/batchConfig';
+import { pwApiService } from '../services/PwApiService';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -118,6 +119,9 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       setActiveBatchId(allowedBatchIds[0]);
     }
   }, [allowedBatchIds]);
+
+  const [pwItemsMap, setPwItemsMap] = useState({});
+  const [pwLoading, setPwLoading] = useState(false);
 
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
@@ -803,6 +807,52 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const fetchCourseData = async (batchIdToFetch) => {
     const targetBatchId = String(batchIdToFetch || activeBatchId || '176');
     setLoading(true);
+
+    const targetBatchObj = getBatchById(targetBatchId);
+    if (targetBatchId === 'pw_udaan_2027' || targetBatchId.startsWith('pw_') || targetBatchObj?.is_dynamic_pw) {
+      const pwBatchId = targetBatchObj?.pw_batch_id || '6a071d17f84ddfb496a59f76';
+      const cacheKey = `pw_batch_subjects_${pwBatchId}_v1`;
+
+      let cachedSubjects = null;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) cachedSubjects = JSON.parse(cached);
+      } catch (_) {}
+
+      if (cachedSubjects && cachedSubjects.length > 0) {
+        setCourseData({
+          course_id: targetBatchId,
+          batch_name: targetBatchObj?.batch_name || 'PW UDAAN 2.0 2027 (Class 10th)',
+          class_name: 'Class 10',
+          thumbnail: targetBatchObj?.thumbnail,
+          is_dynamic_pw: true,
+          pw_batch_id: pwBatchId,
+          subjects: cachedSubjects
+        });
+        setLoading(false);
+      }
+
+      try {
+        const liveSubjects = await pwApiService.getBatchSubjects(pwBatchId);
+        if (liveSubjects && liveSubjects.length > 0) {
+          localStorage.setItem(cacheKey, JSON.stringify(liveSubjects));
+          setCourseData({
+            course_id: targetBatchId,
+            batch_name: targetBatchObj?.batch_name || 'PW UDAAN 2.0 2027 (Class 10th)',
+            class_name: 'Class 10',
+            thumbnail: targetBatchObj?.thumbnail,
+            is_dynamic_pw: true,
+            pw_batch_id: pwBatchId,
+            subjects: liveSubjects
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch latest PW course data:", err);
+      }
+      setLoading(false);
+      return;
+    }
+
     const cacheKey = `course_data_batch_${targetBatchId}_v301`;
     
     // 1. Instant Load from Cache
@@ -845,6 +895,43 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     fetchCourseData(activeBatchId);
   }, [activeBatchId]);
 
+  // Load PW chapters & items dynamically when navigating
+  useEffect(() => {
+    if (!courseData?.is_dynamic_pw) return;
+    const pwBatchId = courseData.pw_batch_id;
+
+    // Inside a Subject (load chapters)
+    if (currentPath.length === 1) {
+      const subject = currentPath[0];
+      const mapKey = `chapters_${subject.subject_id || subject.id}`;
+      if (!pwItemsMap[mapKey]) {
+        setPwLoading(true);
+        pwApiService.getSubjectChapters(pwBatchId, subject)
+          .then(chapters => {
+            setPwItemsMap(prev => ({ ...prev, [mapKey]: chapters }));
+          })
+          .catch(err => console.error('Failed to load PW chapters:', err))
+          .finally(() => setPwLoading(false));
+      }
+    }
+
+    // Inside a Chapter (load lectures & notes)
+    if (currentPath.length === 2) {
+      const subject = currentPath[0];
+      const chapter = currentPath[1];
+      const mapKey = `content_${chapter.chapterId || chapter.id}`;
+      if (!pwItemsMap[mapKey]) {
+        setPwLoading(true);
+        pwApiService.getChapterItems(pwBatchId, subject, chapter.chapterId || chapter.id, chapter.title)
+          .then(items => {
+            setPwItemsMap(prev => ({ ...prev, [mapKey]: items }));
+          })
+          .catch(err => console.error('Failed to load PW chapter items:', err))
+          .finally(() => setPwLoading(false));
+      }
+    }
+  }, [currentPath, courseData]);
+
   const handleSelectBatch = (batchId) => {
     const strId = String(batchId);
     setActiveBatchId(strId);
@@ -853,6 +940,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     } catch (_) {}
     setCurrentPath([]);
     setSearchQuery('');
+    setPwItemsMap({});
     fetchCourseData(strId);
     setActiveTab('courses');
   };
@@ -865,7 +953,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     setSearchQuery('');
   };
 
-  const handlePlayVideo = (item) => {
+  const handlePlayVideo = async (item) => {
     if (!allowedSections.courses) {
       setBlockedDownloadItem({ item, section: 'courses' });
       return;
@@ -884,6 +972,32 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     if (!Capacitor.isNativePlatform()) {
       window.history.pushState({ player: true }, '');
     }
+
+    if (item.isDynamicPw && (!item.url || item.url === '')) {
+      try {
+        setLoading(true);
+        const { manifestUrl, clearKeys } = await pwApiService.getVideoPlaybackInfo(
+          item.batchId,
+          item.scheduleId || item.id,
+          item.masterId
+        );
+        const enrichedItem = {
+          ...item,
+          url: manifestUrl,
+          clearKeys,
+          isDash: true
+        };
+        setPlayingVideo(enrichedItem);
+      } catch (err) {
+        console.error('Failed to resolve PW video stream:', err);
+        setOfflineToast('Unable to load video stream from Physics Wallah.');
+        setTimeout(() => setOfflineToast(''), 4000);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setPlayingVideo(item);
   };
 
@@ -1017,7 +1131,28 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const currentFolder = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
   let currentItems = [];
 
-  if (searchQuery.trim().length > 0) {
+  if (courseData?.is_dynamic_pw) {
+    if (searchQuery.trim().length > 0) {
+      const qTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      const allLoaded = Object.values(pwItemsMap).flat();
+      currentItems = allLoaded.filter(item => {
+        const target = `${item.title || ''} ${item.name || ''} ${item.folder_path || ''} ${item.subject_name || ''}`.toLowerCase();
+        return qTokens.every(tok => target.includes(tok));
+      });
+    } else if (currentPath.length === 0) {
+      currentItems = (courseData.subjects || []).map(sub => ({
+        ...sub,
+        isRootSubject: true,
+        displayTitle: sub.subject_name
+      }));
+    } else if (currentPath.length === 1) {
+      const subId = currentPath[0].subject_id || currentPath[0].id;
+      currentItems = pwItemsMap[`chapters_${subId}`] || [];
+    } else if (currentPath.length >= 2) {
+      const chId = currentPath[1].chapterId || currentPath[1].id;
+      currentItems = pwItemsMap[`content_${chId}`] || [];
+    }
+  } else if (searchQuery.trim().length > 0) {
     const qTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
     currentItems = allItems.filter(item => {
       const target = `${item.title || ''} ${item.name || ''} ${item.unified_path || ''} ${item.subject_name || ''}`.toLowerCase();
@@ -2643,7 +2778,17 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
           {/* List Container */}
           <div className="list-container">
-            {currentItems.length === 0 && (
+            {pwLoading ? (
+              <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
+                <Loader2 size={36} className="animate-spin" style={{ color: 'var(--accent)', marginBottom: '14px' }} />
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: '600' }}>
+                  Loading from Physics Wallah...
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                  Fetching chapters and study materials on demand
+                </p>
+              </div>
+            ) : currentItems.length === 0 ? (
               <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
                 <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '50%', marginBottom: '16px' }}>
                   <Search size={32} style={{ color: 'var(--text-secondary)' }} />
@@ -2653,7 +2798,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                   We couldn't find any items matching your request.
                 </p>
               </div>
-            )}
+            ) : null}
             
             {currentItems.map((item, idx) => {
               if (item.isRootSubject || item.isFolder) {

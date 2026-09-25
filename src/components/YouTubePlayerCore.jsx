@@ -55,6 +55,7 @@ export default function YouTubePlayerCore({
   const videoRef = useRef(null);
   const playerShellRef = useRef(null);
   const hlsRef = useRef(null);
+  const shakaRef = useRef(null);
 
   // Playback & Timing
   const [isPlaying, setIsPlaying] = useState(false);
@@ -325,8 +326,58 @@ export default function YouTubePlayerCore({
     video.muted = isMuted;
 
     let hls;
+    let shakaPlayer = null;
+    let isDisposed = false;
 
-    if (Hls.isSupported() && targetUrl.includes('.m3u8')) {
+    const isMpd = targetUrl && (targetUrl.includes('.mpd') || item?.isDash);
+
+    if (isMpd) {
+      const initShaka = async () => {
+        try {
+          const shakaModule = await import('shaka-player/dist/shaka-player.compiled.js');
+          const shaka = shakaModule.default || shakaModule;
+          shaka.polyfill.installAll();
+          if (!shaka.Player.isBrowserSupported()) {
+            console.error('Shaka Player is not supported on this browser/environment');
+            return;
+          }
+          if (isDisposed) return;
+          shakaPlayer = new shaka.Player();
+          shakaRef.current = shakaPlayer;
+          await shakaPlayer.attach(video);
+
+          const keys = item?.clearKeys || item?.pwClearKeys;
+          if (keys) {
+            shakaPlayer.configure({
+              drm: {
+                clearKeys: keys
+              }
+            });
+          }
+
+          shakaPlayer.addEventListener('error', (event) => {
+            console.error('Shaka Player error:', event.detail);
+          });
+
+          await shakaPlayer.load(targetUrl);
+          if (isDisposed) return;
+
+          const tracks = shakaPlayer.getVariantTracks() || [];
+          const uniqueHeights = [...new Set(tracks.map(t => t.height).filter(Boolean))].sort((a, b) => b - a);
+          const opts = [{ id: -1, label: 'Auto' }];
+          uniqueHeights.forEach(h => {
+            opts.push({ id: h, label: `${h}p`, height: h });
+          });
+          setQualityLevels(opts);
+
+          restorePosition();
+          video.play().catch(() => {});
+        } catch (err) {
+          console.error('Failed to initialize Shaka Player:', err);
+        }
+      };
+      initShaka();
+    } else if (Hls.isSupported() && targetUrl.includes('.m3u8')) {
       hls = new Hls({
         debug: false,
         enableWorker: true,
@@ -476,8 +527,13 @@ export default function YouTubePlayerCore({
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
-      video.removeEventListener('ended', onEnded);
+      isDisposed = true;
       if (hls) hls.destroy();
+      if (shakaPlayer) shakaPlayer.destroy().catch(() => {});
+      if (shakaRef.current) {
+        shakaRef.current.destroy().catch(() => {});
+        shakaRef.current = null;
+      }
       if (Capacitor.isNativePlatform()) {
         ImmersiveMode.setVideoPlaying({ playing: false }).catch(() => {});
       }
@@ -1244,6 +1300,17 @@ export default function YouTubePlayerCore({
                         localStorage.setItem('global_quality', h.toString());
                         if (hlsRef.current) {
                           hlsRef.current.currentLevel = lvl.id;
+                        }
+                        if (shakaRef.current) {
+                          if (lvl.id === -1) {
+                            shakaRef.current.configure({ abr: { enabled: true } });
+                          } else {
+                            shakaRef.current.configure({ abr: { enabled: false } });
+                            const tracks = shakaRef.current.getVariantTracks().filter(t => t.height === (lvl.height || lvl.id));
+                            if (tracks.length > 0) {
+                              shakaRef.current.selectVariantTrack(tracks[0], /* clearBuffer */ true);
+                            }
+                          }
                         }
                       }}
                     >

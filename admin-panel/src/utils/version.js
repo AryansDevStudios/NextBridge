@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '2.9.0';
-export const CURRENT_LATEST_CODE = 20900;
+export const CURRENT_LATEST_VERSION = '3.0.1';
+export const CURRENT_LATEST_CODE = 30001;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '2.9.0',
-  latestVersionCode: 20900,
+  latestAppVersion: '3.0.1',
+  latestVersionCode: 30001,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Multi-class 7th–12th support, streams, and dynamic batches'
+  releaseNotes: '• Major update: Multi-class 7th–12th support, streams, and dynamic batches'
 };
 
 /**

@@ -38,7 +38,7 @@ export function getRecommendedBatchIds(classId, streamId = '') {
     case '9':
       return ['178', '179', '214', '64_old', '81_old'];
     case '10':
-      return ['176', '215', '62_old', '78_old'];
+      return ['176', '215', 'pw_udaan_2027', '62_old', '78_old'];
     case '11':
       if (s === 'commerce') {
         return ['108', '110', '223', '89_old', '56_old'];
