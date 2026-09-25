@@ -1,11 +1,11 @@
 {
-  "appId": "com.nextbridgedev.app",
-  "appName": "nextbridge",
+  "appId": "com.nextbridgedev.admin",
+  "appName": "NextBridge Admin",
   "webDir": "shell_dist",
   "bundledWebRuntime": false,
   "plugins": {
     "CapacitorHttp": {
-      "enabled": false
+      "enabled": true
     },
     "CapacitorUpdater": {
       "autoUpdate": false,
