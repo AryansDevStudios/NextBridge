@@ -57,6 +57,16 @@ export default function YouTubePlayerCore({
   const hlsRef = useRef(null);
   const shakaRef = useRef(null);
 
+  const isPwVideo = Boolean(
+    item?.isDynamicPw ||
+    item?.is_dynamic_pw ||
+    item?.isDash ||
+    item?.clearKeys ||
+    String(item?.batchId || '').startsWith('pw_') ||
+    String(item?.id || '').startsWith('pw_') ||
+    item?.provider === 'Physics Wallah'
+  );
+
   // Playback & Timing
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -1228,8 +1238,8 @@ export default function YouTubePlayerCore({
                 </button>
               )}
 
-              {/* Fullscreen Download Panel Button */}
-              {isFullscreen && (
+              {/* Fullscreen Download Panel Button (Hidden for PW lectures) */}
+              {isFullscreen && !isPwVideo && (
                 <button
                   className="yt-icon-btn"
                   onClick={() => setActivePanel?.(activePanel === 'download' ? null : 'download')}

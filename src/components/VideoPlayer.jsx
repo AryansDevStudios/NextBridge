@@ -759,9 +759,16 @@ const VideoPlayer = ({ item, onClose, user }) => {
     );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 2. Video Mode: 2-Column Desktop Viewport & Dedicated Right Side Panel
-  // ──────────────────────────────────────────────────────────────────────────
+  const isPwVideo = Boolean(
+    item?.isDynamicPw ||
+    item?.is_dynamic_pw ||
+    item?.isDash ||
+    item?.clearKeys ||
+    String(item?.batchId || '').startsWith('pw_') ||
+    String(item?.id || '').startsWith('pw_') ||
+    item?.provider === 'Physics Wallah'
+  );
+
   return (
     <div className="viewer-overlay video-mode">
       <div className="viewer-content">
@@ -809,15 +816,17 @@ const VideoPlayer = ({ item, onClose, user }) => {
 
               {/* YouTube Action Pill Carousel */}
               <div className="yt-action-carousel">
-                {/* Download Button -> Toggles Right Side Panel */}
-                <button
-                  className={`yt-action-pill ${activePanel === 'download' ? 'active' : ''}`}
-                  onClick={() => setActivePanel(activePanel === 'download' ? null : 'download')}
-                  title="Download lecture to device for offline playback"
-                >
-                  <Download size={15} />
-                  <span>Download Lecture</span>
-                </button>
+                {/* Download Button -> Toggles Right Side Panel (Hidden for PW lectures) */}
+                {!isPwVideo && (
+                  <button
+                    className={`yt-action-pill ${activePanel === 'download' ? 'active' : ''}`}
+                    onClick={() => setActivePanel(activePanel === 'download' ? null : 'download')}
+                    title="Download lecture to device for offline playback"
+                  >
+                    <Download size={15} />
+                    <span>Download Lecture</span>
+                  </button>
+                )}
 
                 {/* Notes Button -> Toggles Right Side Panel on desktop or scrolls to notes on mobile */}
                 <button 

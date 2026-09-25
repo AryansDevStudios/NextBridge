@@ -42,8 +42,8 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const APP_VERSION = '3.2.0';
-export const APP_VERSION_CODE = 30200;
+export const APP_VERSION = '3.2.3';
+export const APP_VERSION_CODE = 30203;
 // ───────────────────────────────────────────────────────────
 
 /**

@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   BATCH_CATALOG, 
   getRecommendedBatchIds, 
+  getNextTopperBatchIdsForClass,
+  getPwBatchIdsForClass,
   getBatchDisplayName,
   getStreamLabel,
   isBatchInDevelopment
@@ -75,6 +77,27 @@ export default function BatchPermissionSelector({
     }
   };
 
+  const handleSelectPwBatches = () => {
+    let pwIds = getPwBatchIdsForClass(studentClass, studentStream);
+    if (!pwIds || pwIds.length === 0) {
+      pwIds = BATCH_CATALOG.filter(b => b.is_dynamic_pw || b.provider === 'Physics Wallah' || String(b.batch_id).startsWith('pw_')).map(b => String(b.batch_id));
+    }
+    onChange(Array.from(new Set(pwIds.map(String))));
+  };
+
+  const handleSelectNextTopperBatches = () => {
+    let ntIds = getNextTopperBatchIdsForClass(studentClass, studentStream);
+    if (!ntIds || ntIds.length === 0) {
+      ntIds = BATCH_CATALOG.filter(b => !b.is_dynamic_pw && b.provider !== 'Physics Wallah' && !String(b.batch_id).startsWith('pw_')).map(b => String(b.batch_id));
+    }
+    onChange(Array.from(new Set(ntIds.map(String))));
+  };
+
+  const handleSelectAllBatches = () => {
+    const allClassIds = getRecommendedBatchIds(studentClass, studentStream);
+    onChange(Array.from(new Set(allClassIds.map(String))));
+  };
+
   const handleSelectRecommended = () => {
     // Merge recommended with any currently selected, or set to recommended
     const merged = Array.from(new Set([...selectedBatchIds, ...recommendedIds]));
@@ -118,17 +141,39 @@ export default function BatchPermissionSelector({
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
-            onClick={handleSelectRecommended}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-[#f59e0b]/15 text-[#f59e0b] hover:bg-[#f59e0b]/25 border border-[#f59e0b]/30 transition"
-            title="Add all recommended batches for this student's class and stream"
+            onClick={handleSelectPwBatches}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/40 transition active:scale-95 shadow-sm"
+            title="Select Physics Wallah (PW) batches for this student by default"
           >
-            <Sparkles size={12} />
-            <span>Select Recommended</span>
+            <span className="w-2 h-2 rounded-full bg-blue-400" />
+            <span>PW Batches</span>
           </button>
+
+          <button
+            type="button"
+            onClick={handleSelectNextTopperBatches}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/40 transition active:scale-95 shadow-sm"
+            title="Select Next Topper batches for this student by default"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>Next Topper</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSelectAllBatches}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 border border-[#f59e0b]/40 transition active:scale-95 shadow-sm"
+            title="Select All (PW + Next Topper) batches for this student by default"
+          >
+            <CheckSquare size={13} />
+            <span>All Batches</span>
+          </button>
+
           <button
             type="button"
             onClick={handleClearAll}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-[#222] text-[#9ca3af] hover:text-white hover:bg-[#2a2a2a] border border-[#333] transition"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-[#222] text-[#9ca3af] hover:text-white hover:bg-[#2a2a2a] border border-[#333] transition"
+            title="Clear all selected batches"
           >
             <RotateCcw size={11} />
             <span>Clear</span>
