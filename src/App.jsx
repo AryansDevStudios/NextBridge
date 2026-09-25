@@ -180,10 +180,23 @@ export default function App() {
 
       // 3. Check if remote forced update lockout is active
       const v = runtimeVersionRef.current;
-      if (isUpdateRequired(data.forcedUpdate, v.appVersion, v.versionCode, v.isNative)) {
+      const updateNeeded = isUpdateRequired(data.forcedUpdate, v.appVersion, v.versionCode, v.isNative);
+      if (updateNeeded) {
         setForcedUpdateInfo(data.forcedUpdate);
       } else {
         setForcedUpdateInfo(null);
+        // Self-unlocking: If forcedUpdate is still flagged enabled in DB but running version fulfills it,
+        // auto-resolve in Firestore to fix DB mismatch
+        if (data.forcedUpdate?.enabled) {
+          const targetPlatform = data.forcedUpdate.targetPlatform || 'all';
+          const currentPlatform = v.isNative ? 'android' : 'web';
+          if (targetPlatform === 'all' || targetPlatform === currentPlatform) {
+            updateDoc(doc(db, 'students', user.id), {
+              'forcedUpdate.enabled': false,
+              'forcedUpdate.resolvedAt': new Date().toISOString()
+            }).catch(console.warn);
+          }
+        }
       }
 
       // 4. Keep local user state synchronized with server
@@ -433,14 +446,28 @@ export default function App() {
               localStorage.setItem('student_device_bound_at', String(Date.now()));
             }
 
-            await updateDoc(doc(db, 'students', targetStudent.id), telemetryPayload).catch(console.warn);
-
             // Check if remote forced update lockout is active
-            if (isUpdateRequired(targetStudent.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative)) {
+            const updateNeeded = isUpdateRequired(targetStudent.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative);
+            if (updateNeeded) {
               setForcedUpdateInfo(targetStudent.forcedUpdate);
             } else {
               setForcedUpdateInfo(null);
+              // Self-unlocking: If the student had a forcedUpdate lock but running platform meets/exceeds requirement,
+              // auto-resolve in Firestore so DB stays clean without manual admin intervention
+              if (targetStudent.forcedUpdate?.enabled) {
+                const targetPlatform = targetStudent.forcedUpdate.targetPlatform || 'all';
+                const currentPlatform = vInfo.isNative ? 'android' : 'web';
+                if (targetPlatform === 'all' || targetPlatform === currentPlatform) {
+                  telemetryPayload.forcedUpdate = {
+                    ...targetStudent.forcedUpdate,
+                    enabled: false,
+                    resolvedAt: new Date().toISOString()
+                  };
+                }
+              }
             }
+
+            await updateDoc(doc(db, 'students', targetStudent.id), telemetryPayload).catch(console.warn);
 
             setUser(targetStudent);
             localStorage.setItem('student_user', JSON.stringify(targetStudent));
@@ -609,14 +636,28 @@ export default function App() {
         telemetryPayload.deviceRevokedAt = null;
         localStorage.setItem('student_device_bound_at', String(Date.now()));
       }
-      await updateDoc(doc(db, 'students', studentDoc.id), telemetryPayload).catch(console.warn);
-
       // Check remote forced update requirement
-      if (isUpdateRequired(studentData.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative)) {
+      const updateNeeded = isUpdateRequired(studentData.forcedUpdate, vInfo.appVersion, vInfo.versionCode, vInfo.isNative);
+      if (updateNeeded) {
         setForcedUpdateInfo(studentData.forcedUpdate);
       } else {
         setForcedUpdateInfo(null);
+        // Self-unlocking: If student had a forcedUpdate lock but running platform meets/exceeds requirement,
+        // auto-resolve in Firestore so DB stays clean without manual admin intervention
+        if (studentData.forcedUpdate?.enabled) {
+          const targetPlatform = studentData.forcedUpdate.targetPlatform || 'all';
+          const currentPlatform = vInfo.isNative ? 'android' : 'web';
+          if (targetPlatform === 'all' || targetPlatform === currentPlatform) {
+            telemetryPayload.forcedUpdate = {
+              ...studentData.forcedUpdate,
+              enabled: false,
+              resolvedAt: new Date().toISOString()
+            };
+          }
+        }
       }
+
+      await updateDoc(doc(db, 'students', studentDoc.id), telemetryPayload).catch(console.warn);
 
       // Log successful login
       addDoc(collection(db, 'students', studentDoc.id, 'logs'), {

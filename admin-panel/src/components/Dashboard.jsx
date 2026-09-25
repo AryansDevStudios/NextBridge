@@ -32,7 +32,8 @@ import {
   CURRENT_LATEST_VERSION, 
   DEFAULT_ANDROID_VERSION_CONFIG, 
   getAndroidVersionStatus, 
-  compareSemver 
+  compareSemver,
+  isStudentUpdateLocked
 } from '../utils/version';
 
 function generatePAT() {
@@ -98,6 +99,17 @@ export default function Dashboard({ onLogout }) {
     const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setStudents(data);
+
+      // Auto-heal database mismatch: if student has fulfilled their forced update,
+      // silently clear forcedUpdate.enabled in Firestore so database stays clean.
+      data.forEach(s => {
+        if (s.forcedUpdate?.enabled && !isStudentUpdateLocked(s)) {
+          updateDoc(doc(db, 'students', s.id), {
+            'forcedUpdate.enabled': false,
+            'forcedUpdate.resolvedAt': new Date().toISOString()
+          }).catch(console.warn);
+        }
+      });
     });
 
     // Real-time listener for Android Version Control settings in Firestore
@@ -490,7 +502,7 @@ export default function Dashboard({ onLogout }) {
                               </>
                             );
                           })()}
-                          {s.forcedUpdate?.enabled && (
+                          {isStudentUpdateLocked(s) && (
                             <span className="text-[10px] px-1.5 py-0.2 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 animate-pulse">
                               Lockout
                             </span>
@@ -599,7 +611,7 @@ export default function Dashboard({ onLogout }) {
                                   })()}
                                 </div>
                                 <div className="text-xs text-[#9ca3af] break-all w-36 font-mono mt-0.5">{s.device.androidId}</div>
-                                {s.forcedUpdate?.enabled && (
+                                {isStudentUpdateLocked(s) && (
                                   <div className="mt-1">
                                     <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 inline-flex items-center gap-1 animate-pulse">
                                       <Download size={10} />
@@ -612,7 +624,7 @@ export default function Dashboard({ onLogout }) {
                           ) : (
                             <div className="flex flex-col gap-1">
                               <span className="text-[#9ca3af] italic">Not logged in yet</span>
-                              {s.forcedUpdate?.enabled && (
+                              {isStudentUpdateLocked(s) && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-red-950/40 text-red-400 border-red-800 w-fit">
                                   Update Locked
                                 </span>

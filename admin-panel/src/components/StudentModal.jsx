@@ -28,7 +28,8 @@ import {
   CURRENT_LATEST_CODE, 
   DEFAULT_ANDROID_VERSION_CONFIG, 
   getAndroidVersionStatus, 
-  compareSemver 
+  compareSemver,
+  isStudentUpdateLocked 
 } from '../utils/version';
 
 function toDateTimeLocalString(timestamp) {
@@ -70,7 +71,7 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
 
   // Remote Forced Update Lockout State
   const [forcedUpdateEnabled, setForcedUpdateEnabled] = useState(
-    student.forcedUpdate?.enabled ?? false
+    isStudentUpdateLocked(student)
   );
   const [minVersion, setMinVersion] = useState(
     student.forcedUpdate?.minVersion || CURRENT_LATEST_VERSION
@@ -113,7 +114,7 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
     // Only resync if the lockout data itself actually changed to avoid overwriting in-flight edits
     if (JSON.stringify(prev) !== JSON.stringify(next)) {
       prevForcedUpdateRef.current = next;
-      setForcedUpdateEnabled(next?.enabled ?? false);
+      setForcedUpdateEnabled(isStudentUpdateLocked(student));
       setMinVersion(next?.minVersion || CURRENT_LATEST_VERSION);
       setMinVersionCode(next?.minVersionCode || CURRENT_LATEST_CODE);
       setDownloadUrl(next?.downloadUrl || '');
@@ -346,14 +347,23 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
         class: studentClass,
         personalDetails: { school, area },
         allowedSections,
-        forcedUpdate: {
-          enabled: forcedUpdateEnabled,
+        forcedUpdate: forcedUpdateEnabled ? {
+          enabled: true,
           minVersion: minVersion.trim(),
           minVersionCode: Number(minVersionCode) || CURRENT_LATEST_CODE,
           downloadUrl: downloadUrl.trim(),
           message: updateMessage.trim(),
           releaseNotes: releaseNotes.trim(),
           targetPlatform,
+          updatedAt: new Date().toISOString()
+        } : {
+          enabled: false,
+          minVersion: '',
+          minVersionCode: 0,
+          downloadUrl: '',
+          message: '',
+          releaseNotes: '',
+          targetPlatform: 'android',
           updatedAt: new Date().toISOString()
         }
       });
@@ -758,6 +768,11 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
                       {forcedUpdateEnabled && (
                         <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-800 px-1.5 py-0.5 rounded font-bold uppercase animate-pulse">
                           Lockout Active
+                        </span>
+                      )}
+                      {!forcedUpdateEnabled && student.forcedUpdate?.enabled && !isStudentUpdateLocked(student) && (
+                        <span className="text-[10px] bg-emerald-950/40 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded font-semibold">
+                          Update Fulfilled (v{student.appVersion || minVersion})
                         </span>
                       )}
                     </label>

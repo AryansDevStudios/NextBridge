@@ -28,15 +28,15 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '2.7.6';
-export const CURRENT_LATEST_CODE = 20706;
+export const CURRENT_LATEST_VERSION = '2.7.7';
+export const CURRENT_LATEST_CODE = 20707;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '2.7.6',
-  latestVersionCode: 20706,
+  latestAppVersion: '2.7.7',
+  latestVersionCode: 20707,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
   releaseNotes: '• Performance and stability enhancements'
@@ -172,5 +172,69 @@ export function getAndroidVersionStatus(student, config = DEFAULT_ANDROID_VERSIO
     label: `v${studentVersion} (Latest)`,
     badgeClass: 'bg-emerald-950/50 text-emerald-400 border-emerald-800 font-semibold'
   };
+}
+
+/**
+ * Determines whether a student is currently locked out by a forced update requirement.
+ * A student is ONLY truly locked if:
+ * 1. forcedUpdate is enabled in the database
+ * 2. The student's platform matches targetPlatform (web students are never locked by android targets)
+ * 3. The student has NOT yet satisfied the requirement (appVersion < minVersion OR versionCode < minVersionCode)
+ *
+ * If a student has already updated to a version >= minVersion (and versionCode >= minVersionCode),
+ * they are NOT locked out, even if forcedUpdate.enabled is still true in the database.
+ *
+ * @param {Object} student
+ * @returns {boolean}
+ */
+export function isStudentUpdateLocked(student) {
+  if (!student?.forcedUpdate?.enabled) {
+    return false;
+  }
+
+  const isAndroid = student.platform === 'android' || (student.device && (!student.platform || student.platform === 'android'));
+  const currentPlatform = isAndroid ? 'android' : 'web';
+  const targetPlatform = student.forcedUpdate.targetPlatform || 'all';
+
+  if (targetPlatform !== 'all' && targetPlatform !== currentPlatform) {
+    return false;
+  }
+
+  const minVersion = student.forcedUpdate.minVersion;
+  const minCode = Number(student.forcedUpdate.minVersionCode || 0);
+
+  // If student hasn't logged in / no appVersion recorded yet:
+  if (!student.appVersion) {
+    return Boolean(minVersion || minCode);
+  }
+
+  // 1. Check SemVer
+  if (minVersion && compareSemver(student.appVersion, minVersion) < 0) {
+    return true;
+  }
+
+  // 2. Check Version Code (native android only)
+  if (isAndroid && minCode > 0) {
+    const studentCode = Number(student.versionCode || 0);
+    if (studentCode > 0 && studentCode < minCode) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Checks whether a student had a forced update applied, but has already fulfilled it
+ * (i.e. forcedUpdate.enabled is true in DB, but their installed appVersion / versionCode meets or exceeds the requirement).
+ *
+ * @param {Object} student
+ * @returns {boolean}
+ */
+export function isStudentUpdateFulfilled(student) {
+  if (!student?.forcedUpdate?.enabled) {
+    return false;
+  }
+  return !isStudentUpdateLocked(student);
 }
 
