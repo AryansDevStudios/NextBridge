@@ -379,6 +379,7 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
         class: studentClass,
         stream: getStreamsForClass(studentClass).length > 0 ? studentStream : '',
         allowedBatches: selectedBatchIds,
+        hasPwAccess: selectedBatchIds.some(id => String(id).startsWith('pw_')),
         personalDetails: { school, area },
         allowedSections,
         forcedUpdate: forcedUpdateEnabled ? {
