@@ -892,6 +892,22 @@ export default function PwBatchExplorer({
               const isVideo = item.type === 'video' || item.subCategory === 'LECTURE';
               const isWatched = watchedSet.has(String(item.id));
 
+              const handleOpenItem = () => {
+                markWatched(item.id);
+                if (!onPlayVideo) return;
+                if (isVideo) {
+                  onPlayVideo(item);
+                } else {
+                  onPlayVideo({
+                    ...item,
+                    type: 'pdf',
+                    title: item.title || 'Physics Wallah Notes',
+                    url: item.url || item.raw_file_url,
+                    subject_name: item.subject_name || selectedSubject?.subject_name || 'Physics Wallah'
+                  });
+                }
+              };
+
               return (
                 <div
                   key={item.id || idx}
@@ -910,19 +926,23 @@ export default function PwBatchExplorer({
                   {/* Top Row: Thumbnail + Details + Status Checkmark */}
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                     {/* Left: Thumbnail Container */}
-                    <div style={{
-                      width: '115px',
-                      aspectRatio: '16 / 9',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      backgroundColor: '#0a0a0a',
-                      flexShrink: 0,
-                      position: 'relative',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
+                    <div 
+                      onClick={handleOpenItem}
+                      style={{
+                        width: '115px',
+                        aspectRatio: '16 / 9',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        backgroundColor: '#0a0a0a',
+                        flexShrink: 0,
+                        position: 'relative',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}
+                    >
                       {item.thumbnail ? (
                         <img
                           src={item.thumbnail}
@@ -955,7 +975,10 @@ export default function PwBatchExplorer({
                     </div>
 
                     {/* Middle: Details */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div 
+                      onClick={handleOpenItem}
+                      style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                    >
                       {/* Tag Pill (VIDEO / NOTES / DPP PDF) */}
                       <div style={{ marginBottom: '4px' }}>
                         <span style={{
@@ -1013,7 +1036,10 @@ export default function PwBatchExplorer({
 
                     {/* Right: Circular Checkmark */}
                     <div
-                      onClick={() => markWatched(item.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markWatched(item.id);
+                      }}
                       style={{
                         width: '24px',
                         height: '24px',
@@ -1040,10 +1066,7 @@ export default function PwBatchExplorer({
                     {isVideo ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          markWatched(item.id);
-                          if (onPlayVideo) onPlayVideo(item);
-                        }}
+                        onClick={handleOpenItem}
                         style={{
                           width: '100%',
                           padding: '10px 14px',
@@ -1076,10 +1099,7 @@ export default function PwBatchExplorer({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => {
-                          markWatched(item.id);
-                          if (item.url) window.open(item.url, '_blank');
-                        }}
+                        onClick={handleOpenItem}
                         style={{
                           width: '100%',
                           padding: '10px 14px',
@@ -1106,7 +1126,7 @@ export default function PwBatchExplorer({
                         }}
                       >
                         <FileText size={15} />
-                        <span>View Notes</span>
+                        <span>{item.subCategory === 'DPP_PDF' ? 'View DPP' : 'View Notes'}</span>
                       </button>
                     )}
                   </div>

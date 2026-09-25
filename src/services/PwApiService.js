@@ -161,14 +161,30 @@ export const pwApiService = {
       });
     }
 
+    // Helper to safely resolve attachment URLs from PW responses
+    const resolveAttachmentPdfUrl = (d) => {
+      const homework = d.homeworkIds?.[0];
+      const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
+      let rawUrl = attach?.baseUrl || '';
+      if (attach?.key && !rawUrl.includes(attach.key)) {
+        rawUrl = rawUrl ? `${rawUrl.replace(/\/+$/, '')}/${attach.key.replace(/^\/+/, '')}` : attach.key;
+      }
+      if (!rawUrl && attach?.url) {
+        rawUrl = attach.url;
+      }
+      if (!rawUrl && d.fileUrl) {
+        rawUrl = d.fileUrl;
+      }
+      if (!rawUrl) return '';
+      return rawUrl.startsWith('http') ? rawUrl : `${PW_BASE_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+    };
+
     // Parse Notes
     if (notesRes.status === 'fulfilled' && Array.isArray(notesRes.value)) {
       notesRes.value.forEach(item => {
         const d = item.data || {};
         const homework = d.homeworkIds?.[0];
-        const attach = homework?.attachmentIds?.[0];
-        const rawUrl = attach?.baseUrl || '';
-        const pdfUrl = rawUrl.startsWith('http') ? rawUrl : `${PW_BASE_URL}${rawUrl}`;
+        const pdfUrl = resolveAttachmentPdfUrl(d);
 
         items.push({
           id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
@@ -194,9 +210,7 @@ export const pwApiService = {
       dppPdfRes.value.forEach(item => {
         const d = item.data || {};
         const homework = d.homeworkIds?.[0];
-        const attach = homework?.attachmentIds?.[0];
-        const rawUrl = attach?.baseUrl || '';
-        const pdfUrl = rawUrl.startsWith('http') ? rawUrl : `${PW_BASE_URL}${rawUrl}`;
+        const pdfUrl = resolveAttachmentPdfUrl(d);
 
         items.push({
           id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,

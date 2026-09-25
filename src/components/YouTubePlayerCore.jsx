@@ -295,10 +295,11 @@ export default function YouTubePlayerCore({
           const recents = rawRecents ? JSON.parse(rawRecents) : [];
           const filtered = recents.filter((r) => String(r.id) !== String(curItem.id));
           const entry = {
+            ...curItem,
             id: curItem.id,
             title: curItem.title || 'Video Lecture',
             type: 'video',
-            url: curItem.url,
+            url: curItem.isDynamicPw ? '' : curItem.url,
             duration: video.duration || curItem.duration || 0,
             thumbnail: curItem.thumbnail || '',
             subject_name: curItem.subject_name || curItem.subjectName || '',
@@ -356,8 +357,9 @@ export default function YouTubePlayerCore({
         localStorage.setItem('local_video_stats', JSON.stringify(localStats));
       } catch (_) {}
 
-      if (currentUser?.id) {
-        addDoc(collection(db, 'students', currentUser.id, 'logs'), {
+      const studentId = currentUser?.id || currentUser?.uid;
+      if (studentId) {
+        addDoc(collection(db, 'students', studentId, 'logs'), {
           type: 'watch',
           videoId: curItem?.id || '',
           videoTitle: curItem?.title || 'Unknown Video',
@@ -366,7 +368,7 @@ export default function YouTubePlayerCore({
           timestamp: new Date().toISOString()
         }).catch(() => {});
 
-        updateDoc(doc(db, 'students', currentUser.id), {
+        updateDoc(doc(db, 'students', studentId), {
           totalVideoTime: increment(durationSecs),
           lastActive: new Date().toISOString(),
           [`dailyVideoTime.${todayKey}`]: increment(durationSecs),
@@ -444,7 +446,7 @@ export default function YouTubePlayerCore({
           shakaPlayer.configure({
             drm: drmConfig,
             streaming: {
-              bufferingGoal: 30, // 30s forward buffer prevents stalls on network variance & DRM decryption
+              bufferingGoal: 60, // 60s (1 minute max) forward prefetch buffer prevents stalls
               rebufferingGoal: 2, // 2s resume threshold for snappy recovery
               bufferBehind: 30, // 30s backward buffer for instant rewind
               retryParameters: {
@@ -534,9 +536,9 @@ export default function YouTubePlayerCore({
         debug: false,
         enableWorker: true,
         backBufferLength: 30,
-        maxBufferLength: 20,
-        maxMaxBufferLength: 40,
-        maxBufferSize: 30 * 1024 * 1024,
+        maxBufferLength: 60, // 60s (1 minute max) forward prefetch buffer
+        maxMaxBufferLength: 60, // Enforce strict 60s maximum forward buffer
+        maxBufferSize: 60 * 1024 * 1024,
         startPosition: initialSeek > 0 ? initialSeek : -1
       });
       hlsRef.current = hls;

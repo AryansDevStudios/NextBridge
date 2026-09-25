@@ -998,7 +998,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       window.history.pushState({ player: true }, '');
     }
 
-    if (item.isDynamicPw && (!item.url || item.url === '')) {
+    if (item.type !== 'pdf' && item.isDynamicPw && (!item.url || item.url === '')) {
       try {
         setLoading(true);
         const { manifestUrl, clearKeys } = await pwApiService.getVideoPlaybackInfo(

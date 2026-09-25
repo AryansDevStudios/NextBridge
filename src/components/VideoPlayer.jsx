@@ -252,10 +252,11 @@ const VideoPlayer = ({ item, onClose, user }) => {
       let pdfStartTime = Date.now();
       const flushPdfTime = () => {
         const elapsedSecs = Math.floor((Date.now() - pdfStartTime) / 1000);
-        if (elapsedSecs >= 3 && user?.id) {
+        const studentId = user?.id || user?.uid;
+        if (elapsedSecs >= 3 && studentId) {
           pdfStartTime = Date.now();
           const cleanDocId = String(item.id || 'doc_' + Math.random().toString(36).slice(2, 8)).replace(/[./#[\]$]/g, '_');
-          addDoc(collection(db, 'students', user.id, 'logs'), {
+          addDoc(collection(db, 'students', studentId, 'logs'), {
             type: 'notes',
             noteId: item.id || '',
             noteTitle: item.title || 'Study Material / Notes',
@@ -265,7 +266,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
           }).catch(() => {});
 
           const todayKey = new Date().toISOString().slice(0, 10);
-          updateDoc(doc(db, 'students', user.id), {
+          updateDoc(doc(db, 'students', studentId), {
             totalNotesTime: increment(elapsedSecs),
             lastActive: new Date().toISOString(),
             [`dailyNotesTime.${todayKey}`]: increment(elapsedSecs),
