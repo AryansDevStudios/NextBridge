@@ -19,7 +19,6 @@ import {
   MoreVertical,
   Headphones,
   Bookmark,
-  Tv,
   Eye,
   EyeOff
 } from 'lucide-react';
@@ -27,11 +26,10 @@ import { downloadManager } from '../services/DownloadManager';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
 import RightSidePanel from './RightSidePanel';
+import NotesTaker from './NotesTaker';
 import './YouTubePlayer.css';
 
 export { formatSeekTime, convertDownloadUrlToHls };
-
-const ImmersiveMode = registerPlugin('ImmersiveMode');
 
 function formatDuration(seconds) {
   if (!seconds || isNaN(seconds)) return '';
@@ -72,7 +70,9 @@ const VideoPlayer = ({ item, onClose, user }) => {
   // ── Video & Panel States ──
   const [isAudioOnlyMode, setIsAudioOnlyMode] = useState(false);
   const [activePanel, setActivePanel] = useState(null); // null | 'notes' | 'download'
-  const [isInPip, setIsInPip] = useState(false);
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(() => {
+    return parseFloat(localStorage.getItem(`lecture_pos_${item.id}`)) || 0;
+  });
 
   const [isHistoryHidden, setIsHistoryHidden] = useState(() => {
     try {
@@ -94,13 +94,43 @@ const VideoPlayer = ({ item, onClose, user }) => {
     }
   });
 
+  // Track live playback time for timestamp notes
+  useEffect(() => {
+    let videoEl = document.querySelector('.yt-video-element') || document.querySelector('video');
+    const updateTime = () => {
+      if (videoEl && !isNaN(videoEl.currentTime)) {
+        setCurrentPlaybackTime(videoEl.currentTime);
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (!videoEl) {
+        videoEl = document.querySelector('.yt-video-element') || document.querySelector('video');
+      }
+      if (videoEl && !videoEl.paused) {
+        updateTime();
+      }
+    }, 500);
+
+    const onTimeUpdate = () => updateTime();
+    videoEl?.addEventListener('timeupdate', onTimeUpdate);
+
+    return () => {
+      clearInterval(interval);
+      videoEl?.removeEventListener('timeupdate', onTimeUpdate);
+    };
+  }, [item?.id]);
+
   const handleAddNote = (presetText) => {
     const textToAdd = (presetText || '').trim();
     if (!textToAdd) return;
-    const currentPos = parseFloat(localStorage.getItem(`lecture_pos_${item.id}`)) || 0;
+    const video = document.querySelector('.yt-video-element') || document.querySelector('video');
+    const pos = (video && !isNaN(video.currentTime) && video.currentTime > 0)
+      ? video.currentTime
+      : (currentPlaybackTime || parseFloat(localStorage.getItem(`lecture_pos_${item.id}`)) || 0);
     const newNote = {
       id: Date.now().toString(),
-      time: currentPos,
+      time: pos,
       text: textToAdd,
       createdAt: new Date().toISOString()
     };
@@ -165,35 +195,16 @@ const VideoPlayer = ({ item, onClose, user }) => {
     } catch (_) {}
   };
 
-  useEffect(() => {
-    const handlePipChange = (e) => {
-      setIsInPip(Boolean(e.detail?.isPip));
-    };
-    window.addEventListener('app:pip-mode-change', handlePipChange);
-    return () => window.removeEventListener('app:pip-mode-change', handlePipChange);
-  }, []);
-
-  const handleTogglePip = async () => {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await ImmersiveMode.enterPip();
-        return;
-      } catch (err) {
-        console.warn('Native PiP enter error:', err);
+  const handleNotesPillClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      const el = document.querySelector('.yt-mobile-notes-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+        const input = el.querySelector('.notes-text-input');
+        if (input) input.focus();
       }
-    }
-
-    try {
-      const v = document.querySelector('.yt-video-element') || document.querySelector('video');
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else if (v && v.requestPictureInPicture) {
-        await v.requestPictureInPicture();
-      } else {
-        showToast('Picture-in-Picture is not supported by your browser');
-      }
-    } catch (e) {
-      showToast('Could not start Picture-in-Picture');
+    } else {
+      setActivePanel(activePanel === 'notes' ? null : 'notes');
     }
   };
 
@@ -751,14 +762,9 @@ const VideoPlayer = ({ item, onClose, user }) => {
   // ──────────────────────────────────────────────────────────────────────────
   // 2. Video Mode: 2-Column Desktop Viewport & Dedicated Right Side Panel
   // ──────────────────────────────────────────────────────────────────────────
-  const currentPos = parseFloat(localStorage.getItem(`lecture_pos_${item.id}`)) || 0;
-
   return (
-    <div 
-      className={`viewer-overlay video-mode ${isInPip ? 'pip-active' : ''}`}
-      style={isInPip ? { background: '#000', padding: 0, margin: 0, overflow: 'hidden' } : {}}
-    >
-      <div className="viewer-content" style={isInPip ? { padding: 0, margin: 0, height: '100vh', width: '100vw' } : {}}>
+    <div className="viewer-overlay video-mode">
+      <div className="viewer-content">
         <div className={`yt-desktop-page ${activePanel ? 'with-side-panel' : ''}`}>
           {/* ── Main Left Column (Video Surface + Details + Action Pills) ── */}
           <div className="yt-primary-col">
@@ -776,96 +782,96 @@ const VideoPlayer = ({ item, onClose, user }) => {
               onToggleAudioOnly={() => setIsAudioOnlyMode(!isAudioOnlyMode)}
             />
 
-            {!isInPip && (
-              <div className="yt-info-section" style={{ padding: '16px 4px' }}>
-                <h1 className="yt-title" style={{ fontSize: '1.25rem', marginBottom: 6 }}>
-                  {item.title}
-                </h1>
+            <div className="yt-info-section" style={{ padding: '16px 4px' }}>
+              <h1 className="yt-title" style={{ fontSize: '1.25rem', marginBottom: 6 }}>
+                {item.title}
+              </h1>
 
-                <div className="yt-meta" style={{ marginBottom: 14 }}>
-                  {(item.subject_name || item.subjectName) && (
-                    <span className="yt-meta-item" style={{ fontWeight: 600, color: 'var(--accent, #f59e0b)' }}>
-                      {item.subject_name || item.subjectName}
-                    </span>
-                  )}
-                  {item.created_at && (
-                    <span className="yt-meta-item">
-                      <Calendar size={15} />
-                      {formatDate(item.created_at)}
-                    </span>
-                  )}
-                  {item.duration > 0 && (
-                    <span className="yt-meta-item">
-                      <Clock size={15} />
-                      {formatDuration(item.duration)}
-                    </span>
-                  )}
-                </div>
-
-                {/* YouTube Action Pill Carousel */}
-                <div className="yt-action-carousel">
-                  {/* Download Button -> Toggles Right Side Panel */}
-                  <button
-                    className={`yt-action-pill ${activePanel === 'download' ? 'active' : ''}`}
-                    onClick={() => setActivePanel(activePanel === 'download' ? null : 'download')}
-                    title="Download lecture to device for offline playback"
-                  >
-                    <Download size={15} />
-                    <span>Download Lecture</span>
-                  </button>
-
-                  {/* Notes Button -> Toggles Right Side Panel */}
-                  <button 
-                    onClick={() => setActivePanel(activePanel === 'notes' ? null : 'notes')}
-                    className={`yt-action-pill ${activePanel === 'notes' ? 'active' : ''}`}
-                    title="Open timestamped notes panel on the right side"
-                  >
-                    <Bookmark size={15} />
-                    <span>Notes ({notes.length})</span>
-                  </button>
-
-                  {/* Audio-only battery saver */}
-                  <button 
-                    onClick={() => {
-                      const nextState = !isAudioOnlyMode;
-                      setIsAudioOnlyMode(nextState);
-                      window.dispatchEvent(new CustomEvent('player:toggle-audio', { detail: { active: nextState } }));
-                    }}
-                    className={`yt-action-pill ${isAudioOnlyMode ? 'active' : ''}`}
-                    title="Toggle battery-saving background audio mode"
-                  >
-                    <Headphones size={15} />
-                    <span>{isAudioOnlyMode ? 'Video Mode' : 'Audio Mode'}</span>
-                  </button>
-
-                  {/* Picture-in-Picture */}
-                  <button 
-                    onClick={handleTogglePip}
-                    className="yt-action-pill"
-                    title="Picture in Picture (Floating window)"
-                  >
-                    <Tv size={15} />
-                    <span>Pop-out (PiP)</span>
-                  </button>
-
-                  {/* Hide from Watch History */}
-                  <button 
-                    onClick={handleToggleHistoryHide}
-                    className={`yt-action-pill ${isHistoryHidden ? 'active' : ''}`}
-                    title={isHistoryHidden ? "Hidden from your watch history (click to restore)" : "Hide from your watch history"}
-                  >
-                    {isHistoryHidden ? <EyeOff size={15} /> : <Eye size={15} />}
-                    <span>{isHistoryHidden ? 'Hidden from History' : 'Hide from History'}</span>
-                  </button>
-
-                  {/* Close Player */}
-                  <button className="yt-action-pill" onClick={onClose} title="Exit player">
-                    <X size={15} />
-                    <span>Close Player</span>
-                  </button>
-                </div>
+              <div className="yt-meta" style={{ marginBottom: 14 }}>
+                {(item.subject_name || item.subjectName) && (
+                  <span className="yt-meta-item" style={{ fontWeight: 600, color: 'var(--accent, #f59e0b)' }}>
+                    {item.subject_name || item.subjectName}
+                  </span>
+                )}
+                {item.created_at && (
+                  <span className="yt-meta-item">
+                    <Calendar size={15} />
+                    {formatDate(item.created_at)}
+                  </span>
+                )}
+                {item.duration > 0 && (
+                  <span className="yt-meta-item">
+                    <Clock size={15} />
+                    {formatDuration(item.duration)}
+                  </span>
+                )}
               </div>
-            )}
+
+              {/* YouTube Action Pill Carousel */}
+              <div className="yt-action-carousel">
+                {/* Download Button -> Toggles Right Side Panel */}
+                <button
+                  className={`yt-action-pill ${activePanel === 'download' ? 'active' : ''}`}
+                  onClick={() => setActivePanel(activePanel === 'download' ? null : 'download')}
+                  title="Download lecture to device for offline playback"
+                >
+                  <Download size={15} />
+                  <span>Download Lecture</span>
+                </button>
+
+                {/* Notes Button -> Toggles Right Side Panel on desktop or scrolls to notes on mobile */}
+                <button 
+                  onClick={handleNotesPillClick}
+                  className={`yt-action-pill ${activePanel === 'notes' ? 'active' : ''}`}
+                  title="Lecture notes and bookmarks"
+                >
+                  <Bookmark size={15} />
+                  <span>Notes ({notes.length})</span>
+                </button>
+
+                {/* Audio-only battery saver */}
+                <button 
+                  onClick={() => {
+                    const nextState = !isAudioOnlyMode;
+                    setIsAudioOnlyMode(nextState);
+                    window.dispatchEvent(new CustomEvent('player:toggle-audio', { detail: { active: nextState } }));
+                  }}
+                  className={`yt-action-pill ${isAudioOnlyMode ? 'active' : ''}`}
+                  title="Toggle battery-saving background audio mode"
+                >
+                  <Headphones size={15} />
+                  <span>{isAudioOnlyMode ? 'Video Mode' : 'Audio Mode'}</span>
+                </button>
+
+                {/* Hide from Watch History */}
+                <button 
+                  onClick={handleToggleHistoryHide}
+                  className={`yt-action-pill ${isHistoryHidden ? 'active' : ''}`}
+                  title={isHistoryHidden ? "Hidden from your watch history (click to restore)" : "Hide from your watch history"}
+                >
+                  {isHistoryHidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                  <span>{isHistoryHidden ? 'Hidden from History' : 'Hide from History'}</span>
+                </button>
+
+                {/* Close Player */}
+                <button className="yt-action-pill" onClick={onClose} title="Exit player">
+                  <X size={15} />
+                  <span>Close Player</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ── Mobile-Only Default Notes Taker Section (Utilises space below video viewport) ── */}
+            <div className="yt-mobile-notes-section">
+              <NotesTaker
+                notes={notes}
+                currentTime={currentPlaybackTime}
+                onAddNote={handleAddNote}
+                onDeleteNote={handleDeleteNote}
+                onSeek={handleSeekToNote}
+                isMobile={true}
+              />
+            </div>
           </div>
 
           {/* ── Dedicated Right Side Panel (Desktop Viewport & Mobile Drawer) ── */}
@@ -878,7 +884,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
                 url={item.url}
                 user={user}
                 notes={notes}
-                currentTime={currentPos}
+                currentTime={currentPlaybackTime}
                 onAddNote={handleAddNote}
                 onDeleteNote={handleDeleteNote}
                 onSeek={handleSeekToNote}

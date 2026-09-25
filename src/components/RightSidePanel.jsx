@@ -18,6 +18,7 @@ import { downloadManager } from '../services/DownloadManager';
 import { formatSeekTime } from '../utils/playerHelpers';
 import { db } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
+import NotesTaker from './NotesTaker';
 
 export default function RightSidePanel({
   type, // 'notes' | 'download'
@@ -31,9 +32,6 @@ export default function RightSidePanel({
   onDeleteNote,
   onSeek
 }) {
-  // ── Notes State ──
-  const [noteInput, setNoteInput] = useState('');
-
   // ── Download State ──
   const [mgrState, setMgrState] = useState(downloadManager.getState());
   const [isSavedOnDevice, setIsSavedOnDevice] = useState(false);
@@ -126,13 +124,6 @@ export default function RightSidePanel({
     } catch (err) {
       console.error('Failed to delete download:', err);
     }
-  };
-
-  const handleSaveNote = (presetText) => {
-    const textToAdd = (presetText || noteInput || '').trim();
-    if (!textToAdd) return;
-    onAddNote?.(textToAdd);
-    setNoteInput('');
   };
 
   return (
@@ -230,181 +221,14 @@ export default function RightSidePanel({
         {/* MODE 1: TIMESTAMPED NOTES & BOOKMARKS                          */}
         {/* ============================================================== */}
         {type === 'notes' && (
-          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Quick Add Input with Current Time */}
-            <div style={{
-              background: '#1a1a1e',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 12,
-              padding: 12,
-              marginBottom: 14
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <Clock size={13} className="text-[#f59e0b]" />
-                <span style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  fontFamily: 'monospace',
-                  color: '#f59e0b',
-                  background: 'rgba(245, 158, 11, 0.12)',
-                  padding: '2px 6px',
-                  borderRadius: 4
-                }}>
-                  {formatSeekTime(currentTime)}
-                </span>
-                <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-                  Add note at current time
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  placeholder={`Take note at ${formatSeekTime(currentTime)}...`}
-                  value={noteInput}
-                  onChange={(e) => setNoteInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNote(); }}
-                  style={{
-                    flex: 1,
-                    background: '#121214',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: 8,
-                    padding: '8px 12px',
-                    color: '#fff',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
-                />
-                <button
-                  onClick={() => handleSaveNote()}
-                  style={{
-                    background: 'var(--accent, #f59e0b)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '8px 14px',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}
-                >
-                  <Plus size={16} /> Add
-                </button>
-              </div>
-
-              {/* Preset Chips */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                {['📌 Formula', '⚠️ Exam Important', '❓ Review Later', '💡 Key Concept', '📝 Summary'].map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => handleSaveNote(tag)}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#d1d5db',
-                      borderRadius: 6,
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      cursor: 'pointer',
-                      transition: 'background 0.15s'
-                    }}
-                  >
-                    +{tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Notes List */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {notes.length === 0 ? (
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '32px 16px',
-                  textAlign: 'center',
-                  color: '#6b7280'
-                }}>
-                  <Bookmark size={36} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <p style={{ margin: '0 0 6px 0', fontSize: '0.9rem', fontWeight: 600, color: '#9ca3af' }}>
-                    No notes taken yet
-                  </p>
-                  <span style={{ fontSize: '0.78rem', maxWidth: 260, lineHeight: 1.4 }}>
-                    Pause the lecture at any moment and add a note or click a quick preset to bookmark key formulas.
-                  </span>
-                </div>
-              ) : (
-                notes.map((n) => (
-                  <div
-                    key={n.id}
-                    style={{
-                      padding: '10px 12px',
-                      background: '#1a1a1e',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: 10,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <button
-                        onClick={() => onSeek?.(n.time)}
-                        style={{
-                          background: 'rgba(245, 158, 11, 0.15)',
-                          border: '1px solid rgba(245, 158, 11, 0.35)',
-                          color: '#f59e0b',
-                          fontFamily: 'monospace',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4
-                        }}
-                        title="Click to jump to this timestamp"
-                      >
-                        <Play size={10} fill="currentColor" />
-                        <span>{formatSeekTime(n.time)}</span>
-                      </button>
-
-                      <button
-                        onClick={() => onDeleteNote?.(n.id)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#71717a',
-                          padding: 4,
-                          cursor: 'pointer',
-                          borderRadius: 4
-                        }}
-                        title="Delete note"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-
-                    <div style={{
-                      fontSize: '0.84rem',
-                      color: '#e5e7eb',
-                      lineHeight: 1.45,
-                      wordBreak: 'break-word'
-                    }}>
-                      {n.text}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <NotesTaker
+            notes={notes}
+            currentTime={currentTime}
+            onAddNote={onAddNote}
+            onDeleteNote={onDeleteNote}
+            onSeek={onSeek}
+            isMobile={false}
+          />
         )}
 
         {/* ============================================================== */}
