@@ -19,7 +19,8 @@ import {
   X,
   Download,
   Trash2,
-  Megaphone
+  Megaphone,
+  Layers
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
@@ -28,6 +29,7 @@ import AdminAnalytics from './AdminAnalytics';
 import BroadcastUpdateModal from './BroadcastUpdateModal';
 import AdminNoticeBoard from './AdminNoticeBoard';
 import AppVersionSettingsModal from './AppVersionSettingsModal';
+import BulkBatchManagerModal from './BulkBatchManagerModal';
 import { 
   CURRENT_LATEST_VERSION, 
   DEFAULT_ANDROID_VERSION_CONFIG, 
@@ -58,6 +60,7 @@ export default function Dashboard({ onLogout }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [showVersionModal, setShowVersionModal] = useState(false);
+  const [showBulkBatchModal, setShowBulkBatchModal] = useState(false);
   const [versionConfig, setVersionConfig] = useState(DEFAULT_ANDROID_VERSION_CONFIG);
   const [copiedPAT, setCopiedPAT] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -341,6 +344,14 @@ export default function Dashboard({ onLogout }) {
                 >
                   <Download size={15} />
                   <span>Broadcast Update</span>
+                </button>
+                <button 
+                  onClick={() => setShowBulkBatchModal(true)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#181818] hover:bg-[#222] text-[#38bdf8] border border-[#38bdf8]/40 hover:border-[#38bdf8] px-3.5 py-2 rounded-lg transition font-semibold text-xs sm:text-sm shadow-md"
+                  title="Bulk manage batch permissions across students (PW & Next Topper)"
+                >
+                  <Layers size={15} />
+                  <span>Bulk Batches</span>
                 </button>
                 <button 
                   onClick={() => setShowAddModal(true)}
@@ -990,6 +1001,14 @@ export default function Dashboard({ onLogout }) {
         onClose={() => setShowVersionModal(false)}
         onSaveSuccess={(newConfig) => setVersionConfig(newConfig)}
       />
+
+      {/* Bulk Batch Manager Modal */}
+      {showBulkBatchModal && (
+        <BulkBatchManagerModal
+          students={students}
+          onClose={() => setShowBulkBatchModal(false)}
+        />
+      )}
     </div>
   );
 }
