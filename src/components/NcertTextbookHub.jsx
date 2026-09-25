@@ -525,8 +525,9 @@ export default function NcertTextbookHub({
                     const itemId = isRsa
                       ? `rsa_${(res.chapter.filename || '').replace(/\.pdf$/i, '').toLowerCase()}`
                       : `ncert_${res.book.id}_${(res.chapter.filename || '').replace(/\.pdf$/i, '')}`;
-                    const dl = downloadState.tasks.get(itemId);
-                    const isDone = Boolean(downloadState.completed.find(c => c.id === itemId));
+                    const isDone = downloadManager.isDownloaded(itemId);
+                    const isDownloading = downloadManager.isDownloading(itemId);
+                    const dl = (downloadState?.active || []).find(t => t.id === itemId);
 
                     return (
                       <div
@@ -594,10 +595,10 @@ export default function NcertTextbookHub({
                                   cursor: 'pointer'
                                 }}
                               >
-                                {dl ? (
+                                {isDownloading || dl ? (
                                   <>
                                     <Loader2 size={12} className="spin-icon" />
-                                    <span>{dl.progress ? `${Math.round(dl.progress)}%` : '...'}</span>
+                                    <span>{dl?.progress ? `${Math.round(dl.progress)}%` : '...'}</span>
                                   </>
                                 ) : isDone ? (
                                   <>

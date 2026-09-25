@@ -939,18 +939,19 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   }
 
   // --- Breadcrumb & Hierarchy Logic ---
+  const currentFolder = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
   let currentItems = [];
 
   if (searchQuery.trim().length > 0) {
-    const q = searchQuery.toLowerCase();
-    currentItems = allItems.filter(item => 
-      (item.title && item.title.toLowerCase().includes(q)) || 
-      (item.unified_path && item.unified_path.toLowerCase().includes(q))
-    ).sort((a, b) => {
+    const qTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    currentItems = allItems.filter(item => {
+      const target = `${item.title || ''} ${item.name || ''} ${item.unified_path || ''} ${item.subject_name || ''}`.toLowerCase();
+      return qTokens.every(tok => target.includes(tok));
+    }).sort((a, b) => {
       const timeA = typeof a.created_at === 'number' ? a.created_at : 0;
       const timeB = typeof b.created_at === 'number' ? b.created_at : 0;
       if (timeB !== timeA) return timeB - timeA;
-      return a.title.localeCompare(b.title);
+      return (a.title || a.name || '').localeCompare(b.title || b.name || '');
     });
   } else if (currentPath.length === 0) {
     // Root level: show subjects
@@ -961,9 +962,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         isRootSubject: true,
         displayTitle: sub.subject_name
       }));
-  } else {
+  } else if (currentFolder) {
     // Inside a folder/subject
-    const currentFolder = currentPath[currentPath.length - 1];
     const subject = courseData.subjects[currentFolder.subjectId];
     
     if (subject && subject.items) {
