@@ -236,7 +236,10 @@
       "Half Yearly Sample Paper"
     ],
     "last_synced": "2026-09-25T13:50:16.795Z",
-    "duration_seconds": 3.74
+    "duration_seconds": 3.74,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "219",
@@ -316,7 +319,10 @@
       "Physics"
     ],
     "last_synced": "2026-09-25T13:50:18.960Z",
-    "duration_seconds": 5.83
+    "duration_seconds": 5.83,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "216",
@@ -342,7 +348,10 @@
       "Political science"
     ],
     "last_synced": "2026-09-25T13:50:18.856Z",
-    "duration_seconds": 5.7
+    "duration_seconds": 5.7,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "103",
@@ -410,7 +419,10 @@
       "Tests"
     ],
     "last_synced": "2026-09-25T13:50:35.149Z",
-    "duration_seconds": 21.95
+    "duration_seconds": 21.95,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "104",
@@ -482,7 +494,10 @@
       "Test"
     ],
     "last_synced": "2026-09-25T13:50:32.460Z",
-    "duration_seconds": 18.02
+    "duration_seconds": 18.02,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "108",
@@ -516,7 +531,10 @@
       "Test"
     ],
     "last_synced": "2026-09-25T13:50:48.010Z",
-    "duration_seconds": 33.33
+    "duration_seconds": 33.33,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "110",
@@ -550,7 +568,10 @@
       "Test"
     ],
     "last_synced": "2026-09-25T13:51:09.176Z",
-    "duration_seconds": 54.31
+    "duration_seconds": 54.31,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "101",
@@ -749,7 +770,10 @@
       "Tests"
     ],
     "last_synced": "2026-09-25T13:51:31.107Z",
-    "duration_seconds": 68.87
+    "duration_seconds": 68.87,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "193",
@@ -853,7 +877,10 @@
       "Tests"
     ],
     "last_synced": "2026-09-25T13:52:13.469Z",
-    "duration_seconds": 98.83
+    "duration_seconds": 98.83,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "105",
@@ -1045,7 +1072,10 @@
       "Preview 11th"
     ],
     "last_synced": "2026-09-25T13:51:57.907Z",
-    "duration_seconds": 68.71
+    "duration_seconds": 68.71,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "86_old",
@@ -1101,7 +1131,10 @@
       "Political Science"
     ],
     "last_synced": "2026-09-25T13:52:19.462Z",
-    "duration_seconds": 77.34
+    "duration_seconds": 77.34,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "88_old",
@@ -1159,7 +1192,10 @@
       "Test"
     ],
     "last_synced": "2026-09-25T13:52:23.732Z",
-    "duration_seconds": 69.81
+    "duration_seconds": 69.81,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "90_old",
@@ -1314,7 +1350,10 @@
       "Political Science"
     ],
     "last_synced": "2026-09-25T13:53:34.564Z",
-    "duration_seconds": 96.08
+    "duration_seconds": 96.08,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "55_old",
@@ -1343,7 +1382,10 @@
       "Physics"
     ],
     "last_synced": "2026-09-25T13:53:21.645Z",
-    "duration_seconds": 71.03
+    "duration_seconds": 71.03,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "56_old",
@@ -1372,7 +1414,10 @@
       "Maths"
     ],
     "last_synced": "2026-09-25T13:53:38.153Z",
-    "duration_seconds": 80.96
+    "duration_seconds": 80.96,
+    "in_development": true,
+    "development_phase": true,
+    "disabled_by_default": true
   },
   {
     "batch_id": "58_old",

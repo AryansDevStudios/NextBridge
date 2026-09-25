@@ -3,7 +3,8 @@ import {
   BATCH_CATALOG, 
   getRecommendedBatchIds, 
   getBatchDisplayName,
-  getStreamLabel
+  getStreamLabel,
+  isBatchInDevelopment
 } from '../utils/batchConfig';
 import { 
   Check, 
@@ -230,6 +231,12 @@ export default function BatchPermissionSelector({
             </button>
           ))}
         </div>
+
+        {activeCategory === '11' && (
+          <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] leading-relaxed">
+            ⚠️ <strong>Class 11 Batches (Development Phase):</strong> Pre-added and supported. These batches will remain disabled by default on student devices until students enable them in their app Settings.
+          </div>
+        )}
       </div>
 
       {/* Batch Cards Grid (Scrollable) */}
@@ -294,6 +301,11 @@ export default function BatchPermissionSelector({
                     {isRec && (
                       <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30">
                         Recommended
+                      </span>
+                    )}
+                    {isBatchInDevelopment(batch) && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                        Dev Phase
                       </span>
                     )}
                   </div>

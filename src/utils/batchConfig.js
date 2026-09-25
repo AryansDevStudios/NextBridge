@@ -85,3 +85,9 @@ export function getBatchDisplayName(batch) {
   let name = batch.batch_name || batch.title || `Batch ${batch.batch_id}`;
   return name.replace(/_old$/i, ' (Archive)');
 }
+
+export function isBatchInDevelopment(batchOrId) {
+  if (!batchOrId) return false;
+  const batch = typeof batchOrId === 'object' ? batchOrId : getBatchById(batchOrId);
+  return !!(batch?.in_development || batch?.development_phase || batch?.class_name === 'Class 11');
+}
