@@ -40,7 +40,8 @@ import {
   CLASS_OPTIONS, 
   STREAM_OPTIONS, 
   getRecommendedBatchIds, 
-  getStreamLabel 
+  getStreamLabel,
+  getStreamsForClass
 } from '../utils/batchConfig';
 
 function generatePAT() {
@@ -82,7 +83,13 @@ export default function Dashboard({ onLogout }) {
 
   const handleClassChange = (newClass) => {
     setStudentClass(newClass);
-    const defaultStream = (newClass === '11' || newClass === '12') ? (studentStream || 'science_pcmb') : '';
+    const availableStreams = getStreamsForClass(newClass);
+    let defaultStream = '';
+    if (availableStreams.length > 0) {
+      const match = availableStreams.find(s => s.id === studentStream);
+      defaultStream = match ? match.id : availableStreams[0].id;
+    }
+    setStudentStream(defaultStream);
     setSelectedBatchIds(getRecommendedBatchIds(newClass, defaultStream));
   };
 
@@ -157,7 +164,7 @@ export default function Dashboard({ onLogout }) {
     await addDoc(collection(db, 'students'), {
       name,
       class: studentClass,
-      stream: (studentClass === '11' || studentClass === '12') ? studentStream : '',
+      stream: getStreamsForClass(studentClass).length > 0 ? studentStream : '',
       allowedBatches: selectedBatchIds,
       personalDetails: { school, area },
       pat,
@@ -366,13 +373,13 @@ export default function Dashboard({ onLogout }) {
 
                 {/* Filter Pills */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
-                  {['all', '7', '8', '9', '10', '11', '12'].map((cls) => (
+                  {['all', '7', '8', '9', '10', '11', '12', 'dropper', 'other'].map((cls) => (
                     <button
                       key={cls}
                       onClick={() => setClassFilter(cls)}
                       className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${classFilter === cls ? 'bg-[#f59e0b] text-[#0a0a0a]' : 'bg-[#1a1a1a] text-[#9ca3af] hover:text-white border border-[#262626]'}`}
                     >
-                      {cls === 'all' ? 'All Classes' : `Class ${cls}`}
+                      {cls === 'all' ? 'All Classes' : cls === 'dropper' ? 'Droppers' : cls === 'other' ? 'Outers / Comp' : `Class ${cls}`}
                     </button>
                   ))}
                   <div className="w-[1px] h-5 bg-[#262626] mx-1" />
@@ -806,15 +813,17 @@ export default function Dashboard({ onLogout }) {
                     </select>
                   </div>
 
-                  {(studentClass === '11' || studentClass === '12') ? (
+                  {getStreamsForClass(studentClass).length > 0 ? (
                     <div>
-                      <label className="block text-sm font-medium text-[#9ca3af] mb-1">Stream / Section</label>
+                      <label className="block text-sm font-medium text-[#9ca3af] mb-1">
+                        {studentClass === 'dropper' ? 'Target Exam / Focus' : studentClass === 'other' ? 'Competitive Focus' : 'Stream / Section'}
+                      </label>
                       <select 
                         value={studentStream} 
                         onChange={e => handleStreamChange(e.target.value)} 
                         className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
                       >
-                        {STREAM_OPTIONS.map(st => (
+                        {getStreamsForClass(studentClass).map(st => (
                           <option key={st.id} value={st.id}>{st.label}</option>
                         ))}
                       </select>
@@ -825,7 +834,7 @@ export default function Dashboard({ onLogout }) {
                       <input 
                         type="text" 
                         disabled 
-                        value="General Curriculum" 
+                        value="General Curriculum (Not Applicable)" 
                         className="w-full px-3 py-2 bg-[#161616] border border-[#222] rounded-lg text-[#71717a] text-sm cursor-not-allowed" 
                       />
                     </div>

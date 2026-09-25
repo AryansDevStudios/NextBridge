@@ -843,8 +843,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       if (cachedSubjects && cachedSubjects.length > 0) {
         setCourseData({
           course_id: targetBatchId,
-          batch_name: targetBatchObj?.batch_name || 'PW UDAAN 2.0 2027 (Class 10th)',
-          class_name: 'Class 10',
+          batch_name: targetBatchObj?.batch_name || 'Physics Wallah Batch',
+          class_name: targetBatchObj?.class_name || 'Class 10',
           thumbnail: targetBatchObj?.thumbnail,
           is_dynamic_pw: true,
           pw_batch_id: pwBatchId,
@@ -859,8 +859,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
           localStorage.setItem(cacheKey, JSON.stringify(liveSubjects));
           setCourseData({
             course_id: targetBatchId,
-            batch_name: targetBatchObj?.batch_name || 'PW UDAAN 2.0 2027 (Class 10th)',
-            class_name: 'Class 10',
+            batch_name: targetBatchObj?.batch_name || 'Physics Wallah Batch',
+            class_name: targetBatchObj?.class_name || 'Class 10',
             thumbnail: targetBatchObj?.thumbnail,
             is_dynamic_pw: true,
             pw_batch_id: pwBatchId,

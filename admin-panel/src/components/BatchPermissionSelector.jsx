@@ -39,12 +39,16 @@ export default function BatchPermissionSelector({
 
     return BATCH_CATALOG.filter(batch => {
       // Category filter
+      if (activeCategory === 'pw' && !batch.is_dynamic_pw && batch.provider !== 'Physics Wallah') return false;
+      if (activeCategory === 'nexttoppers' && (batch.is_dynamic_pw || batch.provider === 'Physics Wallah')) return false;
       if (activeCategory === '7' && batch.class_name !== 'Class 7') return false;
       if (activeCategory === '8' && batch.class_name !== 'Class 8') return false;
       if (activeCategory === '9' && batch.class_name !== 'Class 9') return false;
       if (activeCategory === '10' && batch.class_name !== 'Class 10') return false;
       if (activeCategory === '11' && batch.class_name !== 'Class 11') return false;
       if (activeCategory === '12' && batch.class_name !== 'Class 12') return false;
+      if (activeCategory === 'dropper' && batch.class_name !== 'Dropper' && batch.class_name !== 'Class 12+') return false;
+      if (activeCategory === 'other' && batch.class_name !== 'Other') return false;
       if (activeCategory === 'crash' && !batch.class_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('pro')) return false;
       if (activeCategory === 'archive' && !batch.is_old) return false;
       if (activeCategory === 'free' && !batch.batch_name?.toLowerCase().includes('free')) return false;
@@ -137,7 +141,7 @@ export default function BatchPermissionSelector({
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-1.5 font-semibold text-[#f3f4f6]">
             <Sparkles size={13} className="text-[#f59e0b]" />
-            <span>Recommended for Class {studentClass}{streamText ? ` (${streamText})` : ''}:</span>
+            <span>Recommended for {studentClass === 'dropper' ? 'Droppers' : studentClass === 'other' ? 'Competitive / Outers' : `Class ${studentClass}`}{streamText ? ` (${streamText})` : ''}:</span>
           </div>
           <span className="text-[11px] text-[#9ca3af]">
             {recommendedIds.filter(id => selectedBatchIds.includes(id)).length}/{recommendedIds.length} active
@@ -207,12 +211,16 @@ export default function BatchPermissionSelector({
         <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none text-[11px]">
           {[
             { id: 'all', label: 'All Batches' },
+            { id: 'pw', label: 'Physics Wallah (PW)' },
+            { id: 'nexttoppers', label: 'Next Toppers' },
             { id: '7', label: 'Class 7' },
             { id: '8', label: 'Class 8' },
             { id: '9', label: 'Class 9' },
             { id: '10', label: 'Class 10' },
             { id: '11', label: 'Class 11' },
             { id: '12', label: 'Class 12' },
+            { id: 'dropper', label: 'Droppers' },
+            { id: 'other', label: 'Outers (NDA / CUET)' },
             { id: 'crash', label: 'Crash Courses' },
             { id: 'archive', label: '2025-26 Archive' },
             { id: 'free', label: 'Free Batches' }

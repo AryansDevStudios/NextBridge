@@ -33,6 +33,8 @@ export default function BatchesHub({
 
     return allowedBatches.filter(batch => {
       // Filter tabs
+      if (activeFilter === 'pw' && !batch.is_dynamic_pw && batch.provider !== 'Physics Wallah') return false;
+      if (activeFilter === 'nexttoppers' && (batch.is_dynamic_pw || batch.provider === 'Physics Wallah')) return false;
       if (activeFilter === 'active' && batch.is_old) return false;
       if (activeFilter === 'archive' && !batch.is_old) return false;
       if (activeFilter === 'crash' && !batch.class_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('pro')) return false;
@@ -51,6 +53,8 @@ export default function BatchesHub({
     });
   }, [allowedBatches, activeFilter, searchQuery]);
 
+  const pwCount = allowedBatches.filter(b => b.is_dynamic_pw || b.provider === 'Physics Wallah').length;
+  const ntCount = allowedBatches.filter(b => !b.is_dynamic_pw && b.provider !== 'Physics Wallah').length;
   const activeCount = allowedBatches.filter(b => !b.is_old).length;
   const archiveCount = allowedBatches.filter(b => b.is_old).length;
   const crashCount = allowedBatches.filter(b => b.class_name?.toLowerCase().includes('crash') || b.batch_name?.toLowerCase().includes('crash') || b.batch_name?.toLowerCase().includes('pro')).length;
@@ -94,7 +98,11 @@ export default function BatchesHub({
             borderRadius: '999px',
             border: '1px solid rgba(245, 158, 11, 0.25)'
           }}>
-            Class {user?.class || '10'} Student
+            {String(user?.class || '').toLowerCase() === 'dropper'
+              ? 'Dropper / 12th Pass Student'
+              : String(user?.class || '').toLowerCase() === 'other'
+              ? 'Competitive Aspirant'
+              : `Class ${user?.class || '10'} Student`}
           </div>
         </div>
 
@@ -150,6 +158,8 @@ export default function BatchesHub({
         }}>
           {[
             { id: 'all', label: `All (${allowedBatches.length})` },
+            ...(pwCount > 0 ? [{ id: 'pw', label: `Physics Wallah (${pwCount})` }] : []),
+            ...(ntCount > 0 ? [{ id: 'nexttoppers', label: `Next Toppers (${ntCount})` }] : []),
             { id: 'active', label: `Active 2026-27 (${activeCount})` },
             ...(archiveCount > 0 ? [{ id: 'archive', label: `2025-26 Archive (${archiveCount})` }] : []),
             ...(crashCount > 0 ? [{ id: 'crash', label: `Crash / Olympiad (${crashCount})` }] : []),
