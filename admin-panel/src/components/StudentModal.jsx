@@ -31,6 +31,13 @@ import {
   compareSemver,
   isStudentUpdateLocked 
 } from '../utils/version';
+import BatchPermissionSelector from './BatchPermissionSelector';
+import { 
+  CLASS_OPTIONS, 
+  STREAM_OPTIONS, 
+  getRecommendedBatchIds, 
+  getStreamLabel 
+} from '../utils/batchConfig';
 
 function toDateTimeLocalString(timestamp) {
   if (!timestamp) return '';
@@ -94,9 +101,27 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
 
   // Profile Edit State
   const [name, setName] = useState(student.name);
-  const [studentClass, setStudentClass] = useState(student.class);
+  const [studentClass, setStudentClass] = useState(String(student.class || '10'));
+  const [studentStream, setStudentStream] = useState(student.stream || student.section || '');
+  const [selectedBatchIds, setSelectedBatchIds] = useState(() => {
+    if (Array.isArray(student.allowedBatches) && student.allowedBatches.length > 0) {
+      return student.allowedBatches.map(String);
+    }
+    return getRecommendedBatchIds(student.class || '10', student.stream || student.section);
+  });
   const [school, setSchool] = useState(student.personalDetails?.school || '');
   const [area, setArea] = useState(student.personalDetails?.area || '');
+
+  const handleClassChange = (newClass) => {
+    setStudentClass(newClass);
+    const defaultStream = (newClass === '11' || newClass === '12') ? (studentStream || 'science_pcmb') : '';
+    setSelectedBatchIds(getRecommendedBatchIds(newClass, defaultStream));
+  };
+
+  const handleStreamChange = (newStream) => {
+    setStudentStream(newStream);
+    setSelectedBatchIds(getRecommendedBatchIds(studentClass, newStream));
+  };
   
   // Device State
   const [currentDevice, setCurrentDevice] = useState(student.device);
@@ -345,6 +370,8 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
         customMessage,
         name,
         class: studentClass,
+        stream: (studentClass === '11' || studentClass === '12') ? studentStream : '',
+        allowedBatches: selectedBatchIds,
         personalDetails: { school, area },
         allowedSections,
         forcedUpdate: forcedUpdateEnabled ? {
@@ -553,6 +580,14 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
                   </div>
                 </div>
               </div>
+
+              {/* Batch Permissions & Access Control */}
+              <BatchPermissionSelector 
+                studentClass={studentClass}
+                studentStream={studentStream}
+                selectedBatchIds={selectedBatchIds}
+                onChange={setSelectedBatchIds}
+              />
 
               {/* Stackable Quick Action Buttons */}
               <div>
@@ -912,12 +947,33 @@ export default function StudentModal({ student, versionConfig = DEFAULT_ANDROID_
                 <label className="block text-sm font-medium text-[#9ca3af] mb-1">Name</label>
                 <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Class</label>
-                <select value={studentClass} onChange={e => setStudentClass(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]">
-                  <option value="9">Class 9</option>
-                  <option value="10">Class 10</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#9ca3af] mb-1">Class</label>
+                  <select 
+                    value={studentClass} 
+                    onChange={e => handleClassChange(e.target.value)} 
+                    className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
+                  >
+                    {CLASS_OPTIONS.map(opt => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {(studentClass === '11' || studentClass === '12') && (
+                  <div>
+                    <label className="block text-sm font-medium text-[#9ca3af] mb-1">Stream / Section</label>
+                    <select 
+                      value={studentStream} 
+                      onChange={e => handleStreamChange(e.target.value)} 
+                      className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
+                    >
+                      {STREAM_OPTIONS.map(st => (
+                        <option key={st.id} value={st.id}>{st.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#9ca3af] mb-1">School</label>

@@ -35,6 +35,13 @@ import {
   compareSemver,
   isStudentUpdateLocked
 } from '../utils/version';
+import BatchPermissionSelector from './BatchPermissionSelector';
+import { 
+  CLASS_OPTIONS, 
+  STREAM_OPTIONS, 
+  getRecommendedBatchIds, 
+  getStreamLabel 
+} from '../utils/batchConfig';
 
 function generatePAT() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -62,6 +69,8 @@ export default function Dashboard({ onLogout }) {
   // Form State
   const [name, setName] = useState('');
   const [studentClass, setStudentClass] = useState('9');
+  const [studentStream, setStudentStream] = useState('science_pcmb');
+  const [selectedBatchIds, setSelectedBatchIds] = useState(() => getRecommendedBatchIds('9'));
   const [school, setSchool] = useState('');
   const [area, setArea] = useState('');
   const [initialSubscriptionDays, setInitialSubscriptionDays] = useState(5);
@@ -70,6 +79,17 @@ export default function Dashboard({ onLogout }) {
   const [accessPyqs, setAccessPyqs] = useState(true);
   const [accessPdfDownload, setAccessPdfDownload] = useState(true);
   const [accessPdfExportShare, setAccessPdfExportShare] = useState(true);
+
+  const handleClassChange = (newClass) => {
+    setStudentClass(newClass);
+    const defaultStream = (newClass === '11' || newClass === '12') ? (studentStream || 'science_pcmb') : '';
+    setSelectedBatchIds(getRecommendedBatchIds(newClass, defaultStream));
+  };
+
+  const handleStreamChange = (newStream) => {
+    setStudentStream(newStream);
+    setSelectedBatchIds(getRecommendedBatchIds(studentClass, newStream));
+  };
 
   const filteredStudents = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
@@ -137,6 +157,8 @@ export default function Dashboard({ onLogout }) {
     await addDoc(collection(db, 'students'), {
       name,
       class: studentClass,
+      stream: (studentClass === '11' || studentClass === '12') ? studentStream : '',
+      allowedBatches: selectedBatchIds,
       personalDetails: { school, area },
       pat,
       device: null,
@@ -155,7 +177,9 @@ export default function Dashboard({ onLogout }) {
       totalScreenTime: 0
     });
     setShowAddModal(false);
-    setName(''); setSchool(''); setArea(''); setStudentClass('9'); setInitialSubscriptionDays(5);
+    setName(''); setSchool(''); setArea(''); setStudentClass('9'); setStudentStream('science_pcmb');
+    setSelectedBatchIds(getRecommendedBatchIds('9'));
+    setInitialSubscriptionDays(5);
     setAccessCourses(true); setAccessTextbooks(true); setAccessPyqs(true);
     setAccessPdfDownload(true); setAccessPdfExportShare(true);
   };
@@ -342,7 +366,7 @@ export default function Dashboard({ onLogout }) {
 
                 {/* Filter Pills */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
-                  {['all', '9', '10'].map((cls) => (
+                  {['all', '7', '8', '9', '10', '11', '12'].map((cls) => (
                     <button
                       key={cls}
                       onClick={() => setClassFilter(cls)}
@@ -402,7 +426,7 @@ export default function Dashboard({ onLogout }) {
                             <div className="flex items-center gap-1.5">
                               <h3 className="font-bold text-sm text-[#f3f4f6]">{s.name}</h3>
                               <span className="text-[10px] bg-[#1a1a1a] text-[#9ca3af] px-1.5 py-0.2 rounded border border-[#262626] font-medium">
-                                Cl {s.class}
+                                Cl {s.class}{s.stream ? ` • ${getStreamLabel(s.stream)}` : ''}
                               </span>
                             </div>
                             <div className="text-xs text-[#9ca3af]">
@@ -568,7 +592,13 @@ export default function Dashboard({ onLogout }) {
                           {s.name}
                           <div className="text-xs text-[#9ca3af] font-normal">{s.personalDetails?.school} • {s.personalDetails?.area}</div>
                         </td>
-                        <td className="p-4 text-[#9ca3af]">{s.class}</td>
+                        <td className="p-4 text-[#9ca3af]">
+                          <div className="font-semibold text-white">Class {s.class}</div>
+                          {s.stream && <div className="text-[11px] text-[#f59e0b] font-medium">{getStreamLabel(s.stream)}</div>}
+                          <div className="text-[10px] text-[#71717a] mt-0.5">
+                            {Array.isArray(s.allowedBatches) && s.allowedBatches.length > 0 ? `${s.allowedBatches.length} batches` : 'Class Default'}
+                          </div>
+                        </td>
                         <td className="p-4">
                           <div className="flex items-center space-x-2">
                             <code className="bg-[#1a1a1a] border border-[#262626] px-2 py-1 rounded text-[#f59e0b] font-bold">{s.pat}</code>
@@ -741,9 +771,12 @@ export default function Dashboard({ onLogout }) {
       {/* Add Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-[#0a0a0a]/90 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 z-50">
-          <div className="bg-[#121212] border-0 sm:border border-[#262626] rounded-none sm:rounded-xl shadow-2xl p-4 sm:p-6 w-full h-full sm:h-auto sm:max-w-md overflow-y-auto custom-scrollbar flex flex-col justify-between">
+          <div className="bg-[#121212] border-0 sm:border border-[#262626] rounded-none sm:rounded-xl shadow-2xl p-4 sm:p-6 w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col justify-between">
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#262626] sm:border-0 sm:pb-0 sm:mb-4">
-              <h2 className="text-lg sm:text-xl font-bold">Add New Student</h2>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold">Add New Student</h2>
+                <p className="text-xs text-[#9ca3af]">Assign class, stream, batch permissions, and subscription.</p>
+              </div>
               <button 
                 onClick={() => setShowAddModal(false)} 
                 className="text-[#9ca3af] hover:text-white p-1 rounded-lg"
@@ -753,120 +786,167 @@ export default function Dashboard({ onLogout }) {
             </div>
             <form onSubmit={handleAddStudent} className="space-y-4 flex-1 flex flex-col justify-between">
               <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Name</label>
-                <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Class</label>
-                <select value={studentClass} onChange={e => setStudentClass(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]">
-                  <option value="9">Class 9</option>
-                  <option value="10">Class 10</option>
-                </select>
-              </div>
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-[#9ca3af]">Initial Subscription Duration (Days)</label>
-                  <span className="text-xs text-[#f59e0b] font-medium">Default: 5 Days</span>
+                <div>
+                  <label className="block text-sm font-medium text-[#9ca3af] mb-1">Full Name</label>
+                  <input required type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Student Name" className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
                 </div>
-                <input 
-                  required 
-                  type="number" 
-                  min="0" 
-                  value={initialSubscriptionDays} 
-                  onChange={e => setInitialSubscriptionDays(Math.max(0, parseInt(e.target.value) || 0))} 
-                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6] mb-2" 
-                  placeholder="Enter days (0 for unlimited)"
-                />
-                <div className="flex flex-wrap gap-1.5">
-                  {[5, 30, 90, 365, 0].map(d => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setInitialSubscriptionDays(d)}
-                      className={`text-[11px] px-2.5 py-1 rounded border transition ${initialSubscriptionDays === d ? 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/50' : 'bg-[#181818] text-[#9ca3af] border-[#2a2a2a] hover:text-white'}`}
+
+                {/* Class & Stream Selectors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[#9ca3af] mb-1">Class</label>
+                    <select 
+                      value={studentClass} 
+                      onChange={e => handleClassChange(e.target.value)} 
+                      className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
                     >
-                      {d === 0 ? 'Unlimited' : `${d} Days`}
-                    </button>
-                  ))}
+                      {CLASS_OPTIONS.map(opt => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(studentClass === '11' || studentClass === '12') ? (
+                    <div>
+                      <label className="block text-sm font-medium text-[#9ca3af] mb-1">Stream / Section</label>
+                      <select 
+                        value={studentStream} 
+                        onChange={e => handleStreamChange(e.target.value)} 
+                        className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]"
+                      >
+                        {STREAM_OPTIONS.map(st => (
+                          <option key={st.id} value={st.id}>{st.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-[#9ca3af] mb-1">Academic Section</label>
+                      <input 
+                        type="text" 
+                        disabled 
+                        value="General Curriculum" 
+                        className="w-full px-3 py-2 bg-[#161616] border border-[#222] rounded-lg text-[#71717a] text-sm cursor-not-allowed" 
+                      />
+                    </div>
+                  )}
                 </div>
-                <p className="text-[11px] text-[#6b7280] mt-1">Set 0 for permanent unlimited access.</p>
+
+                {/* Batch Permissions & Access Control */}
+                <BatchPermissionSelector 
+                  studentClass={studentClass}
+                  studentStream={studentStream}
+                  selectedBatchIds={selectedBatchIds}
+                  onChange={setSelectedBatchIds}
+                />
+
+                {/* Subscription Duration */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-[#9ca3af]">Initial Subscription Duration (Days)</label>
+                    <span className="text-xs text-[#f59e0b] font-medium">Default: 5 Days</span>
+                  </div>
+                  <input 
+                    required 
+                    type="number" 
+                    min="0" 
+                    value={initialSubscriptionDays} 
+                    onChange={e => setInitialSubscriptionDays(Math.max(0, parseInt(e.target.value) || 0))} 
+                    className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6] mb-2" 
+                    placeholder="Enter days (0 for unlimited)"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {[5, 30, 90, 365, 0].map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setInitialSubscriptionDays(d)}
+                        className={`text-[11px] px-2.5 py-1 rounded border transition ${initialSubscriptionDays === d ? 'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/50' : 'bg-[#181818] text-[#9ca3af] border-[#2a2a2a] hover:text-white'}`}
+                      >
+                        {d === 0 ? 'Unlimited' : `${d} Days`}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-[#6b7280] mt-1">Set 0 for permanent unlimited access.</p>
+                </div>
+
+                {/* Section Access Permissions */}
+                <div className="bg-[#181818] p-3.5 rounded-lg border border-[#262626]">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">
+                      Feature Access Permissions
+                    </label>
+                    <span className="text-[10px] text-[#f59e0b]">Tier Control</span>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={accessCourses} 
+                        onChange={e => setAccessCourses(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                      />
+                      <span className="text-[#f3f4f6]">Courses & Lectures</span>
+                      <span className="text-[11px] text-[#9ca3af] ml-auto">Video + Notes</span>
+                    </label>
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={accessTextbooks} 
+                        onChange={e => setAccessTextbooks(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                      />
+                      <span className="text-[#f3f4f6]">NCERT Textbooks</span>
+                      <span className="text-[11px] text-[#9ca3af] ml-auto">Class 10 Books</span>
+                    </label>
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={accessPyqs} 
+                        onChange={e => setAccessPyqs(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
+                      />
+                      <span className="text-[#f3f4f6]">CBSE PYQs Hub</span>
+                      <span className="text-[11px] text-[#9ca3af] ml-auto">Past Papers</span>
+                    </label>
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={accessPdfDownload} 
+                        onChange={e => setAccessPdfDownload(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
+                      />
+                      <span className="text-[#f3f4f6]">In-App PDF Download</span>
+                      <span className="text-[11px] text-[#9ca3af] ml-auto">Save & Read Offline</span>
+                    </label>
+                    <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={accessPdfExportShare} 
+                        onChange={e => setAccessPdfExportShare(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
+                      />
+                      <span className="text-[#f3f4f6]">Download to Device & Share</span>
+                      <span className="text-[11px] text-[#9ca3af] ml-auto">Downloads Folder + Share</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[#9ca3af] mb-1">School</label>
+                    <input required type="text" value={school} onChange={e => setSchool(e.target.value)} placeholder="School Name" className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#9ca3af] mb-1">Area / City</label>
+                    <input required type="text" value={area} onChange={e => setArea(e.target.value)} placeholder="City / Area" className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
+                  </div>
+                </div>
               </div>
 
-              {/* Section Access Permissions */}
-              <div className="bg-[#181818] p-3.5 rounded-lg border border-[#262626]">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">
-                    Feature Access Permissions
-                  </label>
-                  <span className="text-[10px] text-[#f59e0b]">Tier Control</span>
-                </div>
-                <div className="space-y-2">
-                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={accessCourses} 
-                      onChange={e => setAccessCourses(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
-                    />
-                    <span className="text-[#f3f4f6]">Courses & Lectures</span>
-                    <span className="text-[11px] text-[#9ca3af] ml-auto">Video + Notes</span>
-                  </label>
-                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={accessTextbooks} 
-                      onChange={e => setAccessTextbooks(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
-                    />
-                    <span className="text-[#f3f4f6]">NCERT Textbooks</span>
-                    <span className="text-[11px] text-[#9ca3af] ml-auto">Class 10 Books</span>
-                  </label>
-                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={accessPyqs} 
-                      onChange={e => setAccessPyqs(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#333] text-[#f59e0b] focus:ring-[#f59e0b] bg-[#121212]"
-                    />
-                    <span className="text-[#f3f4f6]">CBSE PYQs Hub</span>
-                    <span className="text-[11px] text-[#9ca3af] ml-auto">Past Papers</span>
-                  </label>
-                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={accessPdfDownload} 
-                      onChange={e => setAccessPdfDownload(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
-                    />
-                    <span className="text-[#f3f4f6]">In-App PDF Download</span>
-                    <span className="text-[11px] text-[#9ca3af] ml-auto">Save & Read Offline</span>
-                  </label>
-                  <label className="flex items-center space-x-2.5 cursor-pointer text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={accessPdfExportShare} 
-                      onChange={e => setAccessPdfExportShare(e.target.checked)}
-                      className="w-4 h-4 rounded border-[#333] text-[#38bdf8] focus:ring-[#38bdf8] bg-[#121212]"
-                    />
-                    <span className="text-[#f3f4f6]">Download to Device & Share</span>
-                    <span className="text-[11px] text-[#9ca3af] ml-auto">Downloads Folder + Share</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">School</label>
-                <input required type="text" value={school} onChange={e => setSchool(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#9ca3af] mb-1">Area</label>
-                <input required type="text" value={area} onChange={e => setArea(e.target.value)} className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#262626] rounded-lg outline-none focus:ring-2 focus:ring-[#f59e0b] focus:border-transparent text-[#f3f4f6]" />
-              </div>
-              </div>
               <div className="pt-4 flex justify-end space-x-3 border-t border-[#262626] sm:border-0 mt-4">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-[#9ca3af] hover:text-[#f3f4f6]">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24]">Create Student</button>
+                <button type="submit" className="px-5 py-2 bg-[#f59e0b] text-[#0a0a0a] font-bold rounded-lg hover:bg-[#fbbf24] shadow-md transition">Create Student</button>
               </div>
             </form>
           </div>

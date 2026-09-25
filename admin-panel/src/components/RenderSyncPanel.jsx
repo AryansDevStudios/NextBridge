@@ -33,9 +33,10 @@ const RenderSyncPanel = () => {
   const handleForceSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch(RENDER_BACKEND_URL, {
+      const res = await fetch(`${RENDER_BACKEND_URL}?admin=true`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin: true })
       });
 
       if (res && res.ok) {

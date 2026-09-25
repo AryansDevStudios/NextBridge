@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, Folder, Video, FileText, ArrowLeft, Download, Eye, EyeOff, X, Clock, Calendar, ShieldCheck, ShieldOff } from 'lucide-react';
 import streamSaver from 'streamsaver';
+import { BATCH_CATALOG, getBatchDisplayName } from '../utils/batchConfig';
 
 streamSaver.mitm = '/mitm.html';
 
@@ -224,16 +225,24 @@ const AdminCourseLibrary = () => {
   const [courseData, setCourseData] = useState(null);
   const [currentPath, setCurrentPath] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedClass, setSelectedClass] = useState("10");
+  const [selectedTarget, setSelectedTarget] = useState("class_10");
+
+  const getEndpointBase = (target) => {
+    if (target.startsWith('batch_')) {
+      return `${FIREBASE_DB_URL}/batches/${target}`;
+    }
+    return `${FIREBASE_DB_URL}/classes/${target}`;
+  };
 
   useEffect(() => {
     fetchCourseData();
-  }, [selectedClass]);
+  }, [selectedTarget]);
 
   const fetchCourseData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${FIREBASE_DB_URL}/classes/class_${selectedClass}.json`);
+      const base = getEndpointBase(selectedTarget);
+      const res = await fetch(`${base}.json`);
       const data = await res.json();
       setCourseData(data || {});
     } catch (err) {
@@ -245,7 +254,7 @@ const AdminCourseLibrary = () => {
   const toggleVisibility = async (e, subjectId, itemId, currentIsHidden) => {
     e.stopPropagation();
     try {
-      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}/items/${itemId}.json`;
+      const endpoint = `${getEndpointBase(selectedTarget)}/subjects/${subjectId}/items/${itemId}.json`;
       const payload = currentIsHidden ? { isHidden: null } : { isHidden: true };
       
       await fetch(endpoint, {
@@ -267,7 +276,7 @@ const AdminCourseLibrary = () => {
   const toggleSubjectVisibility = async (e, subjectId, currentIsHidden) => {
     e.stopPropagation();
     try {
-      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}.json`;
+      const endpoint = `${getEndpointBase(selectedTarget)}/subjects/${subjectId}.json`;
       const payload = currentIsHidden ? { isHidden: null } : { isHidden: true };
       
       await fetch(endpoint, {
@@ -288,7 +297,7 @@ const AdminCourseLibrary = () => {
   const toggleSecurity = async (e, subjectId, itemId, currentIsSecure) => {
     e.stopPropagation();
     try {
-      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}/items/${itemId}.json`;
+      const endpoint = `${getEndpointBase(selectedTarget)}/subjects/${subjectId}/items/${itemId}.json`;
       // By default items have NO security flags (null/omitted).
       // Only when explicitly toggled on by admin, isSecure and preventScreenshots become true.
       const payload = currentIsSecure 
@@ -330,7 +339,7 @@ const AdminCourseLibrary = () => {
       });
       updates['isSecure'] = newIsSecure ? true : null;
 
-      const endpoint = `${FIREBASE_DB_URL}/classes/class_${selectedClass}/subjects/${subjectId}.json`;
+      const endpoint = `${getEndpointBase(selectedTarget)}/subjects/${subjectId}.json`;
       await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -368,7 +377,7 @@ const AdminCourseLibrary = () => {
   };
 
   let currentItems = [];
-  let currentTitle = `Class ${selectedClass} Content`;
+  let currentTitle = courseData?.batch_name || 'Course Content';
 
   if (courseData && courseData.subjects) {
       if (currentPath.length === 0) {
@@ -428,12 +437,36 @@ const AdminCourseLibrary = () => {
         </div>
         
         <select 
-          value={selectedClass} 
-          onChange={(e) => { setSelectedClass(e.target.value); setCurrentPath([]); }}
-          className="bg-[#121212] border border-[#262626] text-[#f3f4f6] px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg outline-none focus:border-[#f59e0b] text-xs sm:text-sm font-medium"
+          value={selectedTarget} 
+          onChange={(e) => { setSelectedTarget(e.target.value); setCurrentPath([]); }}
+          className="bg-[#121212] border border-[#262626] text-[#f3f4f6] px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg outline-none focus:border-[#f59e0b] text-xs sm:text-sm font-medium max-w-[280px]"
         >
-          <option value="9">Class 9</option>
-          <option value="10">Class 10</option>
+          <optgroup label="Mainstream Classes">
+            <option value="class_10">Class 10 (Mainstream)</option>
+            <option value="class_9">Class 9 (Mainstream)</option>
+            <option value="class_8">Class 8</option>
+            <option value="batch_197">Class 7 (NIRMAAN)</option>
+          </optgroup>
+          <optgroup label="Class 11 Batches">
+            {BATCH_CATALOG.filter(b => b.class_name === 'Class 11' && !b.is_old).map(b => (
+              <option key={b.batch_id} value={`batch_${b.batch_id}`}>{b.batch_name}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Class 12 Batches">
+            {BATCH_CATALOG.filter(b => b.class_name === 'Class 12' && !b.is_old).map(b => (
+              <option key={b.batch_id} value={`batch_${b.batch_id}`}>{b.batch_name}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Crash Courses & Olympiads">
+            {BATCH_CATALOG.filter(b => (b.class_name?.includes('Crash') || b.batch_name?.includes('CRASH')) && !b.is_old).map(b => (
+              <option key={b.batch_id} value={`batch_${b.batch_id}`}>{b.batch_name}</option>
+            ))}
+          </optgroup>
+          <optgroup label="All 2025-26 Archive Batches">
+            {BATCH_CATALOG.filter(b => b.is_old).map(b => (
+              <option key={b.batch_id} value={`batch_${b.batch_id}`}>{b.batch_name}</option>
+            ))}
+          </optgroup>
         </select>
       </div>
 

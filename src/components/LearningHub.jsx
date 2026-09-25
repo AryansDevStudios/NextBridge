@@ -31,11 +31,19 @@ import {
   BarChart2,
   Check,
   Bell,
-  Megaphone
+  Megaphone,
+  Layers
 } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import NcertTextbookHub from './NcertTextbookHub';
 import CbsePyqHub from './CbsePyqHub';
+import BatchesHub from './BatchesHub';
+import { 
+  BATCH_CATALOG, 
+  getAllowedBatchIdsForUser, 
+  getBatchById, 
+  getBatchDisplayName 
+} from '../utils/batchConfig';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -80,7 +88,37 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'courses' | 'textbook' | 'pyq' | 'history' | 'downloads'
+  const [activeTab, setActiveTab] = useState('courses'); // 'batches' | 'courses' | 'textbook' | 'pyq' | 'history' | 'downloads'
+
+  // Batch Permissions & Active Batch State
+  const allowedBatchIds = useMemo(() => {
+    return getAllowedBatchIdsForUser(user);
+  }, [user]);
+
+  const allowedBatchObjects = useMemo(() => {
+    return allowedBatchIds.map(id => getBatchById(id)).filter(Boolean);
+  }, [allowedBatchIds]);
+
+  const [activeBatchId, setActiveBatchId] = useState(() => {
+    try {
+      const saved = localStorage.getItem('last_selected_batch_id');
+      if (saved && allowedBatchIds.includes(String(saved))) {
+        return String(saved);
+      }
+    } catch (_) {}
+    return allowedBatchIds[0] || '176';
+  });
+
+  const activeBatchObj = useMemo(() => {
+    return getBatchById(activeBatchId) || null;
+  }, [activeBatchId]);
+
+  useEffect(() => {
+    if (!allowedBatchIds.includes(String(activeBatchId)) && allowedBatchIds.length > 0) {
+      setActiveBatchId(allowedBatchIds[0]);
+    }
+  }, [allowedBatchIds]);
+
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -659,7 +697,17 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
             return;
           }
 
-          // 2. If in History tab
+          // 2. If in Batches tab
+          if (activeTabRef.current === 'batches') {
+            if (navigator.onLine && allowedSections.courses) {
+              setActiveTab('courses');
+            } else {
+              setActiveTab('downloads');
+            }
+            return;
+          }
+
+          // 3. If in History tab
           if (activeTabRef.current === 'history') {
             if (navigator.onLine && allowedSections.courses) {
               setActiveTab('courses');
@@ -721,6 +769,10 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         setPlayingVideo(null);
         return;
       }
+      if (activeTabRef.current === 'batches') {
+        setActiveTab(allowedSections.courses ? 'courses' : 'downloads');
+        return;
+      }
       if (activeTabRef.current === 'history') {
         setActiveTab(allowedSections.courses ? 'courses' : 'downloads');
         return;
@@ -748,19 +800,20 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     }
   }, [allowedSections.courses]);
 
-  const fetchCourseData = async () => {
+  const fetchCourseData = async (batchIdToFetch) => {
+    const targetBatchId = String(batchIdToFetch || activeBatchId || '176');
     setLoading(true);
-    const rawClass = String(user?.class || user?.className || '').trim();
-    const cleanClass = rawClass.replace(/\D/g, '') || "10";
-    const classId = (cleanClass === "8" || cleanClass === "9") ? cleanClass : "10";
-    const cacheKey = `course_data_${classId}_v279`;
+    const cacheKey = `course_data_batch_${targetBatchId}_v301`;
     
     // 1. Instant Load from Cache
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try {
-        setCourseData(JSON.parse(cached));
-        setLoading(false); // UI renders instantly
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.subjects) {
+          setCourseData(parsed);
+          setLoading(false); // UI renders instantly
+        }
       } catch (e) {
         console.error("Cache parse error", e);
       }
@@ -768,9 +821,17 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
     // 2. Background Fetch (Update Cache silently)
     try {
-      const res = await fetch(`${FIREBASE_DB_URL}/classes/class_${classId}.json`);
-      const data = await res.json();
-      if (data) {
+      let res = await fetch(`${FIREBASE_DB_URL}/batches/batch_${targetBatchId}.json`);
+      let data = await res.json();
+      if (!data || !data.subjects) {
+        // Fallback for legacy class node (e.g. class_10, class_9, class_8)
+        const rawClass = String(user?.class || user?.className || '').trim();
+        const cleanClass = rawClass.replace(/\D/g, '') || "10";
+        const classId = (cleanClass === "8" || cleanClass === "9") ? cleanClass : "10";
+        res = await fetch(`${FIREBASE_DB_URL}/classes/class_${classId}.json`);
+        data = await res.json();
+      }
+      if (data && data.subjects) {
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setCourseData(data);
       }
@@ -781,8 +842,20 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   };
 
   useEffect(() => {
-    fetchCourseData();
-  }, [user?.class, user?.className]);
+    fetchCourseData(activeBatchId);
+  }, [activeBatchId]);
+
+  const handleSelectBatch = (batchId) => {
+    const strId = String(batchId);
+    setActiveBatchId(strId);
+    try {
+      localStorage.setItem('last_selected_batch_id', strId);
+    } catch (_) {}
+    setCurrentPath([]);
+    setSearchQuery('');
+    fetchCourseData(strId);
+    setActiveTab('courses');
+  };
 
   const handleFolderClick = (subjectId, itemOrFolder) => {
     if (!Capacitor.isNativePlatform()) {
@@ -1181,6 +1254,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                 type="text" 
                 className="search-input" 
                 placeholder={
+                  activeTab === 'batches' ? "Search batches..." :
                   activeTab === 'courses' ? "Search courses..." : 
                   activeTab === 'textbook' ? "Search textbooks..." : 
                   activeTab === 'pyq' ? "Search PYQs..." : 
@@ -1325,6 +1399,15 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         <div className="nav-tabs">
           {isOnline && (
             <>
+              <button 
+                className={`nav-tab-btn ${activeTab === 'batches' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('batches'); setSearchQuery(''); }}
+              >
+                <span className="tab-text">Batches</span>
+                {allowedBatchIds.length > 1 && (
+                  <span className="badge-count" style={{ background: 'var(--accent)', color: '#000', fontWeight: 800 }}>{allowedBatchIds.length}</span>
+                )}
+              </button>
               <button 
                 className={`nav-tab-btn ${activeTab === 'courses' ? 'active' : ''}`}
                 onClick={() => { setActiveTab('courses'); setSearchQuery(''); }}
@@ -2270,6 +2353,16 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         </div>
       )}
 
+      {/* BATCHES TAB VIEW */}
+      {isOnline && activeTab === 'batches' && (
+        <BatchesHub 
+          user={user}
+          activeBatchId={activeBatchId}
+          onSelectBatch={handleSelectBatch}
+          allowedBatches={allowedBatchObjects}
+        />
+      )}
+
       {/* COURSES TAB VIEW */}
       {isOnline && activeTab === 'courses' && (
         <div className="main-content pb-24">
@@ -2296,7 +2389,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                 </button>
               )}
               <span className="breadcrumb-item" onClick={() => setCurrentPath([])}>
-                Home
+                {activeBatchObj ? getBatchDisplayName(activeBatchObj) : 'Home'}
               </span>
               {currentPath.map((part, idx) => (
                 <React.Fragment key={idx}>
@@ -2315,6 +2408,111 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
           {searchQuery && (
             <div className="breadcrumbs" style={{ color: 'var(--accent)' }}>
               Search Results for "{searchQuery}"
+            </div>
+          )}
+
+          {/* Active Batch Banner (Home Screen Only) */}
+          {currentPath.length === 0 && !searchQuery && activeBatchObj && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              borderRadius: '14px',
+              padding: '14px 16px',
+              marginBottom: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                {activeBatchObj.thumbnail ? (
+                  <img 
+                    src={activeBatchObj.thumbnail} 
+                    alt={activeBatchObj.name}
+                    style={{ 
+                      width: '48px', 
+                      height: '48px', 
+                      borderRadius: '10px', 
+                      objectFit: 'cover',
+                      border: '1px solid rgba(255,255,255,0.1)'
+                    }} 
+                  />
+                ) : (
+                  <div style={{ 
+                    width: '48px', 
+                    height: '48px', 
+                    borderRadius: '10px', 
+                    background: 'rgba(59, 130, 246, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#60a5fa'
+                  }}>
+                    <Layers size={24} />
+                  </div>
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                    <span style={{ 
+                      fontSize: '0.7rem', 
+                      fontWeight: 700, 
+                      padding: '2px 7px', 
+                      borderRadius: '9999px',
+                      background: activeBatchObj.isArchive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      color: activeBatchObj.isArchive ? '#fca5a5' : '#6ee7b7',
+                      border: activeBatchObj.isArchive ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                    }}>
+                      {activeBatchObj.session || '2026-27'}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      Batch #{activeBatchObj.id}
+                    </span>
+                  </div>
+                  <div style={{ 
+                    fontSize: '1rem', 
+                    fontWeight: 700, 
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '420px'
+                  }}>
+                    {getBatchDisplayName(activeBatchObj)}
+                  </div>
+                </div>
+              </div>
+
+              {allowedBatchObjects.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('batches')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    color: '#93c5fd',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.28)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
+                  }}
+                >
+                  <Layers size={14} />
+                  <span>Switch Batch ({allowedBatchObjects.length})</span>
+                </button>
+              )}
             </div>
           )}
 
