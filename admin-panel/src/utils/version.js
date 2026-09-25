@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.2.3';
-export const CURRENT_LATEST_CODE = 30203;
+export const CURRENT_LATEST_VERSION = '3.2.4';
+export const CURRENT_LATEST_CODE = 30204;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.2.3',
-  latestVersionCode: 30203,
+  latestAppVersion: '3.2.4',
+  latestVersionCode: 30204,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.2.3: Full PW batches support, dedicated batch selector buttons, and integrated lecture notes'
+  releaseNotes: '• Version 3.2.4: Optimized smooth PW DASH playback, persistent speed & quality presets, and non-blocking timeline scrubbing'
 };
 
 /**

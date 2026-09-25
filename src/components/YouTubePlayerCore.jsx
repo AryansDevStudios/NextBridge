@@ -84,10 +84,69 @@ export default function YouTubePlayerCore({
   // Quality & Speed
   const savedSpeed = parseFloat(localStorage.getItem('app_playback_speed')) || 1;
   const [playbackSpeed, setPlaybackSpeed] = useState(savedSpeed);
+  const playbackSpeedRef = useRef(savedSpeed);
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
+
   const [qualityLevels, setQualityLevels] = useState([]);
   const [currentQuality, setCurrentQuality] = useState(() => {
     return parseInt(localStorage.getItem('global_quality') || '0', 10);
   });
+  const currentQualityRef = useRef(currentQuality);
+  useEffect(() => {
+    currentQualityRef.current = currentQuality;
+  }, [currentQuality]);
+
+  const [isBuffering, setIsBuffering] = useState(false);
+  const scrubTargetTimeRef = useRef(0);
+
+  // Centralized playback speed applicator
+  const applySpeed = useCallback((targetSpeed) => {
+    const s = parseFloat(targetSpeed) || playbackSpeedRef.current || 1;
+    setPlaybackSpeed(s);
+    playbackSpeedRef.current = s;
+    localStorage.setItem('app_playback_speed', s.toString());
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.preservesPitch = true;
+        if ('webkitPreservesPitch' in video) video.webkitPreservesPitch = true;
+        if ('mozPreservesPitch' in video) video.mozPreservesPitch = true;
+        video.defaultPlaybackRate = s;
+        video.playbackRate = s;
+      } catch (err) {
+        console.warn('Error setting playback speed:', err);
+      }
+    }
+  }, []);
+
+  // Centralized quality changer
+  const handleQualityChange = useCallback((lvl) => {
+    const isAuto = lvl.id === -1;
+    const targetVal = isAuto ? -1 : (lvl.height || lvl.id);
+    setCurrentQuality(targetVal);
+    currentQualityRef.current = targetVal;
+    localStorage.setItem('global_quality', targetVal.toString());
+
+    if (hlsRef.current) {
+      hlsRef.current.currentLevel = isAuto ? -1 : lvl.id;
+    }
+
+    if (shakaRef.current) {
+      if (isAuto) {
+        shakaRef.current.configure({ abr: { enabled: true } });
+      } else {
+        shakaRef.current.configure({ abr: { enabled: false } });
+        const tracks = shakaRef.current.getVariantTracks()
+          .filter(t => t.height === (lvl.height || lvl.id))
+          .sort((a, b) => (b.videoBandwidth || b.bandwidth || 0) - (a.videoBandwidth || a.bandwidth || 0));
+        if (tracks.length > 0) {
+          shakaRef.current.selectVariantTrack(tracks[0], false /* false avoids buffer wipe and stutter */);
+        }
+      }
+    }
+  }, []);
 
   // Offline stream detection (Zero bandwidth waste)
   const [offlineUrl, setOfflineUrl] = useState(null);
@@ -331,13 +390,28 @@ export default function YouTubePlayerCore({
 
     const targetUrl = offlineUrl || convertDownloadUrlToHls(url);
 
-    video.playbackRate = playbackSpeed;
+    // Apply initial speed, volume, and pitch preservation
+    applySpeed(playbackSpeedRef.current);
     video.volume = volume;
     video.muted = isMuted;
 
     let hls;
     let shakaPlayer = null;
     let isDisposed = false;
+
+    // Resolve saved seek position ahead of time to stream directly to that point without thrashing
+    let initialSeek = 0;
+    if (storageKey) {
+      const saved = parseFloat(localStorage.getItem(storageKey));
+      const dur = itemRef.current?.duration || item?.duration || 0;
+      if (saved && saved > 0 && isFinite(saved)) {
+        if (dur > 0 && saved >= dur - 5) {
+          localStorage.removeItem(storageKey);
+        } else {
+          initialSeek = saved;
+        }
+      }
+    }
 
     const isMpd = targetUrl && (targetUrl.includes('.mpd') || item?.isDash);
 
@@ -356,21 +430,69 @@ export default function YouTubePlayerCore({
           shakaRef.current = shakaPlayer;
           await shakaPlayer.attach(video);
 
-          const keys = item?.clearKeys || item?.pwClearKeys;
-          if (keys) {
-            shakaPlayer.configure({
-              drm: {
-                clearKeys: keys
-              }
-            });
+          // Configure ClearKeys DRM safely
+          let keys = item?.clearKeys || item?.pwClearKeys;
+          if (typeof keys === 'string') {
+            try { keys = JSON.parse(keys); } catch (_) {}
           }
+          const drmConfig = (keys && typeof keys === 'object' && Object.keys(keys).length > 0)
+            ? { clearKeys: keys }
+            : {};
 
-          shakaPlayer.addEventListener('error', (event) => {
-            console.error('Shaka Player error:', event.detail);
+          const savedQuality = parseInt(localStorage.getItem('global_quality') || '0', 10);
+
+          shakaPlayer.configure({
+            drm: drmConfig,
+            streaming: {
+              bufferingGoal: 30, // 30s forward buffer prevents stalls on network variance & DRM decryption
+              rebufferingGoal: 2, // 2s resume threshold for snappy recovery
+              bufferBehind: 30, // 30s backward buffer for instant rewind
+              retryParameters: {
+                maxAttempts: 4,
+                baseDelay: 1000,
+                backoffFactor: 2,
+                timeout: 12000
+              },
+              jumpLargeGaps: true, // Smoothly jump gaps at segment boundaries
+              smallGapLimit: 1.5, // 1.5s tolerance to eliminate segment-boundary stutter
+              gapDetectionThreshold: 0.25,
+              stallEnabled: true,
+              stallThreshold: 1.0,
+              stallSkip: 0.1,
+              safeSeekOffset: 0,
+              inaccurateManifestTolerance: 1.0,
+              alwaysStreamLookup: false
+            },
+            abr: {
+              enabled: savedQuality <= 0 || savedQuality === -1,
+              defaultBandwidthEstimate: 2500000, // 2.5 Mbps avoids initial 144p drop & rebuffer
+              switchInterval: 8, // Prevent frantic track jumping
+              bandwidthUpgradeTarget: 0.85,
+              bandwidthDowngradeTarget: 0.95
+            },
+            manifest: {
+              dash: {
+                ignoreMinBufferTime: true, // Crucial: ignore manifest minBufferTime like 1.5s that throttles buffer
+                autoCorrectDrift: true
+              }
+            }
           });
 
-          await shakaPlayer.load(targetUrl);
+          shakaPlayer.addEventListener('error', (event) => {
+            const err = event.detail || event;
+            console.warn('Shaka Player warning/error:', err);
+          });
+
+          shakaPlayer.addEventListener('buffering', (event) => {
+            setIsBuffering(Boolean(event.buffering));
+          });
+
+          // Load manifest directly at initialSeek
+          await shakaPlayer.load(targetUrl, initialSeek > 0 ? initialSeek : undefined);
           if (isDisposed) return;
+
+          // Re-apply playback speed right after load to override browser reset
+          applySpeed(playbackSpeedRef.current);
 
           const tracks = shakaPlayer.getVariantTracks() || [];
           const uniqueHeights = [...new Set(tracks.map(t => t.height).filter(Boolean))].sort((a, b) => b - a);
@@ -380,7 +502,27 @@ export default function YouTubePlayerCore({
           });
           setQualityLevels(opts);
 
-          restorePosition();
+          // Restore Quality Preset consistently
+          if (savedQuality > 0) {
+            const matchingTracks = tracks
+              .filter(t => t.height === savedQuality)
+              .sort((a, b) => (b.videoBandwidth || b.bandwidth || 0) - (a.videoBandwidth || a.bandwidth || 0));
+            if (matchingTracks.length > 0) {
+              shakaPlayer.configure({ abr: { enabled: false } });
+              shakaPlayer.selectVariantTrack(matchingTracks[0], false);
+              setCurrentQuality(savedQuality);
+            } else {
+              shakaPlayer.configure({ abr: { enabled: true } });
+            }
+          } else {
+            shakaPlayer.configure({ abr: { enabled: true } });
+          }
+
+          if (initialSeek > 0 && Math.abs(video.currentTime - initialSeek) > 2) {
+            video.currentTime = initialSeek;
+            setCurrentTime(initialSeek);
+          }
+
           video.play().catch(() => {});
         } catch (err) {
           console.error('Failed to initialize Shaka Player:', err);
@@ -394,13 +536,15 @@ export default function YouTubePlayerCore({
         backBufferLength: 30,
         maxBufferLength: 20,
         maxMaxBufferLength: 40,
-        maxBufferSize: 30 * 1024 * 1024
+        maxBufferSize: 30 * 1024 * 1024,
+        startPosition: initialSeek > 0 ? initialSeek : -1
       });
       hlsRef.current = hls;
       hls.loadSource(targetUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
+        applySpeed(playbackSpeedRef.current);
         const levels = data.levels || [];
         const opts = [{ id: -1, label: 'Auto' }];
         levels.forEach((lvl, idx) => {
@@ -412,12 +556,24 @@ export default function YouTubePlayerCore({
         });
         setQualityLevels(opts);
 
-        if (currentQuality !== 0 && currentQuality !== -1) {
-          const matched = levels.findIndex((l) => l.height === currentQuality);
-          if (matched !== -1) hls.currentLevel = matched;
+        const savedQuality = parseInt(localStorage.getItem('global_quality') || '0', 10);
+        if (savedQuality > 0) {
+          const matched = levels.findIndex((l) => l.height === savedQuality);
+          if (matched !== -1) {
+            hls.currentLevel = matched;
+            setCurrentQuality(savedQuality);
+          } else {
+            hls.currentLevel = -1;
+          }
+        } else {
+          hls.currentLevel = -1;
         }
 
-        restorePosition();
+        if (initialSeek > 0 && Math.abs(video.currentTime - initialSeek) > 2) {
+          video.currentTime = initialSeek;
+          setCurrentTime(initialSeek);
+        }
+
         video.play().catch(() => {});
       });
 
@@ -431,9 +587,13 @@ export default function YouTubePlayerCore({
     } else {
       video.src = targetUrl;
       video.addEventListener('loadedmetadata', () => {
-        restorePosition();
+        applySpeed(playbackSpeedRef.current);
+        if (initialSeek > 0) {
+          video.currentTime = initialSeek;
+          setCurrentTime(initialSeek);
+        }
         video.play().catch(() => {});
-      });
+      }, { once: true });
     }
 
     // Screen WakeLock
@@ -467,18 +627,61 @@ export default function YouTubePlayerCore({
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       if (video.buffered.length > 0) {
-        setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+        let currentEnd = 0;
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= video.currentTime + 0.5 && video.buffered.end(i) >= video.currentTime - 0.5) {
+            currentEnd = video.buffered.end(i);
+            break;
+          }
+        }
+        setBufferedEnd(currentEnd || video.buffered.end(video.buffered.length - 1));
       }
     };
     const onDurationChange = () => setDuration(video.duration || item.duration || 0);
+
     const onPlay = () => {
       setIsPlaying(true);
       lastPlayTime.current = Date.now();
       acquireLock();
+      if (!isLongPressing.current && videoRef.current) {
+        applySpeed(playbackSpeedRef.current);
+      }
       if (Capacitor.isNativePlatform()) {
         ImmersiveMode.setVideoPlaying({ playing: true }).catch(() => {});
       }
     };
+
+    const onPlaying = () => {
+      setIsPlaying(true);
+      setIsBuffering(false);
+      if (!isLongPressing.current && videoRef.current) {
+        applySpeed(playbackSpeedRef.current);
+      }
+    };
+
+    const onWaiting = () => {
+      setIsBuffering(true);
+    };
+
+    const onSeeking = () => {
+      setIsBuffering(true);
+    };
+
+    const onSeeked = () => {
+      setIsBuffering(false);
+      if (!isLongPressing.current && videoRef.current) {
+        applySpeed(playbackSpeedRef.current);
+      }
+    };
+
+    const onRateChange = () => {
+      if (isLongPressing.current) return;
+      const targetSpeed = playbackSpeedRef.current;
+      if (video && Math.abs(video.playbackRate - 1.0) < 0.01 && Math.abs(targetSpeed - 1.0) > 0.01) {
+        video.playbackRate = targetSpeed;
+      }
+    };
+
     const onPause = () => {
       setIsPlaying(false);
       releaseLock();
@@ -488,6 +691,7 @@ export default function YouTubePlayerCore({
         ImmersiveMode.setVideoPlaying({ playing: false }).catch(() => {});
       }
     };
+
     const onEnded = () => {
       setIsPlaying(false);
       releaseLock();
@@ -498,6 +702,11 @@ export default function YouTubePlayerCore({
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('play', onPlay);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('seeked', onSeeked);
+    video.addEventListener('ratechange', onRateChange);
     video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
 
@@ -536,7 +745,13 @@ export default function YouTubePlayerCore({
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('play', onPlay);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('ratechange', onRateChange);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
       isDisposed = true;
       if (hls) hls.destroy();
       if (shakaPlayer) shakaPlayer.destroy().catch(() => {});
@@ -548,7 +763,7 @@ export default function YouTubePlayerCore({
         ImmersiveMode.setVideoPlaying({ playing: false }).catch(() => {});
       }
     };
-  }, [isReady, offlineUrl, url, storageKey, restorePosition, savePosition, flushWatchTime, item?.duration]);
+  }, [isReady, offlineUrl, url, storageKey, savePosition, flushWatchTime, item?.duration, applySpeed]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // 5. Scrim Auto-Hide Timer
@@ -799,22 +1014,12 @@ export default function YouTubePlayerCore({
           break;
         case '<':
           e.preventDefault();
-          setPlaybackSpeed((prev) => {
-            const next = Math.max(0.25, prev - 0.25);
-            video.playbackRate = next;
-            localStorage.setItem('app_playback_speed', next.toString());
-            return next;
-          });
+          applySpeed(Math.max(0.25, Math.round((playbackSpeedRef.current - 0.25) * 100) / 100));
           showControls();
           break;
         case '>':
           e.preventDefault();
-          setPlaybackSpeed((prev) => {
-            const next = Math.min(2.5, prev + 0.25);
-            video.playbackRate = next;
-            localStorage.setItem('app_playback_speed', next.toString());
-            return next;
-          });
+          applySpeed(Math.min(2.5, Math.round((playbackSpeedRef.current + 0.25) * 100) / 100));
           showControls();
           break;
         default:
@@ -830,43 +1035,42 @@ export default function YouTubePlayerCore({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showControls, playbackSpeed]);
+  }, [showControls, applySpeed]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // 9. Precision Scrubber
   // ──────────────────────────────────────────────────────────────────────────
-  const handleScrubberSeek = (clientX) => {
+  const handleScrubberPreview = (clientX) => {
+    const rail = scrubberRef.current;
+    const shell = playerShellRef.current;
+    if (!rail || !shell) return;
+    const rect = rail.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const dur = videoRef.current?.duration || duration || item.duration || 0;
+    const targetTime = ratio * dur;
+    const relX = clientX - shellRect.left;
+
+    scrubTargetTimeRef.current = targetTime;
+    setCurrentTime(targetTime);
+    setScrubPreview({
+      x: Math.max(75, Math.min(shellRect.width - 75, relX)),
+      time: targetTime
+    });
+  };
+
+  const commitScrubberSeek = (clientX) => {
     const rail = scrubberRef.current;
     const video = videoRef.current;
     if (!rail || !video) return;
     const rect = rail.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const target = ratio * (video.duration || item.duration || 0);
-    video.currentTime = target;
-    setCurrentTime(target);
-  };
-
-  const handleScrubMove = (e) => {
-    const rail = scrubberRef.current;
-    const shell = playerShellRef.current;
-    if (!rail || !shell) return;
-    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
-    const rect = rail.getBoundingClientRect();
-    const shellRect = shell.getBoundingClientRect();
-
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const dur = videoRef.current?.duration || item.duration || 0;
+    const dur = video.duration || duration || item.duration || 0;
     const targetTime = ratio * dur;
-    const relX = clientX - shellRect.left;
-
-    setScrubPreview({
-      x: Math.max(75, Math.min(shellRect.width - 75, relX)),
-      time: targetTime
-    });
-
-    if (isScrubbing) {
-      handleScrubberSeek(clientX);
-    }
+    video.currentTime = targetTime;
+    setCurrentTime(targetTime);
+    savePosition();
   };
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -917,7 +1121,7 @@ export default function YouTubePlayerCore({
       }
       setStatsData({
         resolution: `${video.videoWidth}x${video.videoHeight}`,
-        codec: isOfflineStream ? 'Local Storage / MP4' : 'CloudFront / HLS.js',
+        codec: isOfflineStream ? 'Local Storage / MP4' : (isPwVideo ? 'DASH / ClearKeys (Shaka)' : 'CloudFront / HLS.js'),
         droppedFrames: dropped,
         totalFrames: total,
         bufferLength: bufSecs
@@ -956,10 +1160,18 @@ export default function YouTubePlayerCore({
         <video
           ref={videoRef}
           playsInline
+          webkit-playsinline="true"
           crossOrigin="anonymous"
+          preload="auto"
           className="yt-video-element"
           style={{ display: isAudioOnly ? 'none' : 'block' }}
         />
+
+        {isBuffering && !isAudioOnly && (
+          <div className="yt-buffering-overlay">
+            <div className="yt-buffering-spinner" />
+          </div>
+        )}
 
         {/* Audio-Only Mode Card */}
         {isAudioOnly && (
@@ -1135,12 +1347,29 @@ export default function YouTubePlayerCore({
             className={`yt-scrubber-container ${isScrubbing ? 'scrubbing' : ''}`}
             onPointerDown={(e) => {
               e.stopPropagation();
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch (_) {}
               setIsScrubbing(true);
-              handleScrubberSeek(e.clientX);
+              handleScrubberPreview(e.clientX);
             }}
-            onPointerMove={handleScrubMove}
-            onPointerUp={() => setIsScrubbing(false)}
-            onPointerLeave={() => {
+            onPointerMove={(e) => {
+              if (isScrubbing) {
+                handleScrubberPreview(e.clientX);
+              }
+            }}
+            onPointerUp={(e) => {
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              } catch (_) {}
+              setIsScrubbing(false);
+              setScrubPreview(null);
+              commitScrubberSeek(e.clientX);
+            }}
+            onPointerCancel={(e) => {
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              } catch (_) {}
               setIsScrubbing(false);
               setScrubPreview(null);
             }}
@@ -1300,33 +1529,21 @@ export default function YouTubePlayerCore({
               <div className="yt-sheet-row">
                 <span className="yt-sheet-row-label">Quality</span>
                 <div className="yt-chips-container">
-                  {qualityLevels.map((lvl) => (
-                    <button
-                      key={lvl.id}
-                      className={`yt-chip-btn ${currentQuality === (lvl.height || lvl.id) ? 'active' : ''}`}
-                      onClick={() => {
-                        const h = lvl.height || lvl.id;
-                        setCurrentQuality(h);
-                        localStorage.setItem('global_quality', h.toString());
-                        if (hlsRef.current) {
-                          hlsRef.current.currentLevel = lvl.id;
-                        }
-                        if (shakaRef.current) {
-                          if (lvl.id === -1) {
-                            shakaRef.current.configure({ abr: { enabled: true } });
-                          } else {
-                            shakaRef.current.configure({ abr: { enabled: false } });
-                            const tracks = shakaRef.current.getVariantTracks().filter(t => t.height === (lvl.height || lvl.id));
-                            if (tracks.length > 0) {
-                              shakaRef.current.selectVariantTrack(tracks[0], /* clearBuffer */ true);
-                            }
-                          }
-                        }
-                      }}
-                    >
-                      {lvl.label}
-                    </button>
-                  ))}
+                  {qualityLevels.map((lvl) => {
+                    const isAuto = lvl.id === -1;
+                    const isActive = isAuto
+                      ? (currentQuality <= 0 || currentQuality === -1)
+                      : (currentQuality === (lvl.height || lvl.id));
+                    return (
+                      <button
+                        key={lvl.id}
+                        className={`yt-chip-btn ${isActive ? 'active' : ''}`}
+                        onClick={() => handleQualityChange(lvl)}
+                      >
+                        {lvl.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1343,12 +1560,8 @@ export default function YouTubePlayerCore({
                 {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
                   <button
                     key={s}
-                    className={`yt-chip-btn ${playbackSpeed === s ? 'active' : ''}`}
-                    onClick={() => {
-                      setPlaybackSpeed(s);
-                      if (videoRef.current) videoRef.current.playbackRate = s;
-                      localStorage.setItem('app_playback_speed', s.toString());
-                    }}
+                    className={`yt-chip-btn ${Math.abs(playbackSpeed - s) < 0.01 ? 'active' : ''}`}
+                    onClick={() => applySpeed(s)}
                   >
                     {s === 1 ? 'Normal' : `${s}x`}
                   </button>
