@@ -56,6 +56,7 @@ async function buildAndConsolidate() {
 
   // D. Netlify _redirects to handle SPA routing
   const redirects = `
+/api/course-proxy/* https://course.nexttoppers.com/:splat 200!
 /admin/* /admin/index.html 200
 /* /index.html 200
   `.trim();

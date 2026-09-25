@@ -9,6 +9,12 @@
   SECRETS_SCAN_OMIT_KEYS = "VITE_ADMIN_USERNAME"
 
 [[redirects]]
+  from = "/api/course-proxy/*"
+  to = "https://course.nexttoppers.com/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
   status = 200

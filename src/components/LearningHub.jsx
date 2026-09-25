@@ -750,8 +750,10 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
   const fetchCourseData = async () => {
     setLoading(true);
-    const classId = (user.class === "9" || user.class === "9th") ? "9" : "10";
-    const cacheKey = `course_data_${classId}`;
+    const rawClass = String(user?.class || user?.className || '').trim();
+    const cleanClass = rawClass.replace(/\D/g, '') || "10";
+    const classId = (cleanClass === "8" || cleanClass === "9") ? cleanClass : "10";
+    const cacheKey = `course_data_${classId}_v279`;
     
     // 1. Instant Load from Cache
     const cached = localStorage.getItem(cacheKey);
@@ -780,7 +782,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
   useEffect(() => {
     fetchCourseData();
-  }, [user.class]);
+  }, [user?.class, user?.className]);
 
   const handleFolderClick = (subjectId, itemOrFolder) => {
     if (!Capacitor.isNativePlatform()) {
@@ -964,7 +966,21 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       }));
   } else if (currentFolder) {
     // Inside a folder/subject
-    const subject = courseData.subjects[currentFolder.subjectId];
+    const subjectsMap = courseData.subjects || {};
+    let subject = null;
+    if (currentFolder.subjectId && subjectsMap[currentFolder.subjectId]) {
+      subject = subjectsMap[currentFolder.subjectId];
+    } else {
+      const subs = Array.isArray(subjectsMap) ? subjectsMap : Object.values(subjectsMap);
+      subject = subs.find(s => 
+        s && (
+          String(s.subject_id) === String(currentFolder.subjectId) ||
+          String(s.id) === String(currentFolder.subjectId) ||
+          s.subject_name === currentFolder.subject_name ||
+          s.subject_name === currentFolder.title
+        )
+      );
+    }
     
     if (subject && subject.items) {
       let targetPath = "";
@@ -972,33 +988,46 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
          targetPath = currentFolder.folder_path ? `${currentFolder.folder_path}/${currentFolder.title}` : currentFolder.title;
       }
       
-      const subjectItems = Object.values(subject.items);
+      const subjectItems = Array.isArray(subject.items)
+        ? subject.items.filter(Boolean)
+        : Object.values(subject.items).filter(Boolean);
       const directChildren = [];
       const folders = new Set();
 
       subjectItems.forEach(item => {
-        if (item.isHidden) return; // Hide locked content
+        if (!item || item.isHidden) return; // Hide locked content or nulls
 
-        if (item.folder_path === targetPath) {
+        const itemFolderPath = item.folder_path || "";
+        if (itemFolderPath === targetPath) {
           directChildren.push({
             ...item,
             subject_name: subject.subject_name,
-            subjectId: currentFolder.subjectId || subject.subject_id || subject.subject_name
+            subjectId: currentFolder.subjectId || subject.subject_id || subject.id || subject.subject_name
           });
-        } else if (item.folder_path && item.folder_path.startsWith(targetPath)) {
-          const remainingPath = targetPath === "" ? item.folder_path : item.folder_path.substring(targetPath.length + 1);
+        } else if (itemFolderPath && itemFolderPath.startsWith(targetPath)) {
+          const remainingPath = targetPath === "" ? itemFolderPath : itemFolderPath.substring(targetPath.length + 1);
           const nextFolder = remainingPath.split('/')[0];
           if (nextFolder) folders.add(nextFolder);
         }
       });
 
       currentItems = [
-        ...Array.from(folders).map(f => ({ title: f, isFolder: true, subjectId: currentFolder.subjectId, folder_path: targetPath })),
+        ...Array.from(folders).map(f => {
+          const subPath = targetPath ? `${targetPath}/${f}` : f;
+          const childCount = subjectItems.filter(it => it && !it.isHidden && (it.folder_path === subPath || (it.folder_path && it.folder_path.startsWith(subPath + '/')))).length;
+          return {
+            title: f,
+            isFolder: true,
+            itemCount: childCount,
+            subjectId: currentFolder.subjectId || subject.subject_id || subject.id,
+            folder_path: targetPath
+          };
+        }),
         ...directChildren.sort((a, b) => {
            const timeA = typeof a.created_at === 'number' ? a.created_at : 0;
            const timeB = typeof b.created_at === 'number' ? b.created_at : 0;
            if (timeB !== timeA) return timeB - timeA;
-           return a.title.localeCompare(b.title);
+           return (a.title || '').localeCompare(b.title || '');
         })
       ];
     }
@@ -2434,7 +2463,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                   <div 
                     key={idx} 
                     className="list-item"
-                    onClick={() => handleFolderClick(item.subject_id || item.subjectId, item)}
+                    onClick={() => handleFolderClick(item.subject_id || item.subjectId || item.id, item)}
                   >
                     <div className="item-icon-container folder">
                       <Folder size={24} />
@@ -2442,7 +2471,11 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                     <div className="item-details">
                       <div className="item-title">{item.isRootSubject ? item.subject_name : item.title}</div>
                       <div className="item-meta">
-                         {item.isRootSubject && item.items ? Object.keys(item.items).length : ''} {item.isRootSubject ? 'items' : 'Folder'}
+                        {item.isRootSubject ? (
+                          `${item.items ? (Array.isArray(item.items) ? item.items.length : Object.keys(item.items).length) : 0} items`
+                        ) : (
+                          item.itemCount !== undefined ? `${item.itemCount} items` : 'Folder'
+                        )}
                       </div>
                     </div>
                   </div>

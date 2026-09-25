@@ -24,6 +24,21 @@ export function formatSeekTime(seconds) {
   return `${pad(m)}:${pad(s)}`;
 }
 
+export function convertDownloadUrlToHls(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+  if (rawUrl.includes('.m3u8')) return rawUrl;
+  
+  // Convert NextToppers /download/ or /file_library/videos/download/ to CloudFront HLS
+  const match = rawUrl.match(/(?:file_library\/videos\/download|\/download\/)\/(\d+)\/([a-zA-Z0-9_-]+)/);
+  if (match) {
+    const vdcPrefix = match[1];
+    const fileHash = match[2];
+    const hashSuffix = fileHash.length >= 7 ? fileHash.slice(-7) : fileHash;
+    return `https://dbil3go8szhu6.cloudfront.net/file_library/videos/channel_vod_non_drm_hls/${vdcPrefix}/${fileHash}/${fileHash}_${hashSuffix}.m3u8`;
+  }
+  return rawUrl;
+}
+
 function HlsPlayer({ url, item, user }) {
   const videoRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -122,7 +137,8 @@ function HlsPlayer({ url, item, user }) {
     const wrapper = wrapperRef.current;
     if (!video || !wrapper) return;
 
-    const finalUrl = offlineUrl || url;
+    const rawTargetUrl = offlineUrl || url;
+    const finalUrl = offlineUrl ? offlineUrl : convertDownloadUrlToHls(rawTargetUrl);
     const currentItemId = itemRef.current?.id;
     const storageKey = currentItemId ? `lecture_pos_${currentItemId}` : null;
     let saveInterval = null;
@@ -906,7 +922,7 @@ function HlsPlayer({ url, item, user }) {
             <div className="seek-preview-frame">
               <video 
                 ref={previewVideoRef} 
-                src={offlineUrl || url} 
+                src={finalUrl} 
                 muted 
                 playsInline 
                 preload="metadata" 
@@ -1775,27 +1791,124 @@ const VideoPlayer = ({ item, onClose, user }) => {
           </div>
         </div>
 
-        {/* Local Mozilla PDF.js viewer */}
-        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124', userSelect: 'text', WebkitUserSelect: 'text' }}>
-          <iframe 
-            src={`${window.location.origin || ''}/pdfjs/web/viewer.html?file=${encodeURIComponent(resolvedPdfUrl || item.url)}#zoom=page-width`} 
-            style={{ 
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%', 
-              height: '100%', 
-              minWidth: '100%',
-              minHeight: '100%',
-              border: 'none', 
-              display: 'block',
-              userSelect: 'text',
-              WebkitUserSelect: 'text'
-            }} 
-            title={item.title}
-            allowFullScreen
-          />
-        </div>
+        {/* Dedicated view for NextToppers dynamic links (/dl/r/) vs direct Mozilla PDF.js viewer */}
+        {(resolvedPdfUrl || item.url || '').includes('/dl/r/') ? (
+          <div style={{ 
+            flex: 1, 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            padding: '24px',
+            background: '#121214',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '20px',
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px',
+              color: '#38bdf8'
+            }}>
+              <ExternalLink size={34} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f3f4f6', marginBottom: '8px', maxWidth: '520px' }}>
+              {item.title || 'Study Material / Notes'}
+            </h3>
+
+            {(item.subject_name || item.subjectName) && (
+              <span style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '12px' }}>
+                {item.subject_name || item.subjectName}
+              </span>
+            )}
+
+            <p style={{ color: '#9ca3af', fontSize: '0.88rem', maxWidth: '440px', lineHeight: 1.5, marginBottom: '24px' }}>
+              This study document is hosted via NextToppers portal. Tap below to view the official document in your browser.
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  const targetUrl = item.url || resolvedPdfUrl;
+                  if (targetUrl) window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
+                }}
+              >
+                <ExternalLink size={18} />
+                <span>Open in Browser</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const targetUrl = item.url || resolvedPdfUrl;
+                  if (targetUrl) {
+                    navigator.clipboard?.writeText(targetUrl);
+                    setPdfActionToast('Link copied to clipboard');
+                    setTimeout(() => setPdfActionToast(''), 3000);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(255, 255, 255, 0.07)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#e5e7eb',
+                  padding: '12px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 500,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <Share2 size={16} />
+                <span>Copy Link</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124', userSelect: 'text', WebkitUserSelect: 'text' }}>
+            <iframe 
+              src={`${window.location.origin || ''}/pdfjs/web/viewer.html?file=${encodeURIComponent(resolvedPdfUrl || item.url)}#zoom=page-width`} 
+              style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%', 
+                height: '100%', 
+                minWidth: '100%',
+                minHeight: '100%',
+                border: 'none', 
+                display: 'block',
+                userSelect: 'text',
+                WebkitUserSelect: 'text'
+              }} 
+              title={item.title}
+              allowFullScreen
+            />
+          </div>
+        )}
       </div>
     );
   }
