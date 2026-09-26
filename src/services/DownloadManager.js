@@ -1,5 +1,6 @@
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { pwApiService, toProxiedPdfUrl, getNetlifyFallbackPdfUrl } from './PwApiService';
 
 const DownloadService = registerPlugin('DownloadService');
 
@@ -799,6 +800,42 @@ class DownloadManagerService {
 
     try {
       let sizeBytes = 0;
+      let targetUrl = item.url;
+
+      // Automatically resolve dynamic PW / lxpdf / static.pw.live URLs
+      if (item.isDynamicPw || (targetUrl || '').includes('lxpdf') || (targetUrl || '').includes('space-z.ai') || (targetUrl || '').includes('static.pw.live')) {
+        try {
+          const resolved = await pwApiService.resolvePdfUrl(item);
+          if (resolved) targetUrl = resolved;
+        } catch (e) {
+          console.warn('[DownloadManager] Dynamic PDF resolution error:', e);
+        }
+      }
+      targetUrl = toProxiedPdfUrl(targetUrl);
+
+      const fetchBlobWithRetry = async (url) => {
+        let lastErr;
+        const candidates = [url];
+        const fallback = getNetlifyFallbackPdfUrl(url);
+        if (fallback && fallback !== url) {
+          candidates.push(fallback);
+        }
+
+        for (const candidateUrl of candidates) {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const res = await fetch(candidateUrl);
+              if (res.ok) return await res.blob();
+              throw new Error(`HTTP ${res.status}`);
+            } catch (e) {
+              lastErr = e;
+              if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+            }
+          }
+        }
+        throw lastErr;
+      };
+
       if (Capacitor.isNativePlatform()) {
         await Filesystem.mkdir({
           path: folderDir,
@@ -806,9 +843,7 @@ class DownloadManagerService {
           recursive: true
         }).catch(() => {});
 
-        const res = await fetch(item.url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        const blob = await fetchBlobWithRetry(targetUrl);
         sizeBytes = blob.size;
 
         proxy.percent = 60;
@@ -833,9 +868,7 @@ class DownloadManagerService {
           directory: Directory.Data
         });
       } else {
-        const res = await fetch(item.url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        const blob = await fetchBlobWithRetry(targetUrl);
         sizeBytes = blob.size;
       }
 

@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.2.5';
-export const CURRENT_LATEST_CODE = 30205;
+export const CURRENT_LATEST_VERSION = '3.2.7';
+export const CURRENT_LATEST_CODE = 30207;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.2.5',
-  latestVersionCode: 30205,
+  latestAppVersion: '3.2.7',
+  latestVersionCode: 30207,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.2.5: Integrated internal PDF viewer for PW Notes & DPPs, complete Firestore study logs sync, and 1-minute maximum lecture prefetching'
+  releaseNotes: '• Version 3.2.7: High-reliability PW PDF resolution with Render CORS proxy & Netlify auto-failover, resilient offline PDF caching & downloads, and Shaka Player 5 configuration fix.'
 };
 
 /**

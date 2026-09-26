@@ -56,6 +56,8 @@ async function buildAndConsolidate() {
 
   // D. Netlify _redirects to handle SPA routing
   const redirects = `
+/api/pw-static/* https://static.pw.live/:splat 200!
+/api/pw-gateway/* https://nexthope-pw.space-z.ai/:splat 200!
 /api/course-proxy/* https://course.nexttoppers.com/:splat 200!
 /admin/* /admin/index.html 200
 /* /index.html 200

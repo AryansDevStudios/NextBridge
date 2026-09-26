@@ -536,6 +536,9 @@ const PDFViewerApplication = {
     const queryString = document.location.search.substring(1);
     const params = (0, _ui_utils.parseQueryString)(queryString);
     file = params.get("file") ?? _app_options.AppOptions.get("defaultUrl");
+    if (file && typeof file === "string" && file.includes("static.pw.live") && !file.includes("corsproxy-bppd.onrender.com") && !file.includes("/api/pw-static")) {
+      file = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(file)}`;
+    }
     validateFileURL(file);
     const fileInput = appConfig.openFileInput;
     fileInput.value = null;
@@ -804,6 +807,48 @@ const PDFViewerApplication = {
       if (loadingTask !== this.pdfLoadingTask) {
         return undefined;
       }
+
+      // Auto-fallback across proxies before giving up
+      if (args?.url && !args._hasRetriedFallback) {
+        let fallbackUrl = null;
+        if (args.url.includes("corsproxy-bppd.onrender.com")) {
+          try {
+            const parsed = new URL(args.url);
+            const originalTarget = parsed.searchParams.get("url");
+            if (originalTarget && originalTarget.includes("static.pw.live")) {
+              const rel = originalTarget.replace(/^https?:\/\/static\.pw\.live\/?/, "");
+              let isNative = false;
+              try {
+                isNative = Boolean(
+                  window.Capacitor?.isNativePlatform?.() ||
+                  window.parent?.Capacitor?.isNativePlatform?.() ||
+                  window.location.protocol === "capacitor:" ||
+                  window.location.protocol === "ionic:" ||
+                  window.parent?.location?.protocol === "capacitor:"
+                );
+              } catch (_) {}
+              fallbackUrl = isNative 
+                ? `https://nextbridgeweb.netlify.app/api/pw-static/${rel}` 
+                : `/api/pw-static/${rel}`;
+            }
+          } catch (_) {}
+        } else if (args.url.includes("/api/pw-static/")) {
+          try {
+            const rel = args.url.replace(/^.*\/api\/pw-static\/?/, "");
+            fallbackUrl = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent("https://static.pw.live/" + rel)}`;
+          } catch (_) {}
+        }
+
+        if (fallbackUrl && fallbackUrl !== args.url) {
+          console.warn("[PDF.js Viewer] Primary URL failed, retrying with fallback proxy:", fallbackUrl);
+          return this.open({
+            ...args,
+            url: fallbackUrl,
+            _hasRetriedFallback: true
+          });
+        }
+      }
+
       let key = "loading_error";
       if (reason instanceof _pdfjsLib.InvalidPDFException) {
         key = "invalid_file_error";

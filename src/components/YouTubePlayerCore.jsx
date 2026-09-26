@@ -455,15 +455,12 @@ export default function YouTubePlayerCore({
                 backoffFactor: 2,
                 timeout: 12000
               },
-              jumpLargeGaps: true, // Smoothly jump gaps at segment boundaries
-              smallGapLimit: 1.5, // 1.5s tolerance to eliminate segment-boundary stutter
               gapDetectionThreshold: 0.25,
               stallEnabled: true,
               stallThreshold: 1.0,
               stallSkip: 0.1,
               safeSeekOffset: 0,
-              inaccurateManifestTolerance: 1.0,
-              alwaysStreamLookup: false
+              inaccurateManifestTolerance: 1.0
             },
             abr: {
               enabled: savedQuality <= 0 || savedQuality === -1,

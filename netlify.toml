@@ -9,6 +9,18 @@
   SECRETS_SCAN_OMIT_KEYS = "VITE_ADMIN_USERNAME"
 
 [[redirects]]
+  from = "/api/pw-static/*"
+  to = "https://static.pw.live/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/pw-gateway/*"
+  to = "https://nexthope-pw.space-z.ai/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/course-proxy/*"
   to = "https://course.nexttoppers.com/:splat"
   status = 200
@@ -28,3 +40,10 @@
   for = "/buildcode/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  for = "/api/pw-static/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, HEAD, OPTIONS"
+    Access-Control-Allow-Headers = "*"

@@ -20,9 +20,13 @@ import {
   Headphones,
   Bookmark,
   Eye,
-  EyeOff
+  EyeOff,
+  RefreshCw,
+  FileText,
+  ExternalLink
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
+import { pwApiService, toProxiedPdfUrl } from '../services/PwApiService';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
 import RightSidePanel from './RightSidePanel';
@@ -61,7 +65,21 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [isPdfDownloaded, setIsPdfDownloaded] = useState(() => downloadManager.isDownloaded(item.id));
   const [isPdfDownloading, setIsPdfDownloading] = useState(() => downloadManager.isDownloading(item.id));
   const [pdfDownloadError, setPdfDownloadError] = useState('');
-  const [resolvedPdfUrl, setResolvedPdfUrl] = useState(item.url || '');
+  const needsResolution = Boolean(
+    item.type === 'pdf' && (
+      item.isDynamicPw || 
+      (item.url || '').includes('lxpdf') || 
+      (item.url || '').includes('space-z.ai') || 
+      (item.url || '').includes('static.pw.live')
+    )
+  );
+  const [resolvedPdfUrl, setResolvedPdfUrl] = useState(() => {
+    if (item.type !== 'pdf') return '';
+    if (needsResolution) return '';
+    return item.url || '';
+  });
+  const [isResolvingPdf, setIsResolvingPdf] = useState(needsResolution);
+  const [pdfResolveError, setPdfResolveError] = useState('');
   const [showPdfDownloadMenu, setShowPdfDownloadMenu] = useState(false);
   const [pdfActionToast, setPdfActionToast] = useState('');
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
@@ -241,12 +259,41 @@ const VideoPlayer = ({ item, onClose, user }) => {
       let isMounted = true;
       const syncPdfUrl = async () => {
         try {
+          setPdfResolveError('');
+          // 1. Check local offline download first
           const localUrl = await downloadManager.getPdfLocalUrl(item);
-          if (isMounted && localUrl) {
+          if (isMounted && localUrl && localUrl !== item.url) {
             setResolvedPdfUrl(localUrl);
+            setIsResolvingPdf(false);
+            return;
+          }
+
+          // 2. Resolve PW on-demand PDFs
+          if (item.isDynamicPw || (item.url || '').includes('lxpdf') || (item.url || '').includes('space-z.ai') || (item.url || '').includes('static.pw.live')) {
+            setIsResolvingPdf(true);
+            const directUrl = await pwApiService.resolvePdfUrl(item);
+            if (isMounted) {
+              if (directUrl) {
+                setResolvedPdfUrl(directUrl);
+                setIsResolvingPdf(false);
+              } else {
+                throw new Error('Unable to resolve document stream from Physics Wallah gateway.');
+              }
+            }
+          } else {
+            // 3. Regular NextToppers / NCERT / CBSE PDFs
+            if (isMounted) {
+              setResolvedPdfUrl(item.url || '');
+              setIsResolvingPdf(false);
+            }
           }
         } catch (e) {
-          if (isMounted) setResolvedPdfUrl(item.url || '');
+          console.warn('[VideoPlayer] PDF resolution error:', e);
+          if (isMounted) {
+            setIsResolvingPdf(false);
+            setPdfResolveError(e.message || 'Failed to load PDF document');
+            if (item.url) setResolvedPdfUrl(toProxiedPdfUrl(item.url));
+          }
         }
       };
       let pdfStartTime = Date.now();
@@ -300,7 +347,8 @@ const VideoPlayer = ({ item, onClose, user }) => {
     setShowPdfDownloadMenu(false);
     setPdfDownloadError('');
     try {
-      await downloadManager.downloadPdf(item);
+      const itemToDownload = resolvedPdfUrl ? { ...item, url: resolvedPdfUrl } : item;
+      await downloadManager.downloadPdf(itemToDownload);
       showToast('Saved to App for offline reading!');
     } catch (err) {
       setPdfDownloadError(err.message || 'Failed to download PDF');
@@ -313,7 +361,8 @@ const VideoPlayer = ({ item, onClose, user }) => {
     setIsSavingToDevice(true);
     setPdfDownloadError('');
     try {
-      await downloadManager.saveToDevice(item);
+      const itemToSave = resolvedPdfUrl ? { ...item, url: resolvedPdfUrl } : item;
+      await downloadManager.saveToDevice(itemToSave);
       showToast('Saved to device Downloads folder!');
     } catch (err) {
       setPdfDownloadError(err.message || 'Failed to save to device');
@@ -327,7 +376,8 @@ const VideoPlayer = ({ item, onClose, user }) => {
     setIsSharingPdf(true);
     setPdfDownloadError('');
     try {
-      await downloadManager.sharePdf(item);
+      const itemToShare = resolvedPdfUrl ? { ...item, url: resolvedPdfUrl } : item;
+      await downloadManager.sharePdf(itemToShare);
     } catch (err) {
       setPdfDownloadError(err.message || 'Failed to share PDF');
     } finally {
@@ -734,9 +784,138 @@ const VideoPlayer = ({ item, onClose, user }) => {
               </button>
             </div>
           </div>
+        ) : isResolvingPdf && !resolvedPdfUrl ? (
+          <div style={{ 
+            flex: 1, 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            background: '#121214',
+            color: '#e5e7eb',
+            padding: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <Loader2 size={32} className="spin-icon text-[#38bdf8]" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
+              Loading Document...
+            </h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '360px', lineHeight: 1.5 }}>
+              Connecting to secure reader and preparing pages...
+            </p>
+          </div>
+        ) : pdfResolveError && !resolvedPdfUrl ? (
+          <div style={{ 
+            flex: 1, 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            background: '#121214',
+            color: '#e5e7eb',
+            padding: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px',
+              color: '#ef4444'
+            }}>
+              <FileText size={32} />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
+              Document Currently Unavailable
+            </h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '380px', lineHeight: 1.5, marginBottom: '20px' }}>
+              {pdfResolveError}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPdfResolveError('');
+                  setIsResolvingPdf(true);
+                  pwApiService.resolvePdfUrl(item).then(url => {
+                    if (url) {
+                      setResolvedPdfUrl(url);
+                      setIsResolvingPdf(false);
+                    } else {
+                      setPdfResolveError('Retry failed. Upstream source unavailable.');
+                      setIsResolvingPdf(false);
+                    }
+                  }).catch(e => {
+                    setPdfResolveError(e.message || 'Retry failed');
+                    setIsResolvingPdf(false);
+                  });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <RefreshCw size={16} />
+                <span>Retry</span>
+              </button>
+              {item.url && (
+                <button
+                  type="button"
+                  onClick={() => window.open(item.url, '_blank')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    color: '#e5e7eb',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    fontWeight: 500,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ExternalLink size={16} />
+                  <span>Open Direct Link</span>
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#202124', userSelect: 'text', WebkitUserSelect: 'text' }}>
             <iframe 
+              key={resolvedPdfUrl || item.url}
               src={`${window.location.origin || ''}/pdfjs/web/viewer.html?file=${encodeURIComponent(resolvedPdfUrl || item.url)}#zoom=page-width`} 
               style={{ 
                 position: 'absolute',
@@ -745,7 +924,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
                 width: '100%', 
                 height: '100%', 
                 minWidth: '100%',
-                minHeight: '100%',
+                minHeight: '100%', 
                 border: 'none', 
                 display: 'block',
                 userSelect: 'text',
