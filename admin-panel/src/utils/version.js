@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.2.7';
-export const CURRENT_LATEST_CODE = 30207;
+export const CURRENT_LATEST_VERSION = '3.2.8';
+export const CURRENT_LATEST_CODE = 30208;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.2.7',
-  latestVersionCode: 30207,
+  latestAppVersion: '3.2.8',
+  latestVersionCode: 30208,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.2.7: High-reliability PW PDF resolution with Render CORS proxy & Netlify auto-failover, resilient offline PDF caching & downloads, and Shaka Player 5 configuration fix.'
+  releaseNotes: '• Version 3.2.8: Streamlined PDF viewer toolbar (removed external Open/Print/Save/Tools buttons), high-reliability PW PDF resolution with dual proxy failover, and Shaka Player fix.'
 };
 
 /**
