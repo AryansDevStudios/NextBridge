@@ -1079,14 +1079,33 @@ async function handleParchamVid(params, request, prefix = '') {
         const kid = parseMpdDrm(mpdText);
         if (kid) {
           const otpRes = await fetch(`${LX_ORIGIN}/api/get-otp?kid=${encodeURIComponent(kid)}`, {
-            headers: { 'User-Agent': UA }
+            headers: {
+              'User-Agent': UA,
+              'Origin': LX_ORIGIN,
+              'Referer': `${LX_ORIGIN}/study/batches`
+            }
           });
           if (otpRes.ok) {
             const otpData = await otpRes.json();
-            const hexKey = otpData.key || otpData.data?.key;
-            if (hexKey) {
-              const cleanKid = kid.replace(/-/g, '').toLowerCase();
-              clearKeys = { [cleanKid]: hexKey.toLowerCase() };
+            if (otpData?.clearKeys && typeof otpData.clearKeys === 'object') {
+              clearKeys = { ...otpData.clearKeys };
+              for (const [k, v] of Object.entries(otpData.clearKeys)) {
+                if (!k.includes('-') && k.length === 32) {
+                  const hyphenated = `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
+                  clearKeys[hyphenated] = v;
+                } else if (k.includes('-')) {
+                  clearKeys[k.replace(/-/g, '')] = v;
+                }
+              }
+            } else {
+              const hexKey = otpData?.key || otpData?.data?.key;
+              if (hexKey) {
+                const cleanKid = kid.replace(/-/g, '').toLowerCase();
+                clearKeys = {
+                  [cleanKid]: hexKey.toLowerCase(),
+                  [kid.toLowerCase()]: hexKey.toLowerCase()
+                };
+              }
             }
           }
         }
@@ -1454,7 +1473,12 @@ function parseMpdDrm(text) {
 }
 
 async function fetchUpstream(targetUrl, { ttl = 300 } = {}) {
-  const res = await fetch(targetUrl, { headers: { 'User-Agent': UA } });
+  const reqHeaders = {
+    'User-Agent': UA,
+    'Origin': LX_ORIGIN,
+    'Referer': `${LX_ORIGIN}/study/batches`
+  };
+  const res = await fetch(targetUrl, { headers: reqHeaders });
   const headers = new Headers(res.headers);
   Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
   headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
