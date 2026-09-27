@@ -48,12 +48,13 @@ export default {
 
     // 2. Health & Status Check
     if (pathname === '/' || pathname === '/health') {
+      const auth = await getActiveAuthToken();
       return jsonResponse({
         status: 'ok',
         service: 'NextBridge NextToppers Edge Gateway',
         region: request.cf?.colo || 'EDGE',
         country: request.cf?.country || 'GLOBAL',
-        tokenActive: Boolean(tokenCache.token),
+        tokenActive: Boolean(auth.token),
       });
     }
 
