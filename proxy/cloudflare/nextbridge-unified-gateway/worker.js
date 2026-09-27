@@ -1387,3 +1387,22 @@ async function fetchUpstream(targetUrl, { ttl = 300 } = {}) {
   headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   return new Response(res.body, { status: res.status, headers });
 }
+
+function extractFolder(url) {
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/').filter(Boolean);
+    return parts[0] || '';
+  } catch {
+    return '';
+  }
+}
+
+function extractHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
