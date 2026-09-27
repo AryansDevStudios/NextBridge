@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.5';
-export const CURRENT_LATEST_CODE = 30305;
+export const CURRENT_LATEST_VERSION = '3.3.6';
+export const CURRENT_LATEST_CODE = 30306;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.5',
-  latestVersionCode: 30305,
+  latestAppVersion: '3.3.6',
+  latestVersionCode: 30306,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.5: CORS-safe edge proxying for PW video segments, direct PDF key resolution for class notes, and synchronized multi-platform playback.'
+  releaseNotes: '• Version 3.3.6: Unified Cloudflare Edge Gateway integration (nextbridgeapi) with multi-node edge failover (01–06), seamless /nt & /pw routing, and optimized video streaming.'
 };
 
 /**

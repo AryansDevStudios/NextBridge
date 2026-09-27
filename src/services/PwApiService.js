@@ -4,11 +4,19 @@
  * from NextHope gateway without requiring a local database or custom server.
  */
 
-const PW_PRIMARY_GATEWAY = 'https://nextbridge-pw-gateway.adsbackend01.workers.dev';
-const PW_FALLBACK_GATEWAY = 'https://nexthope-pw.space-z.ai';
+const PW_GATEWAYS = [
+  'https://nextbridgeapi.adsbackend01.workers.dev',
+  'https://nextbridgeapi.adsbackend02.workers.dev',
+  'https://nextbridgeapi.adsbackend03.workers.dev',
+  'https://nextbridgeapi.adsbackend04.workers.dev',
+  'https://nextbridgeapi.adsbackend05.workers.dev',
+  'https://nextbridgeapi.adsbackend06.workers.dev',
+  'https://nextbridge-pw-gateway.adsbackend01.workers.dev',
+  'https://nexthope-pw.space-z.ai'
+];
 
-// Active base URL defaults to our high-speed Cloudflare Edge Gateway
-let activeBaseUrl = PW_PRIMARY_GATEWAY;
+// Active base URL defaults to our high-speed unified Cloudflare Edge Gateway
+let activeBaseUrl = PW_GATEWAYS[0];
 
 export function getPwBaseUrl() {
   return activeBaseUrl;
@@ -23,7 +31,7 @@ async function callRpc(action, params = {}, method = 'GET', payload = null) {
     return memoryCache.get(cacheKey);
   }
 
-  const gateways = [activeBaseUrl, activeBaseUrl === PW_PRIMARY_GATEWAY ? PW_FALLBACK_GATEWAY : PW_PRIMARY_GATEWAY];
+  const gateways = [activeBaseUrl, ...PW_GATEWAYS.filter(g => g !== activeBaseUrl)];
   let lastError = null;
 
   for (const baseUrl of gateways) {
@@ -31,7 +39,9 @@ async function callRpc(action, params = {}, method = 'GET', payload = null) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 12000);
 
-      const res = await fetch(`${baseUrl}/api/data`, {
+      const endpoint = baseUrl.includes('nextbridgeapi') ? `${baseUrl}/pw/api/data` : `${baseUrl}/api/data`;
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

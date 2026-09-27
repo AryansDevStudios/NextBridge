@@ -581,45 +581,121 @@ async function handleNtResolvePdf(url, request, env, ctx) {
 
 // ─── PHYSICS WALLAH (PW) HANDLERS ─────────────────────────────────────────────
 
+async function fetchDirect(targetUrl, options = {}) {
+  const reqHeaders = new Headers(options.headers || {});
+  reqHeaders.set('User-Agent', UA);
+  return fetch(targetUrl, {
+    method: options.method || 'GET',
+    headers: reqHeaders,
+    body: options.body
+  });
+}
+
 async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
-  const action = body.action;
-  const params = body.params || {};
+  try {
+    const action = String(body.action || '').trim();
+    const params = body.params || {};
 
-  switch (action) {
-    case 'batch_details': {
-      const batchId = params.batchId;
+    switch (action) {
+    case 'pw_btch_dtl': {
+      const batchId = String(params.batchId || '').trim();
       if (!batchId) return jsonResponse({ success: false, error: 'batchId required' }, 400);
-      return fetchUpstream(`${LX_ORIGIN}/api/batch-details?batchId=${encodeURIComponent(batchId)}`, { ttl: 600 });
+
+      const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=details`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: false, error: 'Batch not found' }, res.status);
+
+      const json = await res.json();
+      const d = json?.data;
+      if (!d) return jsonResponse({ success: false, error: 'Invalid batch response' }, 502);
+
+      const exams = Array.isArray(d.exam)
+        ? d.exam.map(e => (typeof e === 'string' ? e : e?.name || '')).filter(Boolean)
+        : [];
+      const subjects = Array.isArray(d.subjects) ? d.subjects : [];
+
+      return jsonResponse({
+        success: true,
+        data: {
+          _id: d._id || batchId,
+          id: d.slug || batchId,
+          name: d.name || 'Batch',
+          byName: d.byName || '',
+          description: typeof d.description === 'string' ? d.description : '',
+          imageUrl: d.previewImage || d.previewImageUrl || '',
+          exams,
+          language: d.language || '',
+          className: typeof d.class === 'string' ? d.class : Array.isArray(d.class) ? d.class.join(', ') : '',
+          amount: typeof d.feeTotal === 'number' ? d.feeTotal : null,
+          startDate: d.startDate || '',
+          endDate: d.endDate || '',
+          subjects: subjects.map(s => ({
+            _id: s.slug || s.subjectId || s._id || '',
+            subject: s.subject || '',
+            subjectId: s.slug || s.subjectId || '',
+            batchSubjectId: s._id || '',
+            masterId: s.subjectId || ''
+          }))
+        }
+      });
     }
 
-    case 'batch_subjects': {
-      const batchId = params.batchId;
-      if (!batchId) return jsonResponse({ success: false, error: 'batchId required' }, 400);
-      return fetchUpstream(`${LX_ORIGIN}/api/subjects?batchId=${encodeURIComponent(batchId)}`, { ttl: 600 });
+    case 'pw_sub_topics': {
+      const batchId = String(params.batchId || '').trim();
+      const subjectId = String(params.subjectId || '').trim();
+      const page = Math.max(1, Number(params.page) || 1);
+      if (!batchId || !subjectId) return jsonResponse({ success: true, data: { data: [] } });
+
+      const targetUrl = `${LX_ORIGIN}/api/SubjectInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&page=${page}`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
+
+      const json = await res.json();
+      const chapters = Array.isArray(json?.data) ? json.data : [];
+      const data = chapters.map((c, i) => ({
+        _id: c._id || '',
+        name: c.name || 'Chapter',
+        typeId: subjectId,
+        notes: Number(c.notes || 0),
+        videos: Number(c.videos || c.lectureVideos || 0),
+        exercises: Number(c.exercises || 0),
+        order: Number.isFinite(c.displayOrder) ? Number(c.displayOrder) : (i + 1)
+      }));
+
+      return jsonResponse({ success: true, data: { data } });
     }
 
-    case 'subject_chapters': {
-      const { batchId, subjectId } = params;
-      if (!batchId || !subjectId) return jsonResponse({ success: false, error: 'batchId and subjectId required' }, 400);
-      return fetchUpstream(`${LX_ORIGIN}/api/chapters?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}`, { ttl: 300 });
-    }
-
-    case 'chapter_content': {
-      const { batchId, subjectId, chapterId, type } = params;
-      const typeParam = type ? `&type=${encodeURIComponent(type)}` : '';
-      return fetchUpstream(`${LX_ORIGIN}/api/chapter-content?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&chapterId=${encodeURIComponent(chapterId)}${typeParam}`, { ttl: 60 });
+    case 'pw_res_topics': {
+      return jsonResponse({ success: true, data: { data: [] } });
     }
 
     case 'pw_sch_cntnt': {
-      const { batchId, subjectId, tagId, contentType = 'VIDEOS', page = 1 } = params;
-      const url = `${LX_ORIGIN}/api/v2/batches/${encodeURIComponent(batchId)}/subject/${encodeURIComponent(subjectId)}/contents?page=${encodeURIComponent(page)}&contentType=${encodeURIComponent(contentType)}&tag=${encodeURIComponent(tagId || '')}`;
-      const res = await fetch(url, { headers: { 'User-Agent': UA } });
-      if (!res.ok) return jsonResponse({ success: false, error: `Upstream HTTP ${res.status}` }, res.status);
-      const upstreamData = await res.json();
-      const rawList = upstreamData.data || [];
+      const batchId = String(params.batchId || '').trim();
+      const subjectId = String(params.subjectId || '').trim();
+      const tagId = String(params.tagId || '').trim();
+      const contentType = String(params.contentType || 'LECTURE').toUpperCase();
+      const page = Math.max(1, Number(params.page) || 1);
 
-      const normalized = rawList.map(item => {
+      if (!batchId || !subjectId || !tagId) {
+        return jsonResponse({ success: true, data: [] });
+      }
+
+      let upstreamType = 'videos';
+      if (contentType === 'NOTES') upstreamType = 'notes';
+      else if (contentType === 'DPP_PDF') upstreamType = 'DppNotes';
+      else if (contentType === 'DPP_VIDEOS') upstreamType = 'DppVideos';
+
+      const targetUrl = `${LX_ORIGIN}/api/TopicInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&TopicId=${encodeURIComponent(tagId)}&ContentType=${upstreamType}&page=${page}`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: true, data: [] });
+
+      const json = await res.json();
+      const rawItems = Array.isArray(json?.data) ? json.data : [];
+
+      const nodes = rawItems.map(item => {
         const id = item._id || '';
+        const vd = item.videoDetails;
+
         let homeworkIds = [];
         if (Array.isArray(item.homeworkIds)) {
           homeworkIds = item.homeworkIds;
@@ -653,14 +729,17 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
           _id: id,
           data: {
             _id: id,
-            topic: item.topic || item.name || '',
-            date: item.date || item.createdAt || '',
+            topic: item.topic || item.name || (contentType === 'NOTES' ? 'Class Notes' : 'Lecture'),
+            date: item.date || item.startTime || '',
             startTime: item.startTime || '',
             endTime: item.endTime || '',
-            videoDetails: item.videoDetails ? {
-              name: item.videoDetails.name || item.topic || '',
-              image: item.videoDetails.image || '',
-              duration: item.videoDetails.duration || '00:00:00'
+            videoDetails: vd ? {
+              _id: vd._id || vd.id || id,
+              name: vd.name || item.topic || '',
+              image: vd.image || item.previewImageUrl || '',
+              duration: vd.duration || '00:00:00',
+              status: vd.status || 'Ready',
+              types: vd.types || ['DASH', 'HLS']
             } : null,
             homeworkIds,
             attachmentIds: item.attachmentIds || []
@@ -668,16 +747,21 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
         };
       });
 
-      return jsonResponse({ success: true, data: normalized });
+      return jsonResponse({ success: true, data: nodes });
     }
 
     case 'pw_sch_dtl': {
-      const { batchId, subjectId, scheduleId } = params;
-      const url = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(scheduleId)}`;
-      const res = await fetch(url, { headers: { 'User-Agent': UA } });
-      if (!res.ok) return jsonResponse({ success: false, error: `Upstream HTTP ${res.status}` }, res.status);
-      const detailJson = await res.json();
-      const detail = detailJson.data || detailJson;
+      const batchId = String(params.batchId || '').trim();
+      const scheduleId = String(params.scheduleId || '').trim();
+      const subjectId = String(params.subjectId || '').trim();
+      if (!batchId || !scheduleId || !subjectId) return jsonResponse({ success: true, data: null });
+
+      const targetUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(scheduleId)}`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: true, data: null });
+
+      const json = await res.json();
+      const detail = json?.data;
       if (!detail) return jsonResponse({ success: true, data: null });
 
       const rawHw = [...(detail.homeworkIds || []), ...(detail.dpp?.homeworkIds || [])];
@@ -706,11 +790,91 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
         data: {
           _id: detail._id || scheduleId,
           topic: detail.topic || detail.name || '',
-          date: detail.date || detail.createdAt || '',
+          startTime: detail.startTime || '',
+          endTime: detail.endTime || '',
+          urlType: detail.urlType || '',
           homeworkIds,
-          attachmentIds: detail.attachmentIds || []
+          exerciseIds: []
         }
       });
+    }
+
+    case 'pw_dpp_lst': {
+      const batchId = String(params.batchId || '').trim();
+      const batchSubjectId = String(params.batchSubjectId || '').trim();
+      const chapterId = String(params.chapterId || '').trim();
+      const page = Math.max(1, Number(params.page) || 1);
+      const limit = Math.min(50, Math.max(1, Number(params.limit) || 20));
+
+      if (!batchId || !batchSubjectId || !chapterId) {
+        return jsonResponse({ success: true, data: { data: [] } });
+      }
+
+      const targetUrl = `${LX_ORIGIN}/api/dpp-list?batchId=${encodeURIComponent(batchId)}&batchSubjectId=${encodeURIComponent(batchSubjectId)}&chapterId=${encodeURIComponent(chapterId)}&page=${page}&limit=${limit}`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
+
+      const json = await res.json();
+      const items = Array.isArray(json?.data) ? json.data : [];
+      const data = items.map(it => {
+        const q = it.dppQuizDetails;
+        const t = q?.test;
+        if (!t?._id) return null;
+        return {
+          _id: t._id,
+          name: t.name || 'DPP Quiz',
+          totalQuestions: Number(t.totalQuestions || 0),
+          totalMarks: Number(t.totalMarks || 0),
+          duration: (Number(t.maxDuration || 0) * 60) || 1800,
+          testActivityStatus: 'Not Started',
+          testStudentMapping: null,
+          dppQuizDetails: {
+            contentId: q?.contentId || t._id,
+            scheduleId: q?.scheduleId || '',
+            test: {
+              _id: t._id,
+              name: t.name || 'DPP Quiz',
+              totalQuestions: Number(t.totalQuestions || 0),
+              totalMarks: Number(t.totalMarks || 0)
+            },
+            testStudentMapping: { testActivityStatus: q?.tag || 'Start' }
+          }
+        };
+      }).filter(Boolean);
+
+      return jsonResponse({ success: true, data: { data } });
+    }
+
+    case 'pw_tdy_sch': {
+      const batchId = String(params.batchId || '').trim();
+      if (!batchId) return jsonResponse({ success: true, data: [] });
+
+      const res = await fetch(`${LX_ORIGIN}/api/todays-schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` },
+        body: JSON.stringify({ batchId })
+      }).catch(() => null);
+
+      if (!res || !res.ok) return jsonResponse({ success: true, data: [] });
+      const json = await res.json().catch(() => ({}));
+      const items = Array.isArray(json?.data) ? json.data : Array.isArray(json?.data?.data) ? json.data.data : [];
+      return jsonResponse({ success: true, data: items });
+    }
+
+    case 'pw_notifs': {
+      const batchId = String(params.batchId || '').trim();
+      const page = Math.max(1, Number(params.page) || 1);
+      if (!batchId) return jsonResponse({ success: true, data: [] });
+
+      const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=announcement&page=${page}`;
+      const res = await fetchDirect(targetUrl);
+      if (!res.ok) return jsonResponse({ success: true, data: [] });
+      const json = await res.json();
+      return jsonResponse({ success: true, data: Array.isArray(json?.data) ? json.data : [] });
+    }
+
+    case 'pw_tchr_dtl': {
+      return jsonResponse({ success: true, data: null });
     }
 
     case 'parcham_vid': {
@@ -719,6 +883,9 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
     default:
       return jsonResponse({ success: false, error: `Unknown RPC action: ${action}` }, 400);
+    }
+  } catch (err) {
+    return jsonResponse({ success: false, error: err.message || 'Internal action error' }, 500);
   }
 }
 

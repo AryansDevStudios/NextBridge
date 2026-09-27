@@ -6,14 +6,26 @@
  * without requiring 24/7 background scrapers or monolithic 8MB database downloads.
  */
 
-const NT_GATEWAY_URL = 'https://nextbridge-nt-gateway.adsbackend01.workers.dev';
+const NT_GATEWAYS = [
+  'https://nextbridgeapi.adsbackend01.workers.dev',
+  'https://nextbridgeapi.adsbackend02.workers.dev',
+  'https://nextbridgeapi.adsbackend03.workers.dev',
+  'https://nextbridgeapi.adsbackend04.workers.dev',
+  'https://nextbridgeapi.adsbackend05.workers.dev',
+  'https://nextbridgeapi.adsbackend06.workers.dev',
+  'https://nextbridge-nt-gateway.adsbackend01.workers.dev'
+];
+
+let activeNtGateway = NT_GATEWAYS[0];
 
 // In-memory cache for ultra-fast, zero-latency back/forward navigation within the session
 const folderCache = new Map();
 const pdfCache = new Map();
 
 export const ntApiService = {
-  GATEWAY_URL: NT_GATEWAY_URL,
+  get GATEWAY_URL() {
+    return activeNtGateway;
+  },
 
   /**
    * Fetches folder content (subfolders + items) on demand.
@@ -27,66 +39,85 @@ export const ntApiService = {
       return folderCache.get(cacheKey);
     }
 
-    try {
-      const url = `${NT_GATEWAY_URL}/api/folder?courseId=${encodeURIComponent(courseId)}&folderId=${encodeURIComponent(folderId)}${forceRefresh ? '&refresh=1' : ''}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Gateway returned HTTP ${res.status}`);
-      }
+    const gateways = [activeNtGateway, ...NT_GATEWAYS.filter(g => g !== activeNtGateway)];
+    let lastError = null;
 
-      const json = await res.json();
-      if (!json || !json.success) {
-        throw new Error(json?.error || 'Failed to load folder content');
-      }
+    for (const gw of gateways) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
 
-      // Format folders & items for NextBridge UI
-      const result = {
-        success: true,
-        courseId: String(courseId),
-        folderId: String(folderId),
-        folders: (json.folders || []).map((f) => {
-          let itemCountText = 'Folder';
-          if (f.itemCount != null && f.itemCount > 0) {
-            itemCountText = `${f.itemCount} items`;
-          } else if (f.videoCount || f.pdfCount) {
-            const parts = [];
-            if (f.videoCount) parts.push(`${f.videoCount} ${f.videoCount === 1 ? 'vid' : 'vids'}`);
-            if (f.pdfCount) parts.push(`${f.pdfCount} ${f.pdfCount === 1 ? 'note' : 'notes'}`);
-            itemCountText = parts.join(' • ');
-          }
+        // Try /nt/api/folder first, fallback to /api/folder
+        const endpoint = gw.includes('nextbridgeapi') ? `${gw}/nt/api/folder` : `${gw}/api/folder`;
+        const url = `${endpoint}?courseId=${encodeURIComponent(courseId)}&folderId=${encodeURIComponent(folderId)}${forceRefresh ? '&refresh=1' : ''}`;
+        
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
 
-          return {
-            ...f,
-            id: String(f.id || f.folderId),
-            title: f.title || f.name || 'Untitled Folder',
-            isFolder: true,
-            courseId: String(courseId),
-            folderId: String(f.id || f.folderId),
-            itemCount: itemCountText,
-          };
-        }),
-        items: (json.items || []).map((it) => ({
-          ...it,
-          id: String(it.id || it.entity_id),
-          title: it.title || it.name || 'Untitled Item',
-          isFolder: false,
+        if (!res.ok) {
+          throw new Error(`Gateway returned HTTP ${res.status}`);
+        }
+
+        const json = await res.json();
+        if (!json || !json.success) {
+          throw new Error(json?.error || 'Failed to load folder content');
+        }
+
+        // Stick to working gateway
+        activeNtGateway = gw;
+
+        // Format folders & items for NextBridge UI
+        const result = {
+          success: true,
           courseId: String(courseId),
-          contentId: String(it.id || it.entity_id),
-          isDynamicNt: true,
-        })),
-        total: json.total || 0,
-      };
+          folderId: String(folderId),
+          folders: (json.folders || []).map((f) => {
+            let itemCountText = 'Folder';
+            if (f.itemCount != null && f.itemCount > 0) {
+              itemCountText = `${f.itemCount} items`;
+            } else if (f.videoCount || f.pdfCount) {
+              const parts = [];
+              if (f.videoCount) parts.push(`${f.videoCount} ${f.videoCount === 1 ? 'vid' : 'vids'}`);
+              if (f.pdfCount) parts.push(`${f.pdfCount} ${f.pdfCount === 1 ? 'note' : 'notes'}`);
+              itemCountText = parts.join(' • ');
+            }
 
-      folderCache.set(cacheKey, result);
-      return result;
-    } catch (err) {
-      console.error(`[NtApiService] getFolderContent(${courseId}, ${folderId}) error:`, err);
-      throw err;
+            return {
+              ...f,
+              id: String(f.id || f.folderId),
+              title: f.title || f.name || 'Untitled Folder',
+              isFolder: true,
+              courseId: String(courseId),
+              folderId: String(f.id || f.folderId),
+              itemCount: itemCountText,
+            };
+          }),
+          items: (json.items || []).map((it) => ({
+            ...it,
+            id: String(it.id || it.entity_id),
+            title: it.title || it.name || 'Untitled Item',
+            isFolder: false,
+            courseId: String(courseId),
+            contentId: String(it.id || it.entity_id),
+            isDynamicNt: true,
+          })),
+          total: json.total || 0,
+        };
+
+        folderCache.set(cacheKey, result);
+        return result;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[NtApiService] Gateway ${gw} failed: ${err.message}. Retrying fallback...`);
+      }
     }
+
+    console.error(`[NtApiService] All gateways failed for folder(${courseId}, ${folderId}):`, lastError);
+    throw lastError || new Error('All NextToppers gateways unreachable');
   },
 
   /**
-   * Resolves a PDF URL using the 4-tier self-healing edge pipeline.
+   * Resolves a PDF URL using the multi-tier self-healing edge pipeline.
    * Returns the direct AWS CloudFront PDF link.
    */
   async resolvePdfUrl(itemOrId, courseId = null, shortCode = null) {
@@ -110,29 +141,36 @@ export const ntApiService = {
       return pdfCache.get(cacheKey);
     }
 
-    try {
-      const params = new URLSearchParams();
-      if (contentId) params.set('contentId', String(contentId));
-      if (crsId) params.set('courseId', String(crsId));
-      if (sCode) params.set('shortCode', String(sCode));
+    const gateways = [activeNtGateway, ...NT_GATEWAYS.filter(g => g !== activeNtGateway)];
 
-      const res = await fetch(`${NT_GATEWAY_URL}/api/resolve-pdf?${params.toString()}`);
-      if (!res.ok) {
-        throw new Error(`PDF resolver returned HTTP ${res.status}`);
+    for (const gw of gateways) {
+      try {
+        const params = new URLSearchParams();
+        if (contentId) params.set('contentId', String(contentId));
+        if (crsId) params.set('courseId', String(crsId));
+        if (sCode) params.set('shortCode', String(sCode));
+
+        const endpoint = gw.includes('nextbridgeapi') ? `${gw}/nt/api/resolve-pdf` : `${gw}/api/resolve-pdf`;
+        const res = await fetch(`${endpoint}?${params.toString()}`);
+        if (!res.ok) {
+          throw new Error(`PDF resolver returned HTTP ${res.status}`);
+        }
+
+        const json = await res.json();
+        if (json && json.success && json.url) {
+          activeNtGateway = gw;
+          pdfCache.set(cacheKey, json.url);
+          return json.url;
+        }
+
+        throw new Error(json?.message || 'Failed to resolve direct PDF link');
+      } catch (err) {
+        console.warn(`[NtApiService] PDF resolve via ${gw} failed:`, err.message);
       }
-
-      const json = await res.json();
-      if (json && json.success && json.url) {
-        pdfCache.set(cacheKey, json.url);
-        return json.url;
-      }
-
-      throw new Error(json?.message || 'Failed to resolve direct PDF link');
-    } catch (err) {
-      console.warn(`[NtApiService] resolvePdfUrl error:`, err);
-      // Fallback to item's raw URL if available
-      return typeof itemOrId === 'object' ? itemOrId.url || '' : '';
     }
+
+    // Fallback to item's raw URL if available
+    return typeof itemOrId === 'object' ? itemOrId.url || '' : '';
   },
 
   /**
@@ -140,7 +178,8 @@ export const ntApiService = {
    */
   toProxiedUrl(targetUrl) {
     if (!targetUrl) return '';
-    return `${NT_GATEWAY_URL}/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+    const endpoint = activeNtGateway.includes('nextbridgeapi') ? `${activeNtGateway}/nt/api/proxy` : `${activeNtGateway}/api/proxy`;
+    return `${endpoint}?url=${encodeURIComponent(targetUrl)}`;
   },
 
   /**
