@@ -4,7 +4,15 @@
  * from NextHope gateway without requiring a local database or custom server.
  */
 
-const PW_BASE_URL = 'https://nexthope-pw.space-z.ai';
+const PW_PRIMARY_GATEWAY = 'https://nextbridge-pw-gateway.adsbackend01.workers.dev';
+const PW_FALLBACK_GATEWAY = 'https://nexthope-pw.space-z.ai';
+
+// Active base URL defaults to our high-speed Cloudflare Edge Gateway
+let activeBaseUrl = PW_PRIMARY_GATEWAY;
+
+export function getPwBaseUrl() {
+  return activeBaseUrl;
+}
 
 // In-memory cache for ultra-fast navigation
 const memoryCache = new Map();
@@ -15,26 +23,44 @@ async function callRpc(action, params = {}, method = 'GET', payload = null) {
     return memoryCache.get(cacheKey);
   }
 
-  const res = await fetch(`${PW_BASE_URL}/api/data`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ action, params, method, payload })
-  });
+  const gateways = [activeBaseUrl, activeBaseUrl === PW_PRIMARY_GATEWAY ? PW_FALLBACK_GATEWAY : PW_PRIMARY_GATEWAY];
+  let lastError = null;
 
-  if (!res.ok) {
-    throw new Error(`PW API returned HTTP ${res.status}`);
+  for (const baseUrl of gateways) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+
+      const res = await fetch(`${baseUrl}/api/data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal,
+        body: JSON.stringify({ action, params, method, payload })
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      if (!json.success && json.error) {
+        throw new Error(json.error);
+      }
+
+      // Success! Keep active base URL sticky
+      activeBaseUrl = baseUrl;
+      memoryCache.set(cacheKey, json.data);
+      return json.data;
+    } catch (err) {
+      lastError = err;
+      console.warn(`[pwApiService] Gateway ${baseUrl} (${action}) failed: ${err.message}. Retrying fallback...`);
+    }
   }
 
-  const json = await res.json();
-  if (!json.success && json.error) {
-    throw new Error(json.error);
-  }
-
-  // Cache response for current session
-  memoryCache.set(cacheKey, json.data);
-  return json.data;
+  throw new Error(`PW API Error: ${lastError?.message || 'All gateways unreachable'}`);
 }
 
 export const pwApiService = {
@@ -176,7 +202,7 @@ export const pwApiService = {
         rawUrl = d.fileUrl;
       }
       if (!rawUrl) return '';
-      const fullUrl = rawUrl.startsWith('http') ? rawUrl : `${PW_BASE_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+      const fullUrl = rawUrl.startsWith('http') ? rawUrl : `${activeBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
       return toProxiedPdfUrl(fullUrl);
     };
 
@@ -353,7 +379,7 @@ export const pwApiService = {
       throw new Error('Video stream is currently unavailable');
     }
 
-    const manifestUrl = data.url.startsWith('http') ? data.url : `${PW_BASE_URL}${data.url}`;
+    const manifestUrl = data.url.startsWith('http') ? data.url : `${activeBaseUrl}${data.url.startsWith('/') ? '' : '/'}${data.url}`;
 
     return {
       manifestUrl,
