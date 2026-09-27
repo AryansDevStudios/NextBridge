@@ -1064,27 +1064,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       window.history.pushState({ player: true }, '');
     }
 
-    if (item.type !== 'pdf' && item.isDynamicPw && (!item.url || item.url === '')) {
-      try {
-        setLoading(true);
-        const { manifestUrl, clearKeys } = await pwApiService.getVideoPlaybackInfo(item);
-        const enrichedItem = {
-          ...item,
-          url: manifestUrl,
-          clearKeys,
-          isDash: true
-        };
-        setPlayingVideo(enrichedItem);
-      } catch (err) {
-        console.error('Failed to resolve PW video stream:', err);
-        setOfflineToast('Unable to load video stream from Physics Wallah.');
-        setTimeout(() => setOfflineToast(''), 4000);
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
     setPlayingVideo(item);
   };
 

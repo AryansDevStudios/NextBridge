@@ -1210,7 +1210,8 @@ async function handlePwPdfRedirect(url) {
       const d = body?.data;
       if (d?.baseUrl && d?.key) {
         const fullUrl = `${d.baseUrl.replace(/\/+$/, '')}/${d.key.replace(/^\/+/, '')}`;
-        return new Response(null, { status: 302, headers: { ...CORS_HEADERS, 'Location': fullUrl } });
+        const proxiedUrl = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(fullUrl)}`;
+        return new Response(null, { status: 302, headers: { ...CORS_HEADERS, 'Location': proxiedUrl } });
       }
     }
   } catch (_) {}

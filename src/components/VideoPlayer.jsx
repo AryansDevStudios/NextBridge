@@ -67,6 +67,36 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [isPdfDownloading, setIsPdfDownloading] = useState(() => downloadManager.isDownloading(item.id));
   const [pdfDownloadError, setPdfDownloadError] = useState('');
 
+  // ── Video Resolution State ──
+  const [resolvedVideoItem, setResolvedVideoItem] = useState(item);
+  const [isResolvingVideo, setIsResolvingVideo] = useState(false);
+  const [videoResolveError, setVideoResolveError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (item.type !== 'pdf' && item.isDynamicPw && (!item.url || item.url === '')) {
+      setIsResolvingVideo(true);
+      pwApiService.getVideoPlaybackInfo(item).then(({ manifestUrl, clearKeys }) => {
+        if (isMounted) {
+          setResolvedVideoItem({
+            ...item,
+            url: manifestUrl,
+            clearKeys,
+            isDash: true
+          });
+          setIsResolvingVideo(false);
+        }
+      }).catch(err => {
+        console.error('Failed to resolve PW video stream:', err);
+        if (isMounted) {
+          setVideoResolveError('Unable to load video stream from Physics Wallah.');
+          setIsResolvingVideo(false);
+        }
+      });
+    }
+    return () => { isMounted = false; };
+  }, [item]);
+
   const isDirectCloudFrontPdf = Boolean(
     item.type === 'pdf' &&
     item.url &&
@@ -996,9 +1026,20 @@ const VideoPlayer = ({ item, onClose, user }) => {
         <div className={`yt-desktop-page ${activePanel ? 'with-side-panel' : ''}`}>
           {/* ── Main Left Column (Video Surface + Details + Action Pills) ── */}
           <div className="yt-primary-col">
-            <YouTubePlayerCore
-              item={item}
-              url={item.url}
+            {isResolvingVideo ? (
+              <div style={{ width: '100%', aspectRatio: '16/9', background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                <Loader2 size={32} className="spin-icon" style={{ marginBottom: '16px' }} />
+                <span>Loading video stream...</span>
+              </div>
+            ) : videoResolveError ? (
+              <div style={{ width: '100%', aspectRatio: '16/9', background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                <span style={{ marginBottom: '8px' }}>{videoResolveError}</span>
+                <button onClick={onClose} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '4px' }}>Close</button>
+              </div>
+            ) : (
+              <YouTubePlayerCore
+                item={resolvedVideoItem}
+                url={resolvedVideoItem.url}
               user={user}
               onClose={onClose}
               notes={notes}
@@ -1009,6 +1050,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
               isAudioOnly={isAudioOnlyMode}
               onToggleAudioOnly={() => setIsAudioOnlyMode(!isAudioOnlyMode)}
             />
+            )}
 
             <div className="yt-info-section" style={{ padding: '16px 4px' }}>
               <h1 className="yt-title" style={{ fontSize: '1.25rem', marginBottom: 6 }}>

@@ -1034,31 +1034,6 @@ export default function PwBatchExplorer({
                       )}
                     </div>
 
-                    {/* Right: Circular Checkmark */}
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        markWatched(item.id);
-                      }}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        backgroundColor: isWatched ? '#22c55e' : 'rgba(255, 255, 255, 0.06)',
-                        border: isWatched ? 'none' : '1px solid var(--border-color)',
-                        color: isWatched ? '#000' : 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        boxShadow: isWatched ? '0 0 8px rgba(34, 197, 94, 0.4)' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}
-                      title={isWatched ? 'Mark as unwatched' : 'Mark as watched'}
-                    >
-                      <Check size={14} strokeWidth={3} />
-                    </div>
                   </div>
 
                   {/* Bottom Row: Full Width CTA Button (Screenshot 4 - Dark App Styled) */}
