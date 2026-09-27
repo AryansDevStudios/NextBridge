@@ -57,7 +57,7 @@ export default {
           edgeLocation: request.cf?.colo || 'EDGE',
           country: request.cf?.country || 'IN',
           upstream: LX_ORIGIN,
-          features: ['Direct-CloudFront-Streaming', 'ClearKey-DRM', 'Direct-PDF-302', 'Edge-Caching']
+          features: ['Direct-CloudFront-Streaming', 'ClearKey-DRM', 'Direct-PDF-302', 'No-Cache-Real-Time']
         });
       }
 
