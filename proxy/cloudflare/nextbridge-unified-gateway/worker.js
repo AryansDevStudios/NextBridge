@@ -594,11 +594,12 @@ async function fetchDirect(targetUrl, options = {}) {
 async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
   try {
     const action = String(body.action || '').trim();
-    const params = body.params || {};
+    const rawParams = (body.params && typeof body.params === 'object') ? body.params : {};
+    const params = { ...body, ...rawParams };
 
     switch (action) {
     case 'pw_btch_dtl': {
-      const batchId = String(params.batchId || '').trim();
+      const batchId = String(params.batchId || params.batch_id || '').trim();
       if (!batchId) return jsonResponse({ success: false, error: 'batchId required' }, 400);
 
       const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=details`;
@@ -641,8 +642,8 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
     }
 
     case 'pw_sub_topics': {
-      const batchId = String(params.batchId || '').trim();
-      const subjectId = String(params.subjectId || '').trim();
+      const batchId = String(params.batchId || params.batch_id || '').trim();
+      const subjectId = String(params.subjectId || params.subject_id || '').trim();
       const page = Math.max(1, Number(params.page) || 1);
       if (!batchId || !subjectId) return jsonResponse({ success: true, data: { data: [] } });
 
@@ -670,10 +671,10 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
     }
 
     case 'pw_sch_cntnt': {
-      const batchId = String(params.batchId || '').trim();
-      const subjectId = String(params.subjectId || '').trim();
-      const tagId = String(params.tagId || '').trim();
-      const contentType = String(params.contentType || 'LECTURE').toUpperCase();
+      const batchId = String(params.batchId || params.batch_id || '').trim();
+      const subjectId = String(params.subjectId || params.subject_id || '').trim();
+      const tagId = String(params.tagId || params.tag_id || params.topicId || params.topic_id || '').trim();
+      const contentType = String(params.contentType || params.cntnt_type || 'LECTURE').toUpperCase();
       const page = Math.max(1, Number(params.page) || 1);
 
       if (!batchId || !subjectId || !tagId) {
@@ -751,9 +752,9 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
     }
 
     case 'pw_sch_dtl': {
-      const batchId = String(params.batchId || '').trim();
-      const scheduleId = String(params.scheduleId || '').trim();
-      const subjectId = String(params.subjectId || '').trim();
+      const batchId = String(params.batchId || params.batch_id || '').trim();
+      const scheduleId = String(params.scheduleId || params.schedule_id || params.contentId || params.content_id || '').trim();
+      const subjectId = String(params.subjectId || params.subject_id || '').trim();
       if (!batchId || !scheduleId || !subjectId) return jsonResponse({ success: true, data: null });
 
       const targetUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(scheduleId)}`;
@@ -890,7 +891,12 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 }
 
 async function handleParchamVid(params, request, prefix = '') {
-  const { childId, batchId, subjectId, videoId, vUrl } = params;
+  const childId = String(params.childId || params.child_id || params.contentId || params.content_id || '').trim();
+  const batchId = String(params.batchId || params.batch_id || '').trim();
+  const subjectId = String(params.subjectId || params.subject_id || '').trim();
+  const videoId = String(params.videoId || params.video_id || '').trim();
+  const vUrl = String(params.vUrl || params.video_url || params.v_url || params.url || '').trim();
+
   if (!childId && !videoId && !vUrl) {
     return jsonResponse({ success: false, error: 'childId, videoId, or vUrl is required' }, 400);
   }
