@@ -235,7 +235,5 @@ export function getBatchDisplayName(batch) {
 }
 
 export function isBatchInDevelopment(batchOrId) {
-  if (!batchOrId) return false;
-  const batch = typeof batchOrId === 'object' ? batchOrId : getBatchById(batchOrId);
-  return !!(batch?.in_development || batch?.development_phase || (batch?.class_name === 'Class 11' && batch?.provider !== 'Physics Wallah'));
+  return false;
 }

@@ -14,14 +14,13 @@ import {
   Play,
   Settings
 } from 'lucide-react';
-import { getBatchDisplayName, isBatchInDevelopment } from '../utils/batchConfig';
+import { getBatchDisplayName } from '../utils/batchConfig';
 
 export default function BatchesHub({ 
   user, 
   activeBatchId, 
   onSelectBatch, 
   allowedBatches = [],
-  devClass11Enabled = false,
   onOpenSettings
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,7 +38,6 @@ export default function BatchesHub({
       if (activeFilter === 'archive' && !batch.is_old) return false;
       if (activeFilter === 'crash' && !batch.class_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('crash') && !batch.batch_name?.toLowerCase().includes('pro')) return false;
       if (activeFilter === 'free' && !batch.batch_name?.toLowerCase().includes('free')) return false;
-      if (activeFilter === 'dev' && !isBatchInDevelopment(batch)) return false;
 
       // Search
       if (q) {
@@ -58,7 +56,6 @@ export default function BatchesHub({
   const activeCount = allowedBatches.filter(b => !b.is_old).length;
   const archiveCount = allowedBatches.filter(b => b.is_old).length;
   const crashCount = allowedBatches.filter(b => b.class_name?.toLowerCase().includes('crash') || b.batch_name?.toLowerCase().includes('crash') || b.batch_name?.toLowerCase().includes('pro')).length;
-  const devCount = allowedBatches.filter(b => isBatchInDevelopment(b)).length;
 
   return (
     <div className="main-content pb-24" style={{ animation: 'fadeIn 0.25s ease' }}>
@@ -163,7 +160,6 @@ export default function BatchesHub({
             { id: 'active', label: `Active 2026-27 (${activeCount})` },
             ...(archiveCount > 0 ? [{ id: 'archive', label: `2025-26 Archive (${archiveCount})` }] : []),
             ...(crashCount > 0 ? [{ id: 'crash', label: `Crash / Olympiad (${crashCount})` }] : []),
-            ...(devCount > 0 ? [{ id: 'dev', label: `Class 11 Dev (${devCount})` }] : []),
           ].map(f => (
             <button
               key={f.id}
@@ -185,54 +181,6 @@ export default function BatchesHub({
             </button>
           ))}
         </div>
-
-        {/* Development Batches Notice Banner */}
-        {devCount > 0 && !devClass11Enabled && (
-          <div style={{
-            background: 'rgba(245, 158, 11, 0.08)',
-            border: '1px solid rgba(245, 158, 11, 0.25)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            marginTop: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '1.25rem' }}>🚧</span>
-              <div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Class 11 Batches (In Development)
-                </div>
-                <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                  Class 11 Next Topper batches are currently disabled by default. You can enable them in Settings.
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '8px',
-                background: 'var(--accent)',
-                color: '#000',
-                fontWeight: 700,
-                fontSize: '0.75rem',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Settings size={13} />
-              <span>Enable in Settings</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Batches Grid */}
@@ -262,19 +210,11 @@ export default function BatchesHub({
           {filteredBatches.map(batch => {
             const isCurrentlyActive = String(batch.batch_id) === String(activeBatchId);
             const isArchive = !!batch.is_old;
-            const isDevBatch = isBatchInDevelopment(batch);
-            const isDevDisabled = isDevBatch && !devClass11Enabled;
 
             return (
               <div
                 key={batch.batch_id}
-                onClick={() => {
-                  if (isDevDisabled) {
-                    if (onOpenSettings) onOpenSettings();
-                    return;
-                  }
-                  onSelectBatch(String(batch.batch_id));
-                }}
+                onClick={() => onSelectBatch(String(batch.batch_id))}
                 style={{
                   background: 'var(--panel-bg)',
                   border: isCurrentlyActive ? '2px solid var(--accent)' : '1px solid var(--border-color)',
@@ -285,7 +225,6 @@ export default function BatchesHub({
                   flexDirection: 'column',
                   transition: 'transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
                   position: 'relative',
-                  opacity: isDevDisabled ? 0.85 : 1,
                   boxShadow: isCurrentlyActive ? '0 4px 20px rgba(245, 158, 11, 0.18)' : '0 2px 8px rgba(0,0,0,0.2)'
                 }}
                 onMouseEnter={e => {
@@ -362,24 +301,6 @@ export default function BatchesHub({
                           boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
                         }}>
                           PW Live
-                        </span>
-                      )}
-
-                      {isDevBatch && (
-                        <span style={{
-                          fontSize: '0.68rem',
-                          fontWeight: 800,
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          backdropFilter: 'blur(6px)',
-                          background: devClass11Enabled ? 'rgba(34, 197, 94, 0.85)' : 'rgba(245, 158, 11, 0.9)',
-                          color: '#000',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '3px'
-                        }}>
-                          <span>🚧</span> {devClass11Enabled ? 'Dev Active' : 'Dev Phase'}
                         </span>
                       )}
                     </div>

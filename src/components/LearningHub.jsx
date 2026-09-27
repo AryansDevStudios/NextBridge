@@ -45,8 +45,7 @@ import {
   BATCH_CATALOG, 
   getAllowedBatchIdsForUser, 
   getBatchById, 
-  getBatchDisplayName,
-  isBatchInDevelopment
+  getBatchDisplayName
 } from '../utils/batchConfig';
 import { pwApiService } from '../services/PwApiService';
 import { ntApiService } from '../services/NtApiService';
@@ -129,23 +128,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const [pwLoading, setPwLoading] = useState(false);
   const [ntFoldersMap, setNtFoldersMap] = useState({});
   const [ntLoading, setNtLoading] = useState(false);
-
-  // Development Phase Options (Class 11 batches disabled by default)
-  const [devClass11Enabled, setDevClass11Enabled] = useState(() => {
-    try {
-      return localStorage.getItem('nb_dev_class11_enabled') === '1';
-    } catch (_) {
-      return false;
-    }
-  });
-
-  const toggleDevClass11 = (enabled) => {
-    const nextVal = typeof enabled === 'boolean' ? enabled : !devClass11Enabled;
-    setDevClass11Enabled(nextVal);
-    try {
-      localStorage.setItem('nb_dev_class11_enabled', nextVal ? '1' : '0');
-    } catch (_) {}
-  };
 
   const [downloadedLectures, setDownloadedLectures] = useState([]);
   const [downloadPath, setDownloadPath] = useState([]); // Hierarchical path for Downloaded tab
@@ -1653,17 +1635,17 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
               )}
             </button>
 
-            {/* App & Developer Settings Button */}
+            {/* App Settings Button */}
             <button
               className="student-settings-btn"
               onClick={() => setShowProfileModal(true)}
-              title="App & Developer Settings"
+              title="Settings"
               aria-label="Settings"
               style={{
                 position: 'relative',
-                background: devClass11Enabled ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.08)',
-                border: devClass11Enabled ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.15)',
-                color: devClass11Enabled ? 'var(--accent)' : '#e2e8f0',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#e2e8f0',
                 width: '36px',
                 height: '36px',
                 borderRadius: '50%',
@@ -1675,18 +1657,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
               }}
             >
               <Settings size={18} />
-              {devClass11Enabled && (
-                <span style={{
-                  position: 'absolute',
-                  top: '-2px',
-                  right: '-2px',
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: 'var(--accent)',
-                  boxShadow: '0 0 6px var(--accent)'
-                }} />
-              )}
             </button>
 
             {/* Avatar button — long-press 5s to unlock admin panel */}
@@ -2688,7 +2658,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
           activeBatchId={activeBatchId}
           onSelectBatch={handleSelectBatch}
           allowedBatches={allowedBatchObjects}
-          devClass11Enabled={devClass11Enabled}
           onOpenSettings={() => setShowProfileModal(true)}
         />
       )}
@@ -2705,128 +2674,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
           />
         ) : (
           <div className="main-content pb-24">
-            {/* In-Development Batch Lockout (if devClass11Enabled is OFF) */}
-          {activeBatchObj && isBatchInDevelopment(activeBatchObj) && !devClass11Enabled ? (
-            <div style={{
-              padding: '54px 24px',
-              textAlign: 'center',
-              background: 'var(--panel-bg)',
-              borderRadius: '16px',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              margin: '20px 0',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '14px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-            }}>
-              <div style={{
-                width: 60,
-                height: 60,
-                borderRadius: '50%',
-                background: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--accent)'
-              }}>
-                <Code2 size={32} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px 0' }}>
-                  {getBatchDisplayName(activeBatchObj)}
-                </h3>
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  padding: '3px 10px',
-                  borderRadius: '999px',
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  color: 'var(--accent)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)'
-                }}>
-                  🚧 In Development Phase • Disabled by Default
-                </span>
-              </div>
-              <p style={{ maxWidth: '440px', fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
-                Next Toppers Class 11 batches are pre-added in the development phase and disabled by default. You can enable them anytime from the app Settings to test and preview lessons, tests, and study materials.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowProfileModal(true)}
-                  style={{
-                    padding: '10px 20px',
-                    borderRadius: '10px',
-                    background: 'var(--accent)',
-                    color: '#000',
-                    fontWeight: 700,
-                    fontSize: '0.88rem',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 2px 10px rgba(245, 158, 11, 0.3)'
-                  }}
-                >
-                  <Settings size={16} />
-                  <span>Enable in Settings</span>
-                </button>
-                {allowedBatchObjects.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('batches')}
-                    style={{
-                      padding: '10px 18px',
-                      borderRadius: '10px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-primary)',
-                      fontWeight: 600,
-                      fontSize: '0.88rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Switch Batch
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* If dev mode is active on Class 11 batch, show status banner */}
-              {activeBatchObj && isBatchInDevelopment(activeBatchObj) && devClass11Enabled && (
-                <div style={{
-                  background: 'rgba(245, 158, 11, 0.1)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                  borderRadius: '10px',
-                  padding: '8px 14px',
-                  marginBottom: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  fontSize: '0.8rem',
-                  color: 'var(--accent)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>🚧</span>
-                    <span style={{ fontWeight: 700 }}>Development Mode Active:</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>You are previewing Class 11 experimental content</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowProfileModal(true)}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
-                  >
-                    Settings
-                  </button>
-                </div>
-              )}
-              {/* Breadcrumbs with Back Arrow */}
-              {!searchQuery && (
+            {/* Breadcrumbs with Back Arrow */}
+            {!searchQuery && (
                 <div className="breadcrumbs">
                   {currentPath.length > 0 && (
                     <button 
@@ -3270,8 +3119,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
               );
             })}
           </div>
-          </>
-          )}
         </div>
         )
       )}
@@ -3419,83 +3266,6 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                     <span style={{ fontSize: '0.75rem', opacity: 0.7, marginLeft: '6px' }}>(OTA v{runtimeVersion.otaVersion})</span>
                   ) : null}
                 </span>
-              </div>
-            </div>
-
-            {/* App & Developer Settings Card */}
-            <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                <Settings size={16} style={{ color: 'var(--accent)' }} />
-                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  App & Developer Settings
-                </span>
-              </div>
-
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '12px',
-                padding: '14px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Class 11 Batches (In Development)
-                      </span>
-                      <span style={{
-                        fontSize: '0.65rem',
-                        fontWeight: 700,
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        background: devClass11Enabled ? 'rgba(74, 222, 128, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                        color: devClass11Enabled ? '#4ade80' : 'var(--accent)',
-                        border: `1px solid ${devClass11Enabled ? 'rgba(74, 222, 128, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`
-                      }}>
-                        {devClass11Enabled ? 'Active' : 'Disabled (Default)'}
-                      </span>
-                    </div>
-                    <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      Next Toppers Class 11 batches are pre-added in the development phase. Turn this ON to test and preview Class 11 subjects, lectures, and notes.
-                    </p>
-                  </div>
-
-                  {/* Toggle Switch */}
-                  <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', flexShrink: 0, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={devClass11Enabled}
-                      onChange={(e) => toggleDevClass11(e.target.checked)}
-                      style={{ opacity: 0, width: 0, height: 0 }}
-                    />
-                    <span style={{
-                      position: 'absolute',
-                      cursor: 'pointer',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      backgroundColor: devClass11Enabled ? 'var(--accent)' : '#374151',
-                      transition: '0.3s',
-                      borderRadius: '24px'
-                    }}>
-                      <span style={{
-                        position: 'absolute',
-                        content: '""',
-                        height: '18px',
-                        width: '18px',
-                        left: devClass11Enabled ? '22px' : '3px',
-                        bottom: '3px',
-                        backgroundColor: '#fff',
-                        transition: '0.3s',
-                        borderRadius: '50%'
-                      }} />
-                    </span>
-                  </label>
-                </div>
               </div>
             </div>
 
