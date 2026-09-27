@@ -49,6 +49,7 @@ import {
   isBatchInDevelopment
 } from '../utils/batchConfig';
 import { pwApiService } from '../services/PwApiService';
+import { ntApiService } from '../services/NtApiService';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -126,6 +127,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
   const [pwItemsMap, setPwItemsMap] = useState({});
   const [pwLoading, setPwLoading] = useState(false);
+  const [ntFoldersMap, setNtFoldersMap] = useState({});
+  const [ntLoading, setNtLoading] = useState(false);
 
   // Development Phase Options (Class 11 batches disabled by default)
   const [devClass11Enabled, setDevClass11Enabled] = useState(() => {
@@ -874,23 +877,57 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       return;
     }
 
+    // 1. NextToppers Real-Time Edge Fetch
+    const ntCacheKey = `course_data_nt_batch_${targetBatchId}_v1`;
+    let cachedNt = null;
+    try {
+      const cached = localStorage.getItem(ntCacheKey);
+      if (cached) cachedNt = JSON.parse(cached);
+    } catch (_) {}
+
+    if (cachedNt && (cachedNt.folders?.length > 0 || cachedNt.items?.length > 0)) {
+      setCourseData(cachedNt);
+      setLoading(false);
+    }
+
+    try {
+      const liveRoot = await ntApiService.getFolderContent(targetBatchId, '0');
+      if (liveRoot && liveRoot.success && (liveRoot.folders?.length > 0 || liveRoot.items?.length > 0)) {
+        const ntData = {
+          course_id: targetBatchId,
+          batch_name: targetBatchObj?.batch_name || `Batch ${targetBatchId}`,
+          class_name: targetBatchObj?.class_name || 'Class 10',
+          thumbnail: targetBatchObj?.thumbnail,
+          is_dynamic_nt: true,
+          folders: liveRoot.folders || [],
+          items: liveRoot.items || [],
+          subjects: liveRoot.folders || []
+        };
+        localStorage.setItem(ntCacheKey, JSON.stringify(ntData));
+        setCourseData(ntData);
+        setLoading(false);
+        return;
+      }
+    } catch (edgeErr) {
+      console.warn(`[LearningHub] NT Edge Gateway failed for batch ${targetBatchId}, falling back to database:`, edgeErr);
+    }
+
+    // 2. Legacy Database Fallback (if edge gateway is unreachable)
     const cacheKey = `course_data_batch_${targetBatchId}_v301`;
     
-    // 1. Instant Load from Cache
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (parsed && parsed.subjects) {
           setCourseData(parsed);
-          setLoading(false); // UI renders instantly
+          setLoading(false);
         }
       } catch (e) {
         console.error("Cache parse error", e);
       }
     }
 
-    // 2. Background Fetch (Update Cache silently)
     try {
       let res = await fetch(`${FIREBASE_DB_URL}/nexthope_batches/batch_${targetBatchId}.json`);
       let data = await res.json();
@@ -957,6 +994,36 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     }
   }, [currentPath, courseData]);
 
+  // Load NextToppers subfolders & items dynamically when navigating
+  useEffect(() => {
+    if (!courseData?.is_dynamic_nt) return;
+    const courseId = courseData.course_id;
+
+    if (currentPath.length > 0) {
+      const currentFolder = currentPath[currentPath.length - 1];
+      const folderId = String(currentFolder.folderId || currentFolder.id);
+      const folderKey = `${courseId}:${folderId}`;
+
+      if (!ntFoldersMap[folderKey]) {
+        setNtLoading(true);
+        ntApiService.getFolderContent(courseId, folderId)
+          .then(res => {
+            if (res && res.success) {
+              setNtFoldersMap(prev => ({
+                ...prev,
+                [folderKey]: {
+                  folders: res.folders || [],
+                  items: res.items || []
+                }
+              }));
+            }
+          })
+          .catch(err => console.error(`Failed to load NT folder ${folderId}:`, err))
+          .finally(() => setNtLoading(false));
+      }
+    }
+  }, [currentPath, courseData]);
+
   const handleSelectBatch = (batchId) => {
     const strId = String(batchId);
     setActiveBatchId(strId);
@@ -966,6 +1033,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     setCurrentPath([]);
     setSearchQuery('');
     setPwItemsMap({});
+    setNtFoldersMap({});
     fetchCourseData(strId);
     setActiveTab('courses');
   };
@@ -1109,7 +1177,16 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   // Flatten all items across all subjects into one big array for search
   const allItems = useMemo(() => {
     let items = [];
-    if (!courseData || !courseData.subjects) return items;
+    if (!courseData) return items;
+
+    if (courseData.is_dynamic_nt) {
+      return [
+        ...(courseData.items || []),
+        ...Object.values(ntFoldersMap).flatMap(f => f.items || [])
+      ];
+    }
+
+    if (!courseData.subjects) return items;
     
     const subjectsList = Array.isArray(courseData.subjects) 
       ? courseData.subjects.filter(Boolean) 
@@ -1133,7 +1210,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       });
     });
     return items;
-  }, [courseData]);
+  }, [courseData, ntFoldersMap]);
 
   if (loading && !courseData) {
     return (
@@ -1143,7 +1220,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     );
   }
 
-  if (!courseData || !courseData.subjects) {
+  if (!courseData || (!courseData.subjects && !courseData.folders)) {
     return (
       <div className="flex-1 p-6 text-center text-[#9ca3af] min-h-screen bg-[#0a0a0a] pt-20">
         <Smartphone size={48} className="mx-auto mb-4 opacity-50" />
@@ -1176,6 +1253,61 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     } else if (currentPath.length >= 2) {
       const chId = currentPath[1].chapterId || currentPath[1].id;
       currentItems = pwItemsMap[`content_${chId}`] || [];
+    }
+  } else if (courseData?.is_dynamic_nt) {
+    if (searchQuery.trim().length > 0) {
+      const qTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      const allNtLoaded = [
+        ...(courseData.folders || []),
+        ...(courseData.items || []),
+        ...Object.values(ntFoldersMap).flatMap(f => [...(f.folders || []), ...(f.items || [])])
+      ];
+      const seen = new Set();
+      currentItems = allNtLoaded.filter(item => {
+        const id = item.id || item.contentId || item.folderId || item.title;
+        if (id && seen.has(id)) return false;
+        if (id) seen.add(id);
+        const target = `${item.title || ''} ${item.name || ''} ${item.folder_path || ''} ${item.subject_name || ''}`.toLowerCase();
+        return qTokens.every(tok => target.includes(tok));
+      });
+    } else if (currentPath.length === 0) {
+      // Root level of NextToppers batch
+      currentItems = [
+        ...(courseData.folders || []).map(f => ({
+          ...f,
+          isFolder: true,
+          displayTitle: f.title || f.name,
+          subject_id: f.id || f.folderId
+        })),
+        ...(courseData.items || []).map(it => ({
+          ...it,
+          isFolder: false,
+          displayTitle: it.title || it.name
+        }))
+      ];
+    } else if (currentFolder) {
+      // Inside a NextToppers folder
+      const folderKey = `${courseData.course_id}:${currentFolder.folderId || currentFolder.id}`;
+      const folderContent = ntFoldersMap[folderKey];
+      if (folderContent) {
+        currentItems = [
+          ...(folderContent.folders || []).map(f => ({
+            ...f,
+            isFolder: true,
+            displayTitle: f.title || f.name,
+            subject_id: f.id || f.folderId,
+            subject_name: currentFolder.displayTitle || currentFolder.title
+          })),
+          ...(folderContent.items || []).map(it => ({
+            ...it,
+            isFolder: false,
+            displayTitle: it.title || it.name,
+            subject_name: currentFolder.displayTitle || currentFolder.title
+          }))
+        ];
+      } else {
+        currentItems = [];
+      }
     }
   } else if (searchQuery.trim().length > 0) {
     const qTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -2970,14 +3102,14 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
           {/* List Container */}
           <div className="list-container">
-            {pwLoading ? (
+            {pwLoading || ntLoading ? (
               <div style={{ padding: '64px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', margin: '16px 0' }}>
                 <Loader2 size={36} className="animate-spin" style={{ color: 'var(--accent)', marginBottom: '14px' }} />
                 <h3 style={{ fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: '600' }}>
-                  Loading from Physics Wallah...
+                  {pwLoading ? 'Loading from Physics Wallah...' : 'Loading folder content...'}
                 </h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                  Fetching chapters and study materials on demand
+                  {pwLoading ? 'Fetching chapters and study materials on demand' : 'Fetching lectures and notes directly from Edge Gateway'}
                 </p>
               </div>
             ) : currentItems.length === 0 ? (

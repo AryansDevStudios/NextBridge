@@ -1,6 +1,7 @@
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { pwApiService, toProxiedPdfUrl, getNetlifyFallbackPdfUrl } from './PwApiService';
+import { ntApiService } from './NtApiService';
 
 const DownloadService = registerPlugin('DownloadService');
 
@@ -809,6 +810,13 @@ class DownloadManagerService {
           if (resolved) targetUrl = resolved;
         } catch (e) {
           console.warn('[DownloadManager] Dynamic PDF resolution error:', e);
+        }
+      } else if (item.isDynamicNt || item.needsResolve || (targetUrl || '').includes('/dl/r/') || (!targetUrl && (item.contentId || item.id))) {
+        try {
+          const resolved = await ntApiService.resolvePdfUrl(item);
+          if (resolved && !resolved.includes('/dl/r/')) targetUrl = resolved;
+        } catch (e) {
+          console.warn('[DownloadManager] Dynamic NT PDF resolution error:', e);
         }
       }
       targetUrl = toProxiedPdfUrl(targetUrl);

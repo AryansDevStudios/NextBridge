@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
 import { pwApiService, toProxiedPdfUrl } from '../services/PwApiService';
+import { ntApiService } from '../services/NtApiService';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
 import RightSidePanel from './RightSidePanel';
@@ -65,12 +66,33 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [isPdfDownloaded, setIsPdfDownloaded] = useState(() => downloadManager.isDownloaded(item.id));
   const [isPdfDownloading, setIsPdfDownloading] = useState(() => downloadManager.isDownloading(item.id));
   const [pdfDownloadError, setPdfDownloadError] = useState('');
+
+  const isDirectCloudFrontPdf = Boolean(
+    item.type === 'pdf' &&
+    item.url &&
+    item.url.includes('cloudfront.net') &&
+    item.url.toLowerCase().includes('.pdf')
+  );
+
+  const isNtPdfNeedingResolution = Boolean(
+    item.type === 'pdf' &&
+    !isDirectCloudFrontPdf && (
+      item.isDynamicNt ||
+      item.needsResolve ||
+      !item.url ||
+      (item.url || '').includes('/dl/r/') ||
+      (item.url || '').includes('course.nexttoppers.com') ||
+      (item.courseId && !item.isDynamicPw && !item.provider?.includes('Physics Wallah'))
+    )
+  );
+
   const needsResolution = Boolean(
     item.type === 'pdf' && (
       item.isDynamicPw || 
       (item.url || '').includes('lxpdf') || 
       (item.url || '').includes('space-z.ai') || 
-      (item.url || '').includes('static.pw.live')
+      (item.url || '').includes('static.pw.live') ||
+      isNtPdfNeedingResolution
     )
   );
   const [resolvedPdfUrl, setResolvedPdfUrl] = useState(() => {
@@ -268,7 +290,22 @@ const VideoPlayer = ({ item, onClose, user }) => {
             return;
           }
 
-          // 2. Resolve PW on-demand PDFs
+          // 2. Resolve NextToppers on-demand PDFs via edge pipeline
+          if (isNtPdfNeedingResolution) {
+            setIsResolvingPdf(true);
+            const directUrl = await ntApiService.resolvePdfUrl(item);
+            if (isMounted) {
+              if (directUrl && !directUrl.includes('/dl/r/')) {
+                setResolvedPdfUrl(directUrl);
+                setIsResolvingPdf(false);
+              } else {
+                throw new Error('Unable to resolve direct PDF document from NextToppers edge pipeline.');
+              }
+            }
+            return;
+          }
+
+          // 3. Resolve PW on-demand PDFs
           if (item.isDynamicPw || (item.url || '').includes('lxpdf') || (item.url || '').includes('space-z.ai') || (item.url || '').includes('static.pw.live')) {
             setIsResolvingPdf(true);
             const directUrl = await pwApiService.resolvePdfUrl(item);
@@ -281,7 +318,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
               }
             }
           } else {
-            // 3. Regular NextToppers / NCERT / CBSE PDFs
+            // 4. Regular NextToppers / NCERT / CBSE PDFs
             if (isMounted) {
               setResolvedPdfUrl(item.url || '');
               setIsResolvingPdf(false);
@@ -292,7 +329,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
           if (isMounted) {
             setIsResolvingPdf(false);
             setPdfResolveError(e.message || 'Failed to load PDF document');
-            if (item.url) setResolvedPdfUrl(toProxiedPdfUrl(item.url));
+            if (item.url) setResolvedPdfUrl(isNtPdfNeedingResolution ? ntApiService.toProxiedUrl(item.url) : toProxiedPdfUrl(item.url));
           }
         }
       };
@@ -689,7 +726,139 @@ const VideoPlayer = ({ item, onClose, user }) => {
           </div>
         </div>
 
-        {(resolvedPdfUrl || item.url || '').includes('/dl/r/') ? (
+        {isResolvingPdf && !resolvedPdfUrl ? (
+          <div style={{ 
+            flex: 1, 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            background: '#121214',
+            color: '#e5e7eb',
+            padding: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <Loader2 size={32} className="spin-icon text-[#38bdf8]" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
+              Loading Document...
+            </h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '360px', lineHeight: 1.5 }}>
+              Connecting to secure reader and preparing pages...
+            </p>
+          </div>
+        ) : pdfResolveError && !resolvedPdfUrl ? (
+          <div style={{ 
+            flex: 1, 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            background: '#121214',
+            color: '#e5e7eb',
+            padding: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px',
+              color: '#ef4444'
+            }}>
+              <FileText size={32} />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
+              Document Currently Unavailable
+            </h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '380px', lineHeight: 1.5, marginBottom: '20px' }}>
+              {pdfResolveError}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPdfResolveError('');
+                  setIsResolvingPdf(true);
+                  const resolvePromise = isNtPdfNeedingResolution 
+                    ? ntApiService.resolvePdfUrl(item) 
+                    : pwApiService.resolvePdfUrl(item);
+
+                  resolvePromise.then(url => {
+                    if (url && !url.includes('/dl/r/')) {
+                      setResolvedPdfUrl(url);
+                      setIsResolvingPdf(false);
+                    } else {
+                      setPdfResolveError('Retry failed. Upstream source unavailable.');
+                      setIsResolvingPdf(false);
+                    }
+                  }).catch(e => {
+                    setPdfResolveError(e.message || 'Retry failed');
+                    setIsResolvingPdf(false);
+                  });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <RefreshCw size={16} />
+                <span>Retry</span>
+              </button>
+              {item.url && (
+                <button
+                  type="button"
+                  onClick={() => window.open(item.url, '_blank')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    color: '#e5e7eb',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    fontWeight: 500,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ExternalLink size={16} />
+                  <span>Open Direct Link</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (!resolvedPdfUrl && (item.url || '').includes('/dl/r/')) ? (
           <div style={{ 
             flex: 1, 
             width: '100%', 
@@ -782,134 +951,6 @@ const VideoPlayer = ({ item, onClose, user }) => {
                 <Share2 size={16} />
                 <span>Copy Link</span>
               </button>
-            </div>
-          </div>
-        ) : isResolvingPdf && !resolvedPdfUrl ? (
-          <div style={{ 
-            flex: 1, 
-            width: '100%', 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            background: '#121214',
-            color: '#e5e7eb',
-            padding: '24px',
-            textAlign: 'center'
-          }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              background: 'rgba(56, 189, 248, 0.1)',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '20px'
-            }}>
-              <Loader2 size={32} className="spin-icon text-[#38bdf8]" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
-              Loading Document...
-            </h3>
-            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '360px', lineHeight: 1.5 }}>
-              Connecting to secure reader and preparing pages...
-            </p>
-          </div>
-        ) : pdfResolveError && !resolvedPdfUrl ? (
-          <div style={{ 
-            flex: 1, 
-            width: '100%', 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            background: '#121214',
-            color: '#e5e7eb',
-            padding: '24px',
-            textAlign: 'center'
-          }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '20px',
-              color: '#ef4444'
-            }}>
-              <FileText size={32} />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f3f4f6', marginBottom: '8px' }}>
-              Document Currently Unavailable
-            </h3>
-            <p style={{ color: '#9ca3af', fontSize: '0.85rem', maxWidth: '380px', lineHeight: 1.5, marginBottom: '20px' }}>
-              {pdfResolveError}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setPdfResolveError('');
-                  setIsResolvingPdf(true);
-                  pwApiService.resolvePdfUrl(item).then(url => {
-                    if (url) {
-                      setResolvedPdfUrl(url);
-                      setIsResolvingPdf(false);
-                    } else {
-                      setPdfResolveError('Retry failed. Upstream source unavailable.');
-                      setIsResolvingPdf(false);
-                    }
-                  }).catch(e => {
-                    setPdfResolveError(e.message || 'Retry failed');
-                    setIsResolvingPdf(false);
-                  });
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  fontWeight: 600,
-                  fontSize: '0.88rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <RefreshCw size={16} />
-                <span>Retry</span>
-              </button>
-              {item.url && (
-                <button
-                  type="button"
-                  onClick={() => window.open(item.url, '_blank')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    color: '#e5e7eb',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    padding: '10px 20px',
-                    borderRadius: '10px',
-                    fontWeight: 500,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <ExternalLink size={16} />
-                  <span>Open Direct Link</span>
-                </button>
-              )}
             </div>
           </div>
         ) : (
