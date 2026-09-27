@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.4';
-export const CURRENT_LATEST_CODE = 30304;
+export const CURRENT_LATEST_VERSION = '3.3.5';
+export const CURRENT_LATEST_CODE = 30305;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.4',
-  latestVersionCode: 30304,
+  latestAppVersion: '3.3.5',
+  latestVersionCode: 30305,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.4: Direct AWS CloudFront video chunking, Range-enabled media segment streaming fallback, Physics Wallah edge gateway failover, and zero-cache instant lecture updates.'
+  releaseNotes: '• Version 3.3.5: CORS-safe edge proxying for PW video segments, direct PDF key resolution for class notes, and synchronized multi-platform playback.'
 };
 
 /**
