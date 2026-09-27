@@ -445,77 +445,8 @@ export default function YouTubePlayerCore({
           if (typeof keys === 'string') {
             try { keys = JSON.parse(keys); } catch (_) {}
           }
-
-          // Auto-resolve ClearKeys from MPD if missing or empty on item
-          if ((!keys || Object.keys(keys).length === 0) && (targetUrl.includes('.mpd') || targetUrl.includes('/manifest/'))) {
-            try {
-              const mpdProbe = await fetch(targetUrl);
-              if (mpdProbe.ok) {
-                const mpdStr = await mpdProbe.text();
-                const kidMatch = mpdStr.match(/default_KID="([0-9a-fA-F-]{32,36})"/i);
-                if (kidMatch) {
-                  const kid = kidMatch[1];
-                  const urlObj = new URL(targetUrl.startsWith('http') ? targetUrl : window.location.href);
-                  const gatewayOrigin = urlObj.origin.includes('workers.dev') ? urlObj.origin : 'https://nextbridgeapi.adsbackend01.workers.dev';
-                  const otpUrls = [
-                    `${gatewayOrigin}/pw/api/get-otp?kid=${encodeURIComponent(kid)}`,
-                    `https://nextbridgeapi.adsbackend01.workers.dev/pw/api/get-otp?kid=${encodeURIComponent(kid)}`,
-                    `https://www.learnxpw.site/api/get-otp?kid=${encodeURIComponent(kid)}`
-                  ];
-                  for (const oUrl of otpUrls) {
-                    try {
-                      const oRes = await fetch(oUrl, {
-                        headers: {
-                          'Origin': 'https://www.learnxpw.site',
-                          'Referer': 'https://www.learnxpw.site/study/batches'
-                        }
-                      });
-                      if (oRes.ok) {
-                        const oData = await oRes.json();
-                        if (oData?.clearKeys && typeof oData.clearKeys === 'object') {
-                          const normalizedKeys = { ...oData.clearKeys };
-                          for (const [k, v] of Object.entries(oData.clearKeys)) {
-                            if (!k.includes('-') && k.length === 32) {
-                              const hyphenated = `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
-                              normalizedKeys[hyphenated] = v;
-                            } else if (k.includes('-')) {
-                              normalizedKeys[k.replace(/-/g, '')] = v;
-                            }
-                          }
-                          keys = normalizedKeys;
-                          break;
-                        } else if (oData?.key || oData?.data?.key) {
-                          const hexKey = oData?.key || oData?.data?.key;
-                          const cleanKid = kid.replace(/-/g, '').toLowerCase();
-                          keys = {
-                            [cleanKid]: hexKey.toLowerCase(),
-                            [kid.toLowerCase()]: hexKey.toLowerCase()
-                          };
-                          break;
-                        }
-                      }
-                    } catch (_) {}
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-
-          const finalClearKeys = {};
-          if (keys && typeof keys === 'object') {
-            for (const [k, v] of Object.entries(keys)) {
-              finalClearKeys[k] = v;
-              if (!k.includes('-') && k.length === 32) {
-                const hyphenated = `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
-                finalClearKeys[hyphenated] = v;
-              } else if (k.includes('-')) {
-                finalClearKeys[k.replace(/-/g, '')] = v;
-              }
-            }
-          }
-
-          const drmConfig = Object.keys(finalClearKeys).length > 0
-            ? { clearKeys: finalClearKeys }
+          const drmConfig = (keys && typeof keys === 'object' && Object.keys(keys).length > 0)
+            ? { clearKeys: keys }
             : {};
 
           const savedQuality = parseInt(localStorage.getItem('global_quality') || '0', 10);

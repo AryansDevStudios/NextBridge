@@ -893,221 +893,120 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 }
 
 async function handleParchamVid(params, request, prefix = '') {
-  const childId = String(params.childId || params.child_id || params.contentId || params.content_id || '').trim();
-  const batchId = String(params.batchId || params.batch_id || '').trim();
-  const subjectId = String(params.subjectId || params.subject_id || '').trim();
-  const videoId = String(params.videoId || params.video_id || '').trim();
-  const vUrl = String(params.vUrl || params.video_url || params.v_url || params.url || '').trim();
+  const childId = String(params.childId || '').trim();
+  const videoId = String(params.videoId || '').trim();
+  const vUrl = String(params.vUrl || '').trim();
+  const batchId = String(params.batchId || '').trim();
+  const subjectId = String(params.subjectId || '').trim();
 
-  if (!childId && !videoId && !vUrl) {
-    return jsonResponse({ success: false, error: 'childId, videoId, or vUrl is required' }, 400);
+  const targetId = childId || videoId;
+  if (!targetId && !vUrl) {
+    return jsonResponse({ success: false, error: 'childId or videoId required' }, 400);
   }
 
-  let folder = '';
-  let host = DEFAULT_CF_HOST;
-  let signedQuery = '';
-  let clearKeys = null;
+  // Tier 1: Query LearnxPW for signed video URL
+  let videoInfo = null;
+  const idsToTry = [childId, videoId].filter(Boolean);
 
-  // 1. Direct vUrl parsing if already provided
-  if (vUrl && typeof vUrl === 'string') {
-    if (/youtube\.com|youtu\.be/i.test(vUrl)) {
-      return jsonResponse({
-        success: true,
-        data: {
-          kind: 'youtube',
-          url: vUrl,
-          signedUrl: '',
-          clearKeys: null,
-          poster: '',
-          drmDetails: null
-        }
-      });
-    }
+  for (const cid of idsToTry) {
+    if (videoInfo?.url) break;
     try {
-      const parsed = new URL(vUrl);
-      host = parsed.hostname || DEFAULT_CF_HOST;
-      const pathParts = parsed.pathname.split('/').filter(Boolean);
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const foundFolder = pathParts.find(p => uuidRegex.test(p));
-      if (foundFolder) folder = foundFolder;
-      if (parsed.search) signedQuery = parsed.search;
+      const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(cid)}`, {
+        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+      });
+      if (lxRes.ok) {
+        const body = await lxRes.json();
+        if (body?.success && body?.data?.url) {
+          videoInfo = body.data;
+          break;
+        }
+      }
     } catch (_) {}
-  }
 
-  // 2. Primary: Query get-video-url on LearnxPW for signed video URL
-  const candidateIds = [childId, videoId].filter(Boolean);
-  if (batchId && subjectId) {
-    for (const cid of candidateIds) {
-      if (folder && signedQuery) break;
+    // Tier 1b: Try get-video-url
+    if (!videoInfo?.url) {
       try {
-        const gRes = await fetch(`${LX_ORIGIN}/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}`, {
+        const lxRes2 = await fetch(`${LX_ORIGIN}/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}`, {
           headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
         });
-        if (gRes.ok) {
-          const gBody = await gRes.json();
-          const targetUrl = gBody?.data?.url || '';
-          const targetSig = gBody?.data?.signedUrl || '';
-          if (targetUrl) {
-            if (/youtube\.com|youtu\.be/i.test(targetUrl) || gBody?.data?.urlType === 'youtube') {
-              return jsonResponse({
-                success: true,
-                data: {
-                  kind: 'youtube',
-                  url: targetUrl,
-                  signedUrl: '',
-                  clearKeys: null,
-                  poster: '',
-                  drmDetails: null
-                }
-              });
-            }
-            if (targetUrl.includes('cloudfront.net')) {
-              try {
-                const parsed = new URL(targetUrl);
-                host = parsed.hostname || DEFAULT_CF_HOST;
-                const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-                if (match) folder = match[1];
-                if (targetSig) signedQuery = targetSig;
-                else if (parsed.search) signedQuery = parsed.search;
-              } catch (_) {}
-            }
+        if (lxRes2.ok) {
+          const body = await lxRes2.json();
+          if (body?.data?.url) {
+            videoInfo = body.data;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Tier 2 Fallback: Query PenPencil / StudySpark with guest JWT
+    if (!videoInfo?.url) {
+      try {
+        const nsRes = await fetch(`https://api.studyspark.study/api/penpencil/v1/videos/${encodeURIComponent(cid)}`, {
+          headers: {
+            'Authorization': `Bearer ${PENPENCIL_GUEST_TOKEN}`,
+            'client-type': 'WEB',
+            'User-Agent': UA
+          }
+        });
+        if (nsRes.ok) {
+          const body = await nsRes.json();
+          if (body?.success && body?.data?.videoUrl) {
+            videoInfo = { url: body.data.videoUrl, signedUrl: '' };
+            break;
           }
         }
       } catch (_) {}
     }
   }
 
-  // 3. Fallback: Query Schedule detail for direct video link or YouTube embed
-  if ((!folder || !signedQuery) && batchId && subjectId && (childId || videoId)) {
-    try {
-      const schUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(childId || videoId)}`;
-      const schRes = await fetch(schUrl, {
-        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
-      });
-      if (schRes.ok) {
-        const schJson = await schRes.json();
-        const detail = schJson?.data || schJson;
-        const targetUrl = detail?.url || detail?.videoDetails?.videoUrl || detail?.newCdnLink || '';
-        if (targetUrl) {
-          if (/youtube\.com|youtu\.be/i.test(targetUrl) || detail?.urlType === 'youtube') {
-            return jsonResponse({
-              success: true,
-              data: {
-                kind: 'youtube',
-                url: targetUrl,
-                signedUrl: '',
-                clearKeys: null,
-                poster: detail?.videoDetails?.image || '',
-                drmDetails: null
-              }
-            });
-          }
-          if (targetUrl.includes('cloudfront.net')) {
-            try {
-              const parsed = new URL(targetUrl);
-              host = parsed.hostname || DEFAULT_CF_HOST;
-              const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-              if (match && !folder) folder = match[1];
-              if (!signedQuery && parsed.search) signedQuery = parsed.search;
-            } catch (_) {}
-          }
-        }
-      }
-    } catch (_) {}
+  // Tier 3: If vUrl was passed directly from schedule item
+  if (!videoInfo?.url && vUrl && (vUrl.includes('.mpd') || vUrl.includes('.m3u8'))) {
+    videoInfo = { url: vUrl, signedUrl: '' };
   }
 
-  // 4. Fallback: video-url endpoint
-  for (const id of candidateIds) {
-    if (signedQuery && folder) break;
-    try {
-      const qParams = batchId && subjectId ? `batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(id)}` : `video_id=${encodeURIComponent(id)}`;
-      const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?${qParams}`, {
-        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
-      });
-      if (lxRes.ok) {
-        const lxData = await lxRes.json();
-        const candidateUrl = lxData.url || lxData.data?.url || (typeof lxData === 'string' ? lxData : '');
-        if (candidateUrl && candidateUrl.includes('cloudfront.net')) {
-          const parsed = new URL(candidateUrl);
-          host = parsed.hostname;
-          const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-          if (match && !folder) folder = match[1];
-          if (!signedQuery && parsed.search) signedQuery = parsed.search;
-        }
-      }
-    } catch (_) {}
+  if (!videoInfo?.url) {
+    return jsonResponse({
+      success: false,
+      error: 'Lecture stream is currently gated or unavailable.'
+    }, 404);
   }
 
-  // 3. PenPencil/StudySpark fallback if folder is found but signature is missing
-  if (folder && !signedQuery) {
-    try {
-      const signRes = await fetch(`https://api.penpencil.co/v3/files/send-analytics-data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${PENPENCIL_GUEST_TOKEN}`,
-          'User-Agent': UA
-        },
-        body: JSON.stringify({ url: `https://${host}/${folder}/master.mpd` })
-      });
-      if (signRes.ok) {
-        const signData = await signRes.json();
-        const signedUrl = signData?.data?.signedUrl || signData?.data?.url;
-        if (signedUrl) {
-          const parsed = new URL(signedUrl);
-          if (parsed.search) signedQuery = parsed.search;
-        }
-      }
-    } catch (_) {}
+  const rawUrl = videoInfo.url;
+  const folder = extractFolder(rawUrl);
+  const host = extractHost(rawUrl) || DEFAULT_CF_HOST;
+  let signedQuery = videoInfo.signedUrl || '';
+
+  // If no signed query was returned from API, check fallback constants
+  if (!signedQuery && folder && FALLBACK_SIGNATURES[folder]) {
+    signedQuery = FALLBACK_SIGNATURES[folder];
   }
 
-  // 4. Hardcoded fallback signatures
-  if (folder && !signedQuery && FALLBACK_SIGNATURES[folder]) {
-    signedQuery = `?${FALLBACK_SIGNATURES[folder]}`;
-  }
-
+  // Clean signed query format
   if (signedQuery && !signedQuery.startsWith('?')) {
     signedQuery = `?${signedQuery}`;
   }
 
-  // 5. DRM ClearKey Resolution
-  if (folder && host) {
+  // Resolve ClearKeys from master.mpd if available
+  let clearKeys = null;
+  if (rawUrl.includes('.mpd')) {
     try {
-      const mpdRes = await fetch(`https://${host}/${folder}/master.mpd${signedQuery}`, {
+      const probeUrl = `https://${host}/${folder}/master.mpd${signedQuery}`;
+      const probeRes = await fetch(probeUrl, {
         headers: { 'User-Agent': UA }
       });
-      if (mpdRes.ok) {
-        const mpdText = await mpdRes.text();
-        const kid = parseMpdDrm(mpdText);
-        if (kid) {
+      if (probeRes.ok) {
+        const mpdText = await probeRes.text();
+        const kidMatch = mpdText.match(/default_KID="([0-9a-fA-F-]+)"/);
+        if (kidMatch) {
+          const kid = kidMatch[1];
           const otpRes = await fetch(`${LX_ORIGIN}/api/get-otp?kid=${encodeURIComponent(kid)}`, {
-            headers: {
-              'User-Agent': UA,
-              'Origin': LX_ORIGIN,
-              'Referer': `${LX_ORIGIN}/study/batches`
-            }
+            headers: { 'User-Agent': UA }
           });
           if (otpRes.ok) {
-            const otpData = await otpRes.json();
-            if (otpData?.clearKeys && typeof otpData.clearKeys === 'object') {
-              clearKeys = { ...otpData.clearKeys };
-              for (const [k, v] of Object.entries(otpData.clearKeys)) {
-                if (!k.includes('-') && k.length === 32) {
-                  const hyphenated = `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
-                  clearKeys[hyphenated] = v;
-                } else if (k.includes('-')) {
-                  clearKeys[k.replace(/-/g, '')] = v;
-                }
-              }
-            } else {
-              const hexKey = otpData?.key || otpData?.data?.key;
-              if (hexKey) {
-                const cleanKid = kid.replace(/-/g, '').toLowerCase();
-                clearKeys = {
-                  [cleanKid]: hexKey.toLowerCase(),
-                  [kid.toLowerCase()]: hexKey.toLowerCase()
-                };
-              }
+            const otpJson = await otpRes.json();
+            if (otpJson?.clearKeys) {
+              clearKeys = otpJson.clearKeys;
             }
           }
         }
@@ -1115,15 +1014,9 @@ async function handleParchamVid(params, request, prefix = '') {
     } catch (_) {}
   }
 
-  if (!folder) {
-    return jsonResponse({
-      success: false,
-      error: 'Unable to resolve video stream from Physics Wallah origin.'
-    }, 404);
-  }
-
+  // Build the Smart Direct-CloudFront Manifest URL
   const sigParam = signedQuery ? encodeURIComponent(signedQuery.replace(/^\?/, '')) : '';
-  const manifestPath = `${prefix}/manifest/${folder}/master.mpd?sig=${sigParam}&host=${encodeURIComponent(host)}`;
+  const manifestPath = `/manifest/${folder}/master.mpd?sig=${sigParam}&host=${encodeURIComponent(host)}`;
 
   return jsonResponse({
     success: true,
@@ -1139,9 +1032,21 @@ async function handleParchamVid(params, request, prefix = '') {
 
 /**
  * CORS-Safe Manifest Rewriter & Segment Proxy:
- * PW's CloudFront does not return Access-Control-Allow-Origin headers.
- * All segments route through this worker which adds CORS and Range headers.
+ *
+ * PW's CloudFront distribution does NOT return Access-Control-Allow-Origin
+ * headers on media segments, so Shaka Player cannot read segment data when
+ * fetched cross-origin from the browser. All segments MUST route through
+ * this worker which adds CORS headers on every response.
+ *
+ * Flow:
+ *   1. Master MPD is fetched from CloudFront, rewritten so <BaseURL> points
+ *      back to this worker (/manifest/:folder/), and CloudFront signature
+ *      params are injected into SegmentTemplate initialization/media attrs.
+ *   2. When Shaka Player requests each segment (init.mp4, 1.mp4, etc.),
+ *      the request hits this worker → worker strips its own params, fetches
+ *      from CloudFront, and returns with CORS + Range headers.
  */
+
 async function handlePwManifest(url, request, env, ctx, prefix = '') {
   const parts = url.pathname.split('/').filter(Boolean);
   // Pattern: [prefix, 'manifest', :folder, ...] or ['manifest', :folder, ...]
@@ -1305,21 +1210,7 @@ async function handlePwPdfRedirect(url) {
       const d = body?.data;
       if (d?.baseUrl && d?.key) {
         const fullUrl = `${d.baseUrl.replace(/\/+$/, '')}/${d.key.replace(/^\/+/, '')}`;
-        return Response.redirect(fullUrl, 302);
-      }
-      // Fallback: search through homeworkIds if direct data didn't work
-      const hwList = body.homeworkIds || d?.homeworkIds || [];
-      for (const hw of hwList) {
-        for (const att of (hw.attachmentIds || [])) {
-          if (attachmentId && att._id === attachmentId) {
-            const direct = (att.baseUrl && att.key) ? `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}` : att.baseUrl;
-            if (direct) return Response.redirect(direct, 302);
-          }
-          if (att.baseUrl && (att.baseUrl.includes('.pdf') || att.key)) {
-            const direct = att.key ? `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}` : att.baseUrl;
-            return Response.redirect(direct, 302);
-          }
-        }
+        return new Response(null, { status: 302, headers: { ...CORS_HEADERS, 'Location': fullUrl } });
       }
     }
   } catch (_) {}
