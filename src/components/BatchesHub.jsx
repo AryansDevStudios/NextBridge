@@ -11,8 +11,7 @@ import {
   ChevronRight,
   Archive,
   Zap,
-  Play,
-  Settings
+  Play
 } from 'lucide-react';
 import { getBatchDisplayName } from '../utils/batchConfig';
 
@@ -20,8 +19,7 @@ export default function BatchesHub({
   user, 
   activeBatchId, 
   onSelectBatch, 
-  allowedBatches = [],
-  onOpenSettings
+  allowedBatches = []
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', 'archive', 'crash', 'free'
@@ -396,10 +394,6 @@ export default function BatchesHub({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (isDevDisabled) {
-                          if (onOpenSettings) onOpenSettings();
-                          return;
-                        }
                         onSelectBatch(String(batch.batch_id));
                       }}
                       style={{
@@ -414,21 +408,12 @@ export default function BatchesHub({
                         justifyContent: 'center',
                         gap: '6px',
                         transition: 'all 0.15s ease',
-                        background: isDevDisabled 
-                          ? 'rgba(245, 158, 11, 0.12)' 
-                          : isCurrentlyActive 
-                            ? 'rgba(245, 158, 11, 0.15)' 
-                            : 'var(--accent)',
-                        color: (isDevDisabled || isCurrentlyActive) ? 'var(--accent)' : '#000',
-                        border: (isCurrentlyActive || isDevDisabled) ? '1px solid rgba(245, 158, 11, 0.4)' : 'none'
+                        background: isCurrentlyActive ? 'rgba(245, 158, 11, 0.15)' : 'var(--accent)',
+                        color: isCurrentlyActive ? 'var(--accent)' : '#000',
+                        border: isCurrentlyActive ? '1px solid rgba(245, 158, 11, 0.4)' : 'none'
                       }}
                     >
-                      {isDevDisabled ? (
-                        <>
-                          <Settings size={14} />
-                          <span>Dev Phase • Enable in Settings</span>
-                        </>
-                      ) : isCurrentlyActive ? (
+                      {isCurrentlyActive ? (
                         <>
                           <Check size={14} />
                           <span>Currently Active • Browse</span>
