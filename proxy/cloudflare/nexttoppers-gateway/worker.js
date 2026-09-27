@@ -224,15 +224,35 @@ export default {
               });
             } else {
               // ─── VIDEO RESOLUTION ─────────────────────────────────────
+              let parsedDownloadUrls = [];
+              if (dataObj.download_urls) {
+                try {
+                  parsedDownloadUrls = typeof dataObj.download_urls === 'string'
+                    ? JSON.parse(dataObj.download_urls)
+                    : dataObj.download_urls;
+                } catch (_) {}
+              }
+
               if (dataObj.video_type === 1 || primaryUrl.includes('youtube') || primaryUrl.includes('youtu.be')) {
                 // YouTube link extraction
                 const m = primaryUrl.match(/(?:v=|\/vi\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/);
                 const ytId = m ? m[1] : null;
                 primaryUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : primaryUrl;
               } else {
+                // Best quality direct playable MP4 URL (720p, 480p, 360p)
+                let bestMp4 = null;
+                if (Array.isArray(parsedDownloadUrls) && parsedDownloadUrls.length > 0) {
+                  const best =
+                    parsedDownloadUrls.find((u) => u.title === '720' || u.title === '720p30') ||
+                    parsedDownloadUrls.find((u) => u.title === '480' || u.title === '480p30') ||
+                    parsedDownloadUrls.find((u) => u.title === '360' || u.title === '360p30') ||
+                    parsedDownloadUrls[0];
+                  if (best && best.url) bestMp4 = best.url;
+                }
+
                 // Algorithmic CloudFront HLS (.m3u8) derivation from download_urls
                 resolvedHlsUrl = deriveHlsStream(dataObj, primaryUrl);
-                if (resolvedHlsUrl) primaryUrl = resolvedHlsUrl;
+                primaryUrl = bestMp4 || resolvedHlsUrl || primaryUrl;
               }
 
               items.push({
@@ -241,6 +261,7 @@ export default {
                 type: 'video',
                 url: primaryUrl,
                 hlsUrl: resolvedHlsUrl,
+                downloadUrls: parsedDownloadUrls,
                 thumbnail: dataObj.thumbnail || null,
                 duration: dataObj.duration || 0,
                 courseId,
