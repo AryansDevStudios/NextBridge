@@ -106,10 +106,11 @@ export default {
  * Handle POST /api/data actions requested by PwApiService
  */
 async function handleRpcAction(body, request, env, ctx) {
-  const action = String(body.action || '').trim();
-  const params = body.params || {};
+  try {
+    const action = String(body.action || '').trim();
+    const params = body.params || {};
 
-  switch (action) {
+    switch (action) {
     case 'pw_btch_dtl': {
       const batchId = String(params.batchId || '').trim();
       if (!batchId) return jsonResponse({ success: false, error: 'batchId required' }, 400);
@@ -386,6 +387,9 @@ async function handleRpcAction(body, request, env, ctx) {
 
     default:
       return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400);
+    }
+  } catch (err) {
+    return jsonResponse({ success: false, error: err.message || 'Internal action error' }, 500);
   }
 }
 
@@ -657,14 +661,12 @@ function jsonResponse(data, status = 200) {
 
 async function fetchDirect(url) {
   return fetch(url, {
-    cache: 'no-store',
     headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
   });
 }
 
 async function fetchUpstream(targetUrl) {
   const res = await fetch(targetUrl, {
-    cache: 'no-store',
     headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
   });
   const data = await res.text();
@@ -673,7 +675,8 @@ async function fetchUpstream(targetUrl) {
     headers: {
       ...CORS_HEADERS,
       'Content-Type': res.headers.get('content-type') || 'application/json',
-      'Cache-Control': `public, max-age=${ttl}`
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache'
     }
   });
 }
