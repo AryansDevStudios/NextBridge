@@ -1067,11 +1067,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     if (item.type !== 'pdf' && item.isDynamicPw && (!item.url || item.url === '')) {
       try {
         setLoading(true);
-        const { manifestUrl, clearKeys } = await pwApiService.getVideoPlaybackInfo(
-          item.batchId,
-          item.scheduleId || item.id,
-          item.masterId
-        );
+        const { manifestUrl, clearKeys } = await pwApiService.getVideoPlaybackInfo(item);
         const enrichedItem = {
           ...item,
           url: manifestUrl,

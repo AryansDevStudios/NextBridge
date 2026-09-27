@@ -177,6 +177,8 @@ export const pwApiService = {
           subjectId,
           masterId,
           scheduleId: item._id || d._id,
+          videoId: d.videoDetails?._id || d.videoDetails?.id || '',
+          vUrl: d.url || d.videoDetails?.videoUrl || '',
           folder_path: folderTitle,
           thumbnail: d.videoDetails?.image || '',
           duration: durationSecs,
@@ -368,11 +370,28 @@ export const pwApiService = {
   /**
    * Fetch video manifest URL and ClearKeys on the fly
    */
-  async getVideoPlaybackInfo(batchId, scheduleId, masterId) {
+  async getVideoPlaybackInfo(batchIdOrItem, scheduleId, masterId, videoId = '', vUrl = '') {
+    let bId = batchIdOrItem;
+    let sId = scheduleId;
+    let mId = masterId;
+    let vId = videoId;
+    let directUrl = vUrl;
+
+    if (typeof batchIdOrItem === 'object' && batchIdOrItem !== null) {
+      const it = batchIdOrItem;
+      bId = it.batchId;
+      sId = it.scheduleId || it.id;
+      mId = it.masterId;
+      vId = it.videoId || '';
+      directUrl = it.vUrl || it.url || '';
+    }
+
     const data = await callRpc('parcham_vid', {
-      childId: scheduleId,
-      batchId,
-      subjectId: masterId
+      childId: sId,
+      batchId: bId,
+      subjectId: mId,
+      videoId: vId,
+      vUrl: directUrl
     });
 
     if (!data || !data.url) {

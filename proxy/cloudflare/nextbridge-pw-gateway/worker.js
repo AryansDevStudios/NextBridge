@@ -398,59 +398,75 @@ async function handleRpcAction(body, request, env, ctx) {
  */
 async function handleParchamVid(params, requestUrl) {
   const childId = String(params.childId || '').trim();
+  const videoId = String(params.videoId || '').trim();
+  const vUrl = String(params.vUrl || '').trim();
   const batchId = String(params.batchId || '').trim();
   const subjectId = String(params.subjectId || '').trim();
 
-  if (!childId) {
-    return jsonResponse({ success: false, error: 'childId required' }, 400);
+  const targetId = childId || videoId;
+  if (!targetId && !vUrl) {
+    return jsonResponse({ success: false, error: 'childId or videoId required' }, 400);
   }
 
   // Tier 1: Query LearnxPW for signed video URL
   let videoInfo = null;
-  try {
-    const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(childId)}`, {
-      headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
-    });
-    if (lxRes.ok) {
-      const body = await lxRes.json();
-      if (body?.success && body?.data?.url) {
-        videoInfo = body.data;
-      }
-    }
-  } catch (_) {}
+  const idsToTry = [childId, videoId].filter(Boolean);
 
-  // Tier 1b: Try childId on get-video-url
-  if (!videoInfo?.url) {
+  for (const cid of idsToTry) {
+    if (videoInfo?.url) break;
     try {
-      const lxRes2 = await fetch(`${LX_ORIGIN}/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(childId)}`, {
+      const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(cid)}`, {
         headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
       });
-      if (lxRes2.ok) {
-        const body = await lxRes2.json();
-        if (body?.data?.url) {
+      if (lxRes.ok) {
+        const body = await lxRes.json();
+        if (body?.success && body?.data?.url) {
           videoInfo = body.data;
+          break;
         }
       }
     } catch (_) {}
+
+    // Tier 1b: Try get-video-url
+    if (!videoInfo?.url) {
+      try {
+        const lxRes2 = await fetch(`${LX_ORIGIN}/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}`, {
+          headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+        });
+        if (lxRes2.ok) {
+          const body = await lxRes2.json();
+          if (body?.data?.url) {
+            videoInfo = body.data;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Tier 2 Fallback: Query PenPencil / StudySpark with guest JWT
+    if (!videoInfo?.url) {
+      try {
+        const nsRes = await fetch(`https://api.studyspark.study/api/penpencil/v1/videos/${encodeURIComponent(cid)}`, {
+          headers: {
+            'Authorization': `Bearer ${PENPENCIL_GUEST_TOKEN}`,
+            'client-type': 'WEB',
+            'User-Agent': UA
+          }
+        });
+        if (nsRes.ok) {
+          const body = await nsRes.json();
+          if (body?.success && body?.data?.videoUrl) {
+            videoInfo = { url: body.data.videoUrl, signedUrl: '' };
+            break;
+          }
+        }
+      } catch (_) {}
+    }
   }
 
-  // Tier 2 Fallback: Query PenPencil / StudySpark with guest JWT
-  if (!videoInfo?.url) {
-    try {
-      const nsRes = await fetch(`https://api.studyspark.study/api/penpencil/v1/videos/${encodeURIComponent(childId)}`, {
-        headers: {
-          'Authorization': `Bearer ${PENPENCIL_GUEST_TOKEN}`,
-          'client-type': 'WEB',
-          'User-Agent': UA
-        }
-      });
-      if (nsRes.ok) {
-        const body = await nsRes.json();
-        if (body?.success && body?.data?.videoUrl) {
-          videoInfo = { url: body.data.videoUrl, signedUrl: '' };
-        }
-      }
-    } catch (_) {}
+  // Tier 3: If vUrl was passed directly from schedule item
+  if (!videoInfo?.url && vUrl && (vUrl.includes('.mpd') || vUrl.includes('.m3u8'))) {
+    videoInfo = { url: vUrl, signedUrl: '' };
   }
 
   if (!videoInfo?.url) {
@@ -519,19 +535,57 @@ async function handleParchamVid(params, requestUrl) {
 }
 
 /**
- * Smart Direct CloudFront Manifest Engine:
- * Fetches the master.mpd from CloudFront, rewrites <BaseURL> and <SegmentTemplate>
- * so media segments stream DIRECTLY from AWS CloudFront without worker hops.
+ * Smart Direct CloudFront Manifest Engine & Segment Streamer:
+ * 1. Rewrites master.mpd with canonical <BaseURL> so media segments stream DIRECTLY
+ *    from AWS CloudFront edge PoPs without consuming worker requests or bandwidth.
+ * 2. Transparently streams media chunks (init.mp4, 1.mp4, chunk.m4s, etc.) with full
+ *    HTTP Range header support if any player requests segments via the worker origin.
  */
 async function handleManifest(url, request, env, ctx) {
   const parts = url.pathname.split('/').filter(Boolean);
-  const folder = parts[1]; // /manifest/<folder>/master.mpd
+  // Pattern: /manifest/:folder/...
+  const folder = parts[1];
   if (!folder) return jsonResponse({ error: 'Folder required' }, 400);
 
-  const rawSig = url.searchParams.get('sig') || '';
-  const sigQuery = rawSig ? (rawSig.startsWith('?') ? rawSig : `?${decodeURIComponent(rawSig)}`) : '';
-  const host = url.searchParams.get('host') || DEFAULT_CF_HOST;
+  const assetParts = parts.slice(2);
+  const assetPath = assetParts.join('/');
 
+  const host = url.searchParams.get('host') || DEFAULT_CF_HOST;
+  const rawSig = url.searchParams.get('sig') || '';
+  let sigQuery = rawSig ? (rawSig.startsWith('?') ? rawSig : `?${decodeURIComponent(rawSig)}`) : '';
+
+  // If no explicit sig parameter, check if URL itself has raw CloudFront signature parameters
+  if (!sigQuery && url.searchParams.has('Signature')) {
+    sigQuery = url.search;
+  }
+
+  // Fallback to known folder signatures if needed
+  if (!sigQuery && FALLBACK_SIGNATURES[folder]) {
+    sigQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+  }
+
+  // 1. Media Segment Proxying (init.mp4, 1.mp4, chunk.m4s, .ts, etc.)
+  if (assetPath && !assetPath.endsWith('.mpd') && !assetPath.endsWith('.m3u8')) {
+    const fullQuery = sigQuery || url.search || '';
+    const targetAssetUrl = `https://${host}/${folder}/${assetPath}${fullQuery}`;
+
+    const forwardHeaders = new Headers();
+    forwardHeaders.set('User-Agent', UA);
+    const range = request.headers.get('range');
+    if (range) forwardHeaders.set('range', range);
+
+    const assetRes = await fetch(targetAssetUrl, { headers: forwardHeaders });
+    const responseHeaders = new Headers(assetRes.headers);
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => responseHeaders.set(k, v));
+    responseHeaders.set('Cache-Control', 'public, max-age=86400');
+
+    return new Response(assetRes.body, {
+      status: assetRes.status,
+      headers: responseHeaders
+    });
+  }
+
+  // 2. MPD Manifest Rewriting
   const upstreamMpdUrl = `https://${host}/${folder}/master.mpd${sigQuery}`;
   const upstreamRes = await fetch(upstreamMpdUrl, {
     headers: { 'User-Agent': UA }
@@ -547,16 +601,23 @@ async function handleManifest(url, request, env, ctx) {
   let text = await upstreamRes.text();
 
   // Smart Rewriting for Direct CloudFront Chunk Fetching:
-  // 1. Ensure <BaseURL> points directly to AWS CloudFront
-  const directBase = `https://${host}/${folder}/`;
-  text = text.replace(/<BaseURL>.*?<\/BaseURL>/gi, `<BaseURL>${directBase}</BaseURL>`);
+  // Remove any existing <BaseURL> tags (multiline or single-line, with or without attributes)
+  text = text.replace(/<BaseURL[\s\S]*?<\/BaseURL>/gi, '');
 
-  // 2. Inject signed query string into initialization and media segment templates
-  // so the player fetches each chunk directly from CloudFront with valid authorization
+  // Inject canonical root BaseURL pointing directly to AWS CloudFront
+  const directBase = `https://${host}/${folder}/`;
+  if (/<MPD[^>]*>/i.test(text)) {
+    text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${directBase}</BaseURL>`);
+  } else {
+    text = `<BaseURL>${directBase}</BaseURL>\n` + text;
+  }
+
+  // Inject signed query string into initialization and media segment templates
   if (sigQuery) {
     const qClean = sigQuery.replace(/^\?/, '');
     text = text.replace(/initialization="([^"?]+)"/g, (_m, p1) => `initialization="${p1}?${qClean}"`);
     text = text.replace(/media="([^"?]+)"/g, (_m, p1) => `media="${p1}?${qClean}"`);
+    text = text.replace(/sourceURL="([^"?]+)"/g, (_m, p1) => `sourceURL="${p1}?${qClean}"`);
   }
 
   return new Response(text, {
@@ -574,26 +635,43 @@ async function handleManifest(url, request, env, ctx) {
  */
 async function handleRelay(path, url, request) {
   const parts = path.split('/').filter(Boolean);
-  // Expected pattern: api, pw, <folder>, s, <sig>, ...assets
+  let host = DEFAULT_CF_HOST;
+  let cursor = 0;
   const pwIdx = parts.indexOf('pw');
-  if (pwIdx === -1 || parts.length < pwIdx + 4) {
-    return jsonResponse({ error: 'Bad relay path' }, 400);
+  if (pwIdx === -1) return jsonResponse({ error: 'Bad relay path' }, 400);
+
+  cursor = pwIdx + 1;
+  if (parts[cursor] === 'h' && parts.length >= cursor + 2) {
+    host = parts[cursor + 1];
+    cursor += 2;
   }
 
-  const folder = parts[pwIdx + 1];
-  const sigSegment = parts[pwIdx + 3];
-  const assetParts = parts.slice(pwIdx + 4);
+  const folder = parts[cursor];
+  if (!folder) return jsonResponse({ error: 'Folder required' }, 400);
+  cursor += 1;
 
   let signedQuery = '';
-  try {
-    signedQuery = decodeURIComponent(sigSegment);
-  } catch (_) {
-    signedQuery = sigSegment;
+  if (parts[cursor] === 's' && parts.length >= cursor + 2) {
+    const sigSegment = parts[cursor + 1];
+    try {
+      signedQuery = decodeURIComponent(sigSegment);
+      if (!signedQuery.includes('Signature=') && !signedQuery.includes('Key-Pair-Id=')) {
+        const decoded = atob(sigSegment.replace(/-/g, '+').replace(/_/g, '/'));
+        if (decoded.includes('Signature=')) signedQuery = decoded;
+      }
+    } catch (_) {
+      signedQuery = sigSegment;
+    }
+    cursor += 2;
   }
-  if (signedQuery && !signedQuery.startsWith('?')) signedQuery = `?${signedQuery}`;
 
+  if (signedQuery && !signedQuery.startsWith('?')) signedQuery = `?${signedQuery}`;
+  if (!signedQuery && url.searchParams.has('Signature')) signedQuery = url.search;
+  if (!signedQuery && FALLBACK_SIGNATURES[folder]) signedQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+
+  const assetParts = parts.slice(cursor);
   const assetPath = assetParts.join('/');
-  const targetUrl = `https://${DEFAULT_CF_HOST}/${folder}/${assetPath}${signedQuery}`;
+  const targetUrl = `https://${host}/${folder}/${assetPath}${signedQuery}`;
 
   const forwardHeaders = new Headers();
   forwardHeaders.set('User-Agent', UA);
