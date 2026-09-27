@@ -932,11 +932,56 @@ async function handleParchamVid(params, request, prefix = '') {
     } catch (_) {}
   }
 
-  // 2. Query Schedule detail for direct video link or YouTube embed
-  if (!folder && batchId && subjectId && (childId || videoId)) {
+  // 2. Primary: Query get-video-url on LearnxPW for signed video URL
+  const candidateIds = [childId, videoId].filter(Boolean);
+  if (batchId && subjectId) {
+    for (const cid of candidateIds) {
+      if (folder && signedQuery) break;
+      try {
+        const gRes = await fetch(`${LX_ORIGIN}/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}`, {
+          headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+        });
+        if (gRes.ok) {
+          const gBody = await gRes.json();
+          const targetUrl = gBody?.data?.url || '';
+          const targetSig = gBody?.data?.signedUrl || '';
+          if (targetUrl) {
+            if (/youtube\.com|youtu\.be/i.test(targetUrl) || gBody?.data?.urlType === 'youtube') {
+              return jsonResponse({
+                success: true,
+                data: {
+                  kind: 'youtube',
+                  url: targetUrl,
+                  signedUrl: '',
+                  clearKeys: null,
+                  poster: '',
+                  drmDetails: null
+                }
+              });
+            }
+            if (targetUrl.includes('cloudfront.net')) {
+              try {
+                const parsed = new URL(targetUrl);
+                host = parsed.hostname || DEFAULT_CF_HOST;
+                const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+                if (match) folder = match[1];
+                if (targetSig) signedQuery = targetSig;
+                else if (parsed.search) signedQuery = parsed.search;
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 3. Fallback: Query Schedule detail for direct video link or YouTube embed
+  if ((!folder || !signedQuery) && batchId && subjectId && (childId || videoId)) {
     try {
       const schUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(childId || videoId)}`;
-      const schRes = await fetch(schUrl, { headers: { 'User-Agent': UA } });
+      const schRes = await fetch(schUrl, {
+        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+      });
       if (schRes.ok) {
         const schJson = await schRes.json();
         const detail = schJson?.data || schJson;
@@ -960,8 +1005,8 @@ async function handleParchamVid(params, request, prefix = '') {
               const parsed = new URL(targetUrl);
               host = parsed.hostname || DEFAULT_CF_HOST;
               const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-              if (match) folder = match[1];
-              if (parsed.search) signedQuery = parsed.search;
+              if (match && !folder) folder = match[1];
+              if (!signedQuery && parsed.search) signedQuery = parsed.search;
             } catch (_) {}
           }
         }
@@ -969,14 +1014,13 @@ async function handleParchamVid(params, request, prefix = '') {
     } catch (_) {}
   }
 
-  // 3. Multi-tier resolution for folder and signatures
-  const candidateIds = [videoId, childId].filter(Boolean);
+  // 4. Fallback: video-url endpoint
   for (const id of candidateIds) {
     if (signedQuery && folder) break;
     try {
       const qParams = batchId && subjectId ? `batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(id)}` : `video_id=${encodeURIComponent(id)}`;
       const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?${qParams}`, {
-        headers: { 'User-Agent': UA }
+        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
       });
       if (lxRes.ok) {
         const lxData = await lxRes.json();
@@ -985,8 +1029,8 @@ async function handleParchamVid(params, request, prefix = '') {
           const parsed = new URL(candidateUrl);
           host = parsed.hostname;
           const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-          if (match) folder = match[1];
-          if (parsed.search) signedQuery = parsed.search;
+          if (match && !folder) folder = match[1];
+          if (!signedQuery && parsed.search) signedQuery = parsed.search;
         }
       }
     } catch (_) {}
@@ -1018,6 +1062,10 @@ async function handleParchamVid(params, request, prefix = '') {
   // 4. Hardcoded fallback signatures
   if (folder && !signedQuery && FALLBACK_SIGNATURES[folder]) {
     signedQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+  }
+
+  if (signedQuery && !signedQuery.startsWith('?')) {
+    signedQuery = `?${signedQuery}`;
   }
 
   // 5. DRM ClearKey Resolution
