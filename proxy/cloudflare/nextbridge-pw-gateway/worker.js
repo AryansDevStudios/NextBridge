@@ -115,7 +115,7 @@ async function handleRpcAction(body, request, env, ctx) {
       if (!batchId) return jsonResponse({ success: false, error: 'batchId required' }, 400);
 
       const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=details`;
-      const res = await fetchWithEdgeCache(targetUrl, 1800); // 30 min cache
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: false, error: 'Batch not found' }, res.status);
 
       const json = await res.json();
@@ -160,7 +160,7 @@ async function handleRpcAction(body, request, env, ctx) {
       if (!batchId || !subjectId) return jsonResponse({ success: true, data: { data: [] } });
 
       const targetUrl = `${LX_ORIGIN}/api/SubjectInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&page=${page}`;
-      const res = await fetchWithEdgeCache(targetUrl, 1800);
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
 
       const json = await res.json();
@@ -199,7 +199,7 @@ async function handleRpcAction(body, request, env, ctx) {
       else if (contentType === 'DPP_VIDEOS') upstreamType = 'DppVideos';
 
       const targetUrl = `${LX_ORIGIN}/api/TopicInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&TopicId=${encodeURIComponent(tagId)}&ContentType=${upstreamType}&page=${page}`;
-      const res = await fetchWithEdgeCache(targetUrl, 600); // 10 min cache
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: true, data: [] });
 
       const json = await res.json();
@@ -266,7 +266,7 @@ async function handleRpcAction(body, request, env, ctx) {
       if (!batchId || !scheduleId || !subjectId) return jsonResponse({ success: true, data: null });
 
       const targetUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(scheduleId)}`;
-      const res = await fetchWithEdgeCache(targetUrl, 600);
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: true, data: null });
 
       const json = await res.json();
@@ -314,7 +314,7 @@ async function handleRpcAction(body, request, env, ctx) {
       }
 
       const targetUrl = `${LX_ORIGIN}/api/dpp-list?batchId=${encodeURIComponent(batchId)}&batchSubjectId=${encodeURIComponent(batchSubjectId)}&chapterId=${encodeURIComponent(chapterId)}&page=${page}&limit=${limit}`;
-      const res = await fetchWithEdgeCache(targetUrl, 600);
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
 
       const json = await res.json();
@@ -370,7 +370,7 @@ async function handleRpcAction(body, request, env, ctx) {
       if (!batchId) return jsonResponse({ success: true, data: [] });
 
       const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=announcement&page=${page}`;
-      const res = await fetchWithEdgeCache(targetUrl, 600);
+      const res = await fetchDirect(targetUrl);
       if (!res.ok) return jsonResponse({ success: true, data: [] });
       const json = await res.json();
       return jsonResponse({ success: true, data: Array.isArray(json?.data) ? json.data : [] });
@@ -560,7 +560,7 @@ async function handleManifest(url, request, env, ctx) {
     headers: {
       ...CORS_HEADERS,
       'Content-Type': 'application/dash+xml',
-      'Cache-Control': 'public, max-age=600'
+      'Cache-Control': 'no-store, no-cache, must-revalidate'
     }
   });
 }
@@ -648,35 +648,23 @@ function jsonResponse(data, status = 200) {
     status,
     headers: {
       ...CORS_HEADERS,
-      'Content-Type': 'application/json; charset=utf-8'
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache'
     }
   });
 }
 
-async function fetchWithEdgeCache(url, ttlSecs = 1800) {
-  const cacheKey = new Request(url, { method: 'GET' });
-  const cache = caches.default;
-  const cachedRes = await cache.match(cacheKey);
-  if (cachedRes) return cachedRes;
-
-  const res = await fetch(url, {
+async function fetchDirect(url) {
+  return fetch(url, {
+    cache: 'no-store',
     headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
   });
-
-  if (res.ok) {
-    const cloned = res.clone();
-    const headers = new Headers(cloned.headers);
-    headers.set('Cache-Control', `public, max-age=${ttlSecs}`);
-    const cacheable = new Response(cloned.body, { status: cloned.status, headers });
-    // Asynchronously put in cache
-    cache.put(cacheKey, cacheable).catch(() => {});
-  }
-
-  return res;
 }
 
-async function fetchUpstream(targetUrl, { ttl = 300 } = {}) {
+async function fetchUpstream(targetUrl) {
   const res = await fetch(targetUrl, {
+    cache: 'no-store',
     headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
   });
   const data = await res.text();

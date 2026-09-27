@@ -96,27 +96,7 @@ export default {
         return jsonResponse({ success: false, error: 'Missing courseId parameter' }, 400);
       }
 
-      // Check Edge Cache (caches.default)
-      const forceRefresh = url.searchParams.has('refresh') ||
-                           url.searchParams.has('fresh') ||
-                           Boolean(request.headers.get('Cache-Control')?.includes('no-cache'));
-
-      // Use a canonical cache key (strip ephemeral refresh query params)
-      const canonicalUrl = new URL(url.toString());
-      canonicalUrl.searchParams.delete('refresh');
-      canonicalUrl.searchParams.delete('fresh');
-      const cacheKey = new Request(canonicalUrl.toString(), request);
-      const cache = caches.default;
-
-      if (!forceRefresh) {
-        let cachedResponse = await cache.match(cacheKey);
-        if (cachedResponse) {
-          const res = new Response(cachedResponse.body, cachedResponse);
-          res.headers.set('X-Edge-Cache', 'HIT');
-          return res;
-        }
-      }
-
+      // Always fetch fresh real-time data from upstream (no caching) so new lectures/PDFs reflect instantly
       try {
         // Retrieve fresh student token
         const auth = await getActiveAuthToken();
@@ -328,21 +308,15 @@ export default {
           timestamp: Date.now(),
         };
 
-        const response = new Response(JSON.stringify(resultPayload), {
+        return new Response(JSON.stringify(resultPayload), {
           status: 200,
           headers: {
             ...CORS_HEADERS,
             'Content-Type': 'application/json',
-            // Short responsive Edge Cache (3 min) with stale-while-revalidate (5 min)
-            // Ensures newly published lectures appear in <= 3 minutes, or 0 seconds on pull-to-refresh (?refresh=1)
-            'Cache-Control': 'public, max-age=60, s-maxage=180, stale-while-revalidate=300',
-            'X-Edge-Cache': forceRefresh ? 'BYPASS' : 'MISS',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache'
           },
         });
-
-        // Write to edge cache in the background
-        ctx.waitUntil(cache.put(cacheKey, response.clone()));
-        return response;
       } catch (err) {
         return jsonResponse({ success: false, error: err.message }, 500);
       }
