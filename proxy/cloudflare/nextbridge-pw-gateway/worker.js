@@ -535,11 +535,20 @@ async function handleParchamVid(params, requestUrl) {
 }
 
 /**
- * Smart Direct CloudFront Manifest Engine & Segment Streamer:
- * 1. Rewrites master.mpd with canonical <BaseURL> so media segments stream DIRECTLY
- *    from AWS CloudFront edge PoPs without consuming worker requests or bandwidth.
- * 2. Transparently streams media chunks (init.mp4, 1.mp4, chunk.m4s, etc.) with full
- *    HTTP Range header support if any player requests segments via the worker origin.
+ * CORS-Safe Manifest Rewriter & Segment Proxy:
+ *
+ * PW's CloudFront distribution does NOT return Access-Control-Allow-Origin
+ * headers on media segments, so Shaka Player cannot read segment data when
+ * fetched cross-origin from the browser. All segments MUST route through
+ * this worker which adds CORS headers on every response.
+ *
+ * Flow:
+ *   1. Master MPD is fetched from CloudFront, rewritten so <BaseURL> points
+ *      back to this worker (/manifest/:folder/), and CloudFront signature
+ *      params are injected into SegmentTemplate initialization/media attrs.
+ *   2. When Shaka Player requests each segment (init.mp4, 1.mp4, etc.),
+ *      the request hits this worker → worker strips its own params, fetches
+ *      from CloudFront, and returns with CORS + Range headers.
  */
 async function handleManifest(url, request, env, ctx) {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -556,7 +565,12 @@ async function handleManifest(url, request, env, ctx) {
 
   // If no explicit sig parameter, check if URL itself has raw CloudFront signature parameters
   if (!sigQuery && url.searchParams.has('Signature')) {
-    sigQuery = url.search;
+    // Build clean CloudFront query (strip worker-specific params)
+    const cfParams = new URLSearchParams();
+    for (const [k, v] of url.searchParams) {
+      if (k !== 'sig' && k !== 'host') cfParams.set(k, v);
+    }
+    sigQuery = cfParams.toString() ? `?${cfParams.toString()}` : '';
   }
 
   // Fallback to known folder signatures if needed
@@ -564,10 +578,18 @@ async function handleManifest(url, request, env, ctx) {
     sigQuery = `?${FALLBACK_SIGNATURES[folder]}`;
   }
 
-  // 1. Media Segment Proxying (init.mp4, 1.mp4, chunk.m4s, .ts, etc.)
+  // 1. Media Segment Proxying (init.mp4, 1.mp4, chunk.m4s, .ts, enc.key, etc.)
+  //    Worker fetches from CloudFront and adds CORS headers on the response.
   if (assetPath && !assetPath.endsWith('.mpd') && !assetPath.endsWith('.m3u8')) {
-    const fullQuery = sigQuery || url.search || '';
-    const targetAssetUrl = `https://${host}/${folder}/${assetPath}${fullQuery}`;
+    // Build clean CloudFront query — strip worker-only params (sig, host)
+    const cfParams = new URLSearchParams();
+    for (const [k, v] of url.searchParams) {
+      if (k !== 'sig' && k !== 'host') cfParams.set(k, v);
+    }
+    let cfQuery = cfParams.toString() ? `?${cfParams.toString()}` : '';
+    if (!cfQuery && sigQuery) cfQuery = sigQuery;
+
+    const targetAssetUrl = `https://${host}/${folder}/${assetPath}${cfQuery}`;
 
     const forwardHeaders = new Headers();
     forwardHeaders.set('User-Agent', UA);
@@ -600,24 +622,28 @@ async function handleManifest(url, request, env, ctx) {
 
   let text = await upstreamRes.text();
 
-  // Smart Rewriting for Direct CloudFront Chunk Fetching:
-  // Remove any existing <BaseURL> tags (multiline or single-line, with or without attributes)
+  // Remove any existing <BaseURL> tags
   text = text.replace(/<BaseURL[\s\S]*?<\/BaseURL>/gi, '');
 
-  // Inject canonical root BaseURL pointing directly to AWS CloudFront
-  const directBase = `https://${host}/${folder}/`;
+  // BaseURL points BACK TO THIS WORKER — critical for CORS.
+  // PW's CloudFront does not return Access-Control-Allow-Origin, so segments
+  // fetched directly from CloudFront are opaque to JavaScript. By routing
+  // through the worker, every response gets CORS headers injected.
+  const workerBase = `${url.origin}/manifest/${folder}/`;
   if (/<MPD[^>]*>/i.test(text)) {
-    text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${directBase}</BaseURL>`);
+    text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${workerBase}</BaseURL>`);
   } else {
-    text = `<BaseURL>${directBase}</BaseURL>\n` + text;
+    text = `<BaseURL>${workerBase}</BaseURL>\n` + text;
   }
 
-  // Inject signed query string into initialization and media segment templates
+  // Inject CloudFront signature + host into SegmentTemplate attributes so each
+  // segment request arriving at the worker carries the info needed to fetch from CF
   if (sigQuery) {
     const qClean = sigQuery.replace(/^\?/, '');
-    text = text.replace(/initialization="([^"?]+)"/g, (_m, p1) => `initialization="${p1}?${qClean}"`);
-    text = text.replace(/media="([^"?]+)"/g, (_m, p1) => `media="${p1}?${qClean}"`);
-    text = text.replace(/sourceURL="([^"?]+)"/g, (_m, p1) => `sourceURL="${p1}?${qClean}"`);
+    const hostParam = host !== DEFAULT_CF_HOST ? `&host=${encodeURIComponent(host)}` : '';
+    text = text.replace(/initialization="([^"?]+)"/g, (_m, p1) => `initialization="${p1}?${qClean}${hostParam}"`);
+    text = text.replace(/media="([^"?]+)"/g, (_m, p1) => `media="${p1}?${qClean}${hostParam}"`);
+    text = text.replace(/sourceURL="([^"?]+)"/g, (_m, p1) => `sourceURL="${p1}?${qClean}${hostParam}"`);
   }
 
   return new Response(text, {
