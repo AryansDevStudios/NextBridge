@@ -1043,6 +1043,22 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         return;
       }
     }
+    // ── YouTube Detection: bare 11-char video ID or full YouTube URL → open natively ──
+    const rawUrl = item.url || '';
+    const ytBareId = rawUrl.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(rawUrl) ? rawUrl : null;
+    const ytFullMatch = rawUrl.match(/(?:v=|youtu\.be\/|\/vi\/|\/v\/)([a-zA-Z0-9_-]{11})/);
+    const ytId = ytBareId || (ytFullMatch ? ytFullMatch[1] : null);
+
+    if (item.type === 'video' && ytId) {
+      const ytUrl = `https://www.youtube.com/watch?v=${ytId}`;
+      if (Capacitor.isNativePlatform()) {
+        // _system = native OS handler, launches YouTube app if installed
+        window.open(ytUrl, '_system');
+      } else {
+        window.open(ytUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
 
     if (!Capacitor.isNativePlatform()) {
       window.history.pushState({ player: true }, '');
@@ -2999,9 +3015,15 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
               }
 
               // File / Video Item
+              const itemRawUrl = item.url || '';
+              const itemYtBareId = itemRawUrl.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(itemRawUrl) ? itemRawUrl : null;
+              const itemYtMatch = itemRawUrl.match(/(?:v=|youtu\.be\/|\/vi\/|\/v\/)([a-zA-Z0-9_-]{11})/);
+              const itemYtId = itemYtBareId || (itemYtMatch ? itemYtMatch[1] : null);
+              const isYouTubeItem = item.type === 'video' && Boolean(itemYtId);
+
               return (
-                <div 
-                  key={item.id || idx} 
+                <div
+                  key={item.id || idx}
                   className="list-item"
                   onClick={() => handlePlayVideo(item)}
                 >
@@ -3030,9 +3052,16 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                           {formatDate(item.created_at)}
                         </span>
                       )}
-                      <span style={{ textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.8, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4 }}>
-                        {item.type}
-                      </span>
+                      {isYouTubeItem ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,0,0,0.15)', color: '#ff4444', border: '1px solid rgba(255,0,0,0.3)', padding: '2px 8px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 600 }}>
+                          <ExternalLink size={11} />
+                          YouTube
+                        </span>
+                      ) : (
+                        <span style={{ textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.8, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4 }}>
+                          {item.type}
+                        </span>
+                      )}
                     </div>
                   </div>
 
