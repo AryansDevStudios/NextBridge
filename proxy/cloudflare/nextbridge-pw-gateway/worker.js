@@ -223,12 +223,18 @@ async function handleRpcAction(body, request, env, ctx) {
           homeworkIds = homeworkIds.map(hw => ({
             ...hw,
             attachmentIds: (hw.attachmentIds || []).map(att => {
-              let direct = att.baseUrl && att.key ? `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}` : (att.baseUrl || '');
-              if (!direct && att.url) direct = att.url;
+              let direct = '';
+              if (att.baseUrl && att.key) {
+                direct = `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}`;
+              } else if (att.baseUrl && att.baseUrl.includes('.pdf')) {
+                direct = att.baseUrl;
+              } else if (att.url && att.url.includes('.pdf')) {
+                direct = att.url;
+              }
               return {
                 _id: att._id || '',
                 baseUrl: direct || `/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(id)}&attachmentId=${encodeURIComponent(att._id || '')}`,
-                key: '',
+                key: att.key || '',
                 name: att.name || hw.topic || 'Document'
               };
             })
@@ -279,12 +285,18 @@ async function handleRpcAction(body, request, env, ctx) {
         _id: hw._id || '',
         topic: hw.topic || 'Class Note',
         attachmentIds: (hw.attachmentIds || []).map(att => {
-          let direct = att.baseUrl && att.key ? `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}` : (att.baseUrl || '');
-          if (!direct && att.url) direct = att.url;
+          let direct = '';
+          if (att.baseUrl && att.key) {
+            direct = `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}`;
+          } else if (att.baseUrl && att.baseUrl.includes('.pdf')) {
+            direct = att.baseUrl;
+          } else if (att.url && att.url.includes('.pdf')) {
+            direct = att.url;
+          }
           return {
             _id: att._id || '',
             baseUrl: direct || `/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(detail._id || scheduleId)}&attachmentId=${encodeURIComponent(att._id || '')}`,
-            key: ''
+            key: att.key || ''
           };
         })
       }));

@@ -190,18 +190,26 @@ export const pwApiService = {
     }
 
     // Helper to safely resolve attachment URLs from PW responses
+    const isFullPdfUrl = (u) => {
+      if (!u || typeof u !== 'string') return false;
+      const stripped = u.replace(/^https?:\/\/static\.pw\.live\/?/, '').trim();
+      return stripped.length > 5 && (stripped.includes('.pdf') || stripped.includes('/'));
+    };
+
     const resolveAttachmentPdfUrl = (d) => {
       const homework = d.homeworkIds?.[0];
       const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
-      let rawUrl = attach?.baseUrl || '';
-      if (attach?.key && !rawUrl.includes(attach.key)) {
-        rawUrl = rawUrl ? `${rawUrl.replace(/\/+$/, '')}/${attach.key.replace(/^\/+/, '')}` : attach.key;
-      }
-      if (!rawUrl && attach?.url) {
+      let rawUrl = '';
+      if (attach?.baseUrl && attach?.key) {
+        rawUrl = `${attach.baseUrl.replace(/\/+$/, '')}/${attach.key.replace(/^\/+/, '')}`;
+      } else if (attach?.baseUrl && isFullPdfUrl(attach.baseUrl)) {
+        rawUrl = attach.baseUrl;
+      } else if (attach?.url && isFullPdfUrl(attach.url)) {
         rawUrl = attach.url;
-      }
-      if (!rawUrl && d.fileUrl) {
+      } else if (d.fileUrl && isFullPdfUrl(d.fileUrl)) {
         rawUrl = d.fileUrl;
+      } else if (attach?.baseUrl && attach.baseUrl.includes('/api/lxpdf')) {
+        rawUrl = attach.baseUrl;
       }
       if (!rawUrl) return '';
       const fullUrl = rawUrl.startsWith('http') ? rawUrl : `${activeBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
@@ -280,11 +288,17 @@ export const pwApiService = {
   async resolvePdfUrl(item) {
     if (!item) return '';
 
+    const isFullPdfUrl = (u) => {
+      if (!u || typeof u !== 'string') return false;
+      const stripped = u.replace(/^https?:\/\/static\.pw\.live\/?/, '').trim();
+      return stripped.length > 5 && (stripped.includes('.pdf') || stripped.includes('/'));
+    };
+
     // If item already has a verified direct static.pw.live URL or already proxied
-    if (item.directPdfUrl) {
+    if (item.directPdfUrl && isFullPdfUrl(item.directPdfUrl)) {
       return toProxiedPdfUrl(item.directPdfUrl);
     }
-    if (item.url && item.url.includes('static.pw.live')) {
+    if (item.url && isFullPdfUrl(item.url)) {
       return toProxiedPdfUrl(item.url);
     }
 
@@ -413,7 +427,11 @@ export const pwApiService = {
  * Uses lightweight Render CORS proxy as primary to avoid consuming Netlify bandwidth limits.
  */
 export function toProxiedPdfUrl(url) {
-  if (!url) return '';
+  if (!url || typeof url !== 'string') return '';
+  const stripped = url.replace(/^https?:\/\/static\.pw\.live\/?/, '').trim();
+  if (url.includes('static.pw.live') && stripped.length < 5) {
+    return ''; // Never proxy bare domain
+  }
   // If already proxied via Render or Netlify, return as is
   if (url.includes('corsproxy-bppd.onrender.com') || url.startsWith('/api/pw-static') || url.includes('/api/pw-static/')) {
     return url;
@@ -432,7 +450,7 @@ export function toProxiedPdfUrl(url) {
  * Used as reliable instant fallback if Render is waking from cold start.
  */
 export function getNetlifyFallbackPdfUrl(url) {
-  if (!url) return '';
+  if (!url || typeof url !== 'string') return '';
   let targetUrl = url;
 
   if (url.includes('corsproxy-bppd.onrender.com')) {
@@ -443,7 +461,9 @@ export function getNetlifyFallbackPdfUrl(url) {
   }
 
   if (targetUrl.includes('static.pw.live')) {
-    const relativePath = targetUrl.replace(/^https?:\/\/static\.pw\.live\/?/, '');
+    const relativePath = targetUrl.replace(/^https?:\/\/static\.pw\.live\/?/, '').trim();
+    if (!relativePath || relativePath.length < 5) return '';
+
     const isNative = typeof window !== 'undefined' && (
       window.Capacitor?.isNativePlatform?.() ||
       window.location.protocol === 'capacitor:' ||

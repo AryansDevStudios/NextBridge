@@ -537,7 +537,10 @@ const PDFViewerApplication = {
     const params = (0, _ui_utils.parseQueryString)(queryString);
     file = params.get("file") ?? _app_options.AppOptions.get("defaultUrl");
     if (file && typeof file === "string" && file.includes("static.pw.live") && !file.includes("corsproxy-bppd.onrender.com") && !file.includes("/api/pw-static")) {
-      file = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(file)}`;
+      const stripped = file.replace(/^https?:\/\/static\.pw\.live\/?/, "").trim();
+      if (stripped.length > 5) {
+        file = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(file)}`;
+      }
     }
     validateFileURL(file);
     const fileInput = appConfig.openFileInput;
@@ -816,20 +819,22 @@ const PDFViewerApplication = {
             const parsed = new URL(args.url);
             const originalTarget = parsed.searchParams.get("url");
             if (originalTarget && originalTarget.includes("static.pw.live")) {
-              const rel = originalTarget.replace(/^https?:\/\/static\.pw\.live\/?/, "");
-              let isNative = false;
-              try {
-                isNative = Boolean(
-                  window.Capacitor?.isNativePlatform?.() ||
-                  window.parent?.Capacitor?.isNativePlatform?.() ||
-                  window.location.protocol === "capacitor:" ||
-                  window.location.protocol === "ionic:" ||
-                  window.parent?.location?.protocol === "capacitor:"
-                );
-              } catch (_) {}
-              fallbackUrl = isNative 
-                ? `https://nextbridgeweb.netlify.app/api/pw-static/${rel}` 
-                : `/api/pw-static/${rel}`;
+              const rel = originalTarget.replace(/^https?:\/\/static\.pw\.live\/?/, "").trim();
+              if (rel && rel.length > 5) {
+                let isNative = false;
+                try {
+                  isNative = Boolean(
+                    window.Capacitor?.isNativePlatform?.() ||
+                    window.parent?.Capacitor?.isNativePlatform?.() ||
+                    window.location.protocol === "capacitor:" ||
+                    window.location.protocol === "ionic:" ||
+                    window.parent?.location?.protocol === "capacitor:"
+                  );
+                } catch (_) {}
+                fallbackUrl = isNative 
+                  ? `https://nextbridgeweb.netlify.app/api/pw-static/${rel}` 
+                  : `/api/pw-static/${rel}`;
+              }
             }
           } catch (_) {}
         } else if (args.url.includes("/api/pw-static/")) {
