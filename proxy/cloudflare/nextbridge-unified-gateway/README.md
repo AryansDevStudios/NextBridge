@@ -21,7 +21,9 @@ A unified, high-performance Cloudflare Edge Worker (V8 isolates) that combines b
   - Injects canonical BaseURL pointing back to worker for reliable CORS
   - Seamless Range-header passthrough (HTTP 206) for video seeking
 - ClearKey DRM Engine: Default KID extraction and key resolution via `get-otp`
-- Direct PDF Resolution: Redirects `/api/lxpdf` directly to `static.pw.live` (302)
+- CORS-Safe PDF Resolution: Resolves `/api/lxpdf` and redirects via Render CORS proxy to prevent browser blocks
+
+> 📖 **Full Architectural & Backend Documentation**: See [UNIFIED_BACKEND_API_DOCUMENTATION.md](../../docs/UNIFIED_BACKEND_API_DOCUMENTATION.md) for in-depth flowcharts, sequence diagrams, RPC specifications, and error handling.
 
 ## Route Map
 
@@ -29,12 +31,12 @@ A unified, high-performance Cloudflare Edge Worker (V8 isolates) that combines b
 |---|---|---|
 | **Health** | `GET /` or `GET /health` | Unified health & status inspection |
 | **NT Content** | `GET /nt/api/folder?courseId=&folderId=` | Real-time folder & chapter contents |
-| **NT PDF** | `GET /nt/api/resolve-pdf?contentId=&courseId=` | On-demand PDF resolution pipeline |
+| **NT PDF** | `GET /nt/api/resolve-pdf?contentId=&courseId=` | 3-tier on-demand PDF resolution pipeline |
 | **NT Proxy** | `GET /nt/api/proxy?url=` | Universal CORS proxy |
 | **PW RPC** | `POST /pw/api/data` | PW batch, content, and video RPC dispatcher |
-| **PW Stream** | `GET /pw/manifest/:folder/master.mpd` | Rewritten MPD manifest with CORS |
-| **PW Chunks** | `GET /pw/manifest/:folder/:chunk` | Proxied audio/video segments with Range support |
-| **PW PDF** | `GET /pw/api/lxpdf?batchId=&...` | 302 redirect to direct `static.pw.live` PDF |
+| **PW Stream** | `GET /pw/manifest/:folder/master.mpd` | Rewritten MPD manifest with injected BaseURL |
+| **PW Chunks** | `GET /pw/manifest/:folder/:chunk` | Proxied audio/video segments with HTTP 206 Range support |
+| **PW PDF** | `GET /pw/api/lxpdf?batchId=&...` | 302 redirect via CORS proxy to `static.pw.live` PDF |
 | **PW Batches** | `GET /pw/api/AllBatches` | PW batch catalog lookup |
 
 ### Backward Compatibility (Legacy Routes)
@@ -44,5 +46,6 @@ All legacy routes without `/nt` or `/pw` prefixes (`/api/data`, `/manifest/...`,
 
 ```bash
 cd proxy/cloudflare/nextbridge-unified-gateway
+$env:CLOUDFLARE_ACCOUNT_ID="84bc7812b41cd68e12e1b3592c0371b7"
 npx wrangler deploy
 ```
