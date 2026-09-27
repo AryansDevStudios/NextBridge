@@ -902,6 +902,19 @@ async function handleParchamVid(params, request, prefix = '') {
 
   // 1. Direct vUrl parsing if already provided
   if (vUrl && typeof vUrl === 'string') {
+    if (/youtube\.com|youtu\.be/i.test(vUrl)) {
+      return jsonResponse({
+        success: true,
+        data: {
+          kind: 'youtube',
+          url: vUrl,
+          signedUrl: '',
+          clearKeys: null,
+          poster: '',
+          drmDetails: null
+        }
+      });
+    }
     try {
       const parsed = new URL(vUrl);
       host = parsed.hostname || DEFAULT_CF_HOST;
@@ -913,12 +926,50 @@ async function handleParchamVid(params, request, prefix = '') {
     } catch (_) {}
   }
 
-  // 2. Multi-tier resolution for folder and signatures
+  // 2. Query Schedule detail for direct video link or YouTube embed
+  if (!folder && batchId && subjectId && (childId || videoId)) {
+    try {
+      const schUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(childId || videoId)}`;
+      const schRes = await fetch(schUrl, { headers: { 'User-Agent': UA } });
+      if (schRes.ok) {
+        const schJson = await schRes.json();
+        const detail = schJson?.data || schJson;
+        const targetUrl = detail?.url || detail?.videoDetails?.videoUrl || detail?.newCdnLink || '';
+        if (targetUrl) {
+          if (/youtube\.com|youtu\.be/i.test(targetUrl) || detail?.urlType === 'youtube') {
+            return jsonResponse({
+              success: true,
+              data: {
+                kind: 'youtube',
+                url: targetUrl,
+                signedUrl: '',
+                clearKeys: null,
+                poster: detail?.videoDetails?.image || '',
+                drmDetails: null
+              }
+            });
+          }
+          if (targetUrl.includes('cloudfront.net')) {
+            try {
+              const parsed = new URL(targetUrl);
+              host = parsed.hostname || DEFAULT_CF_HOST;
+              const match = parsed.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+              if (match) folder = match[1];
+              if (parsed.search) signedQuery = parsed.search;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. Multi-tier resolution for folder and signatures
   const candidateIds = [videoId, childId].filter(Boolean);
   for (const id of candidateIds) {
     if (signedQuery && folder) break;
     try {
-      const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?video_id=${encodeURIComponent(id)}`, {
+      const qParams = batchId && subjectId ? `batch_id=${encodeURIComponent(batchId)}&subject_id=${encodeURIComponent(subjectId)}&video_id=${encodeURIComponent(id)}` : `video_id=${encodeURIComponent(id)}`;
+      const lxRes = await fetch(`${LX_ORIGIN}/api/video-url?${qParams}`, {
         headers: { 'User-Agent': UA }
       });
       if (lxRes.ok) {
