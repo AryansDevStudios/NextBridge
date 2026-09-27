@@ -227,9 +227,21 @@ export default {
               let parsedDownloadUrls = [];
               if (dataObj.download_urls) {
                 try {
-                  parsedDownloadUrls = typeof dataObj.download_urls === 'string'
+                  const rawList = typeof dataObj.download_urls === 'string'
                     ? JSON.parse(dataObj.download_urls)
                     : dataObj.download_urls;
+                  if (Array.isArray(rawList)) {
+                    parsedDownloadUrls = rawList.map((u) => {
+                      const rawTitle = String(u.title || '').trim();
+                      const num = parseInt(rawTitle, 10);
+                      const qLabel = !isNaN(num) && num > 0 ? `${num}p` : rawTitle;
+                      return {
+                        title: qLabel,
+                        quality: !isNaN(num) && num > 0 ? num : 720,
+                        url: u.url,
+                      };
+                    }).sort((a, b) => b.quality - a.quality);
+                  }
                 } catch (_) {}
               }
 
@@ -242,15 +254,10 @@ export default {
                 // Best quality direct playable MP4 URL (720p, 480p, 360p)
                 let bestMp4 = null;
                 if (Array.isArray(parsedDownloadUrls) && parsedDownloadUrls.length > 0) {
-                  const best =
-                    parsedDownloadUrls.find((u) => u.title === '720' || u.title === '720p30') ||
-                    parsedDownloadUrls.find((u) => u.title === '480' || u.title === '480p30') ||
-                    parsedDownloadUrls.find((u) => u.title === '360' || u.title === '360p30') ||
-                    parsedDownloadUrls[0];
-                  if (best && best.url) bestMp4 = best.url;
+                  bestMp4 = parsedDownloadUrls[0]?.url;
                 }
 
-                // Algorithmic CloudFront HLS (.m3u8) derivation from download_urls
+                // CloudFront HLS (.m3u8) derivation from download_urls or native stream
                 resolvedHlsUrl = deriveHlsStream(dataObj, primaryUrl);
                 primaryUrl = bestMp4 || resolvedHlsUrl || primaryUrl;
               }
@@ -483,32 +490,54 @@ export default {
 };
 
 /**
- * Derives the live non-DRM CloudFront HLS (.m3u8) URL from download_urls
+ * Derives the live non-DRM CloudFront HLS (.m3u8) URL from download_urls or raw stream URL
  */
 function deriveHlsStream(dataObj, fallbackUrl) {
   if (fallbackUrl && fallbackUrl.includes('.m3u8')) return fallbackUrl;
 
-  const downloadUrls = dataObj.download_urls;
-  if (!downloadUrls) return null;
-
-  try {
-    const urls = typeof downloadUrls === 'string' ? JSON.parse(downloadUrls) : downloadUrls;
-    if (!Array.isArray(urls) || urls.length === 0) return null;
-
-    for (const u of urls) {
-      if (!u || !u.url) continue;
-      // Pattern: /file_library/videos/download/<vdcPrefix>/<midFolder>/<fileHash>_<quality>
-      const match = u.url.match(
-        /\/file_library\/videos\/download\/(\d+)\/[^/]+\/([0-9a-zA-Z]+)_(?:240|360|480|720|1080|auto)/i
-      );
-      if (match) {
-        const vdcPrefix = match[1];
-        const fileHash = match[2];
-        const suffix = fileHash.slice(-7);
-        return `https://dbil3go8szhu6.cloudfront.net/file_library/videos/channel_vod_non_drm_hls/${vdcPrefix}/${fileHash}/${fileHash}_${suffix}.m3u8`;
+  const candidateUrls = [];
+  const downloadUrls = dataObj?.download_urls;
+  if (downloadUrls) {
+    try {
+      const urls = typeof downloadUrls === 'string' ? JSON.parse(downloadUrls) : downloadUrls;
+      if (Array.isArray(urls)) {
+        for (const u of urls) {
+          if (u?.url) candidateUrls.push(u.url);
+        }
       }
+    } catch (_) {}
+  }
+  if (dataObj?.download_url) candidateUrls.push(dataObj.download_url);
+  if (dataObj?.file_url) candidateUrls.push(dataObj.file_url);
+  if (dataObj?.video_url) candidateUrls.push(dataObj.video_url);
+  if (fallbackUrl) candidateUrls.push(fallbackUrl);
+
+  for (const raw of candidateUrls) {
+    if (typeof raw !== 'string') continue;
+    if (raw.includes('.m3u8')) return raw;
+
+    // 1. 3-segment download URL: /download/<vdcPrefix>/<midFolder>/<fileHash>[_quality][.mp4]
+    const match3 = raw.match(
+      /(?:file_library\/videos\/download|\/download\/)\/(\d+)\/[^/]+\/([0-9a-zA-Z_-]+?)(?:_(?:240|360|480|720|1080|auto))?(?:\.mp4)?$/i
+    );
+    if (match3) {
+      const vdcPrefix = match3[1];
+      const fileHash = match3[2];
+      const suffix = fileHash.length >= 7 ? fileHash.slice(-7) : fileHash;
+      return `https://dbil3go8szhu6.cloudfront.net/file_library/videos/channel_vod_non_drm_hls/${vdcPrefix}/${fileHash}/${fileHash}_${suffix}.m3u8`;
     }
-  } catch (_) {}
+
+    // 2. 2-segment download URL: /download/<vdcPrefix>/<fileHash>[_quality][.mp4]
+    const match2 = raw.match(
+      /(?:file_library\/videos\/download|\/download\/)\/(\d+)\/([0-9a-zA-Z_-]+?)(?:_(?:240|360|480|720|1080|auto))?(?:\.mp4)?$/i
+    );
+    if (match2) {
+      const vdcPrefix = match2[1];
+      const fileHash = match2[2];
+      const suffix = fileHash.length >= 7 ? fileHash.slice(-7) : fileHash;
+      return `https://dbil3go8szhu6.cloudfront.net/file_library/videos/channel_vod_non_drm_hls/${vdcPrefix}/${fileHash}/${fileHash}_${suffix}.m3u8`;
+    }
+  }
 
   return null;
 }
@@ -566,7 +595,7 @@ async function resolveNextHopeContent(contentId, courseId) {
     const json = await res.json();
     if (json && json.success && json.decryptedData && json.decryptedData.file_url) {
       const fileUrl = json.decryptedData.file_url;
-      if (fileUrl.includes('cloudfront.net') && fileUrl.toLowerCase().includes('.pdf')) {
+      if (fileUrl.includes('cloudfront.net')) {
         return fileUrl;
       }
     }

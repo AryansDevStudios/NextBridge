@@ -131,9 +131,7 @@ export default function YouTubePlayerCore({
 
     if (hlsRef.current) {
       hlsRef.current.currentLevel = isAuto ? -1 : lvl.id;
-    }
-
-    if (shakaRef.current) {
+    } else if (shakaRef.current) {
       if (isAuto) {
         shakaRef.current.configure({ abr: { enabled: true } });
       } else {
@@ -145,8 +143,18 @@ export default function YouTubePlayerCore({
           shakaRef.current.selectVariantTrack(tracks[0], false /* false avoids buffer wipe and stutter */);
         }
       }
+    } else if (lvl.url && videoRef.current) {
+      const video = videoRef.current;
+      const curTime = video.currentTime;
+      const wasPlaying = !video.paused;
+      video.src = lvl.url;
+      video.addEventListener('loadedmetadata', () => {
+        video.currentTime = curTime;
+        applySpeed(playbackSpeedRef.current);
+        if (wasPlaying) video.play().catch(() => {});
+      }, { once: true });
     }
-  }, []);
+  }, [applySpeed]);
 
   // Offline stream detection (Zero bandwidth waste)
   const [offlineUrl, setOfflineUrl] = useState(null);
@@ -390,7 +398,7 @@ export default function YouTubePlayerCore({
     const video = videoRef.current;
     if (!video) return;
 
-    const targetUrl = offlineUrl || convertDownloadUrlToHls(url);
+    const targetUrl = offlineUrl || (item?.hlsUrl && item.hlsUrl.includes('.m3u8') ? item.hlsUrl : convertDownloadUrlToHls(url || item?.url));
 
     // Apply initial speed, volume, and pitch preservation
     applySpeed(playbackSpeedRef.current);
@@ -578,6 +586,73 @@ export default function YouTubePlayerCore({
 
       hls.on(Hls.Events.ERROR, (e, data) => {
         if (data.fatal) {
+          const isManifestFailure =
+            data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+            data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+            data.response?.code === 403 ||
+            data.response?.code === 404;
+
+          if (isManifestFailure) {
+            console.warn('[Player] HLS manifest load failed, attempting direct MP4 stream fallback...', data);
+            try { hls.destroy(); } catch (_) {}
+            hlsRef.current = null;
+
+            let dlList = [];
+            if (Array.isArray(item?.downloadUrls)) {
+              dlList = item.downloadUrls;
+            } else if (typeof item?.downloadUrls === 'string') {
+              try { dlList = JSON.parse(item.downloadUrls); } catch (_) {}
+            }
+
+            const savedQuality = parseInt(localStorage.getItem('global_quality') || '0', 10);
+            let preferredQualityUrl = null;
+            if (savedQuality > 0 && dlList.length > 0) {
+              const matched = dlList.find(u => {
+                const num = parseInt(u.title || u.quality || 0, 10);
+                return num === savedQuality;
+              });
+              if (matched?.url) preferredQualityUrl = matched.url;
+            }
+
+            const fallbackMp4 =
+              preferredQualityUrl ||
+              (dlList.length > 0 && (
+                dlList.find(u => String(u.title || u.quality || '').includes('720'))?.url ||
+                dlList.find(u => String(u.title || u.quality || '').includes('480'))?.url ||
+                dlList.find(u => String(u.title || u.quality || '').includes('360'))?.url ||
+                dlList[0]?.url
+              )) ||
+              (item?.url && !item.url.includes('.m3u8') ? item.url : null) ||
+              (url && !url.includes('.m3u8') ? url : null);
+
+            if (fallbackMp4) {
+              const resumeTime = (video.currentTime && video.currentTime > 2) ? video.currentTime : initialSeek;
+              video.src = fallbackMp4;
+              video.addEventListener('loadedmetadata', () => {
+                applySpeed(playbackSpeedRef.current);
+                if (resumeTime > 0) {
+                  video.currentTime = resumeTime;
+                  setCurrentTime(resumeTime);
+                }
+                video.play().catch(() => {});
+              }, { once: true });
+
+              if (dlList.length > 0) {
+                const opts = dlList.map((u) => {
+                  const num = parseInt(u.title || u.quality || 0, 10);
+                  const h = !isNaN(num) && num > 0 ? num : 720;
+                  return { id: h, label: `${h}p`, height: h, url: u.url };
+                }).sort((a, b) => b.height - a.height);
+                setQualityLevels(opts);
+                if (savedQuality > 0) {
+                  const matched = opts.find(o => o.height === savedQuality);
+                  if (matched) setCurrentQuality(savedQuality);
+                }
+              }
+              return;
+            }
+          }
+
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
           else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
           else hls.destroy();
@@ -593,6 +668,34 @@ export default function YouTubePlayerCore({
         }
         video.play().catch(() => {});
       }, { once: true });
+
+      let dlList = [];
+      if (Array.isArray(item?.downloadUrls)) {
+        dlList = item.downloadUrls;
+      } else if (typeof item?.downloadUrls === 'string') {
+        try { dlList = JSON.parse(item.downloadUrls); } catch (_) {}
+      }
+      if (dlList.length > 0) {
+        const opts = dlList.map((u) => {
+          const num = parseInt(u.title || u.quality || 0, 10);
+          const h = !isNaN(num) && num > 0 ? num : 720;
+          return { id: h, label: `${h}p`, height: h, url: u.url };
+        }).sort((a, b) => b.height - a.height);
+        setQualityLevels(opts);
+
+        const savedQuality = parseInt(localStorage.getItem('global_quality') || '0', 10);
+        if (savedQuality > 0) {
+          const matched = opts.find((o) => o.height === savedQuality);
+          if (matched && matched.url && matched.url !== targetUrl) {
+            video.src = matched.url;
+            setCurrentQuality(savedQuality);
+          } else {
+            setCurrentQuality(opts[0]?.height || 720);
+          }
+        } else {
+          setCurrentQuality(opts[0]?.height || 720);
+        }
+      }
     }
 
     // Screen WakeLock
@@ -762,7 +865,7 @@ export default function YouTubePlayerCore({
         ImmersiveMode.setVideoPlaying({ playing: false }).catch(() => {});
       }
     };
-  }, [isReady, offlineUrl, url, storageKey, savePosition, flushWatchTime, item?.duration, applySpeed]);
+  }, [isReady, offlineUrl, url, item?.hlsUrl, storageKey, savePosition, flushWatchTime, item?.duration, applySpeed]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // 5. Scrim Auto-Hide Timer
