@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.7';
-export const CURRENT_LATEST_CODE = 30307;
+export const CURRENT_LATEST_VERSION = '3.3.8';
+export const CURRENT_LATEST_CODE = 30308;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.7',
-  latestVersionCode: 30307,
+  latestAppVersion: '3.3.8',
+  latestVersionCode: 30308,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.7: DRM ClearKey auto-resolution, live stream signing, and unified gateway cluster failover.'
+  releaseNotes: '• Version 3.3.8: DRM ClearKey auto-resolution, live stream signing, and unified gateway cluster failover.'
 };
 
 /**

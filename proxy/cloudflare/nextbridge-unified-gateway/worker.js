@@ -584,6 +584,8 @@ async function handleNtResolvePdf(url, request, env, ctx) {
 async function fetchDirect(targetUrl, options = {}) {
   const reqHeaders = new Headers(options.headers || {});
   reqHeaders.set('User-Agent', UA);
+  reqHeaders.set('Origin', LX_ORIGIN);
+  reqHeaders.set('Referer', `${LX_ORIGIN}/study/batches`);
   return fetch(targetUrl, {
     method: options.method || 'GET',
     headers: reqHeaders,
@@ -718,7 +720,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
               }
               return {
                 _id: att._id || '',
-                baseUrl: direct || `/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(id)}&attachmentId=${encodeURIComponent(att._id || '')}`,
+                baseUrl: direct || `${prefix}/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(id)}&attachmentId=${encodeURIComponent(att._id || '')}`,
                 key: att.key || '',
                 name: att.name || hw.topic || 'Document'
               };
@@ -780,7 +782,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
           }
           return {
             _id: att._id || '',
-            baseUrl: direct || `/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(detail._id || scheduleId)}&attachmentId=${encodeURIComponent(att._id || '')}`,
+            baseUrl: direct || `${prefix}/api/lxpdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(detail._id || scheduleId)}&attachmentId=${encodeURIComponent(att._id || '')}`,
             key: att.key || ''
           };
         })
@@ -1287,19 +1289,29 @@ async function handlePwPdfRedirect(url) {
   const batchId = url.searchParams.get('batchId') || '';
   const subjectId = url.searchParams.get('subjectId') || '';
   const pdfId = url.searchParams.get('pdfId') || '';
-  const attachId = url.searchParams.get('attachmentId') || '';
+  const attachmentId = url.searchParams.get('attachmentId') || '';
 
-  if (!pdfId) return jsonResponse({ success: false, error: 'pdfId is required' }, 400);
+  if (!batchId || !subjectId || !pdfId || !attachmentId) {
+    return jsonResponse({ success: false, error: 'Missing parameters' }, 400);
+  }
 
   try {
-    const upstreamUrl = `${LX_ORIGIN}/api/GetPdf?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&pdfId=${encodeURIComponent(pdfId)}`;
-    const res = await fetch(upstreamUrl, { headers: { 'User-Agent': UA } });
-    if (res.ok) {
-      const data = await res.json();
-      const hwList = data.homeworkIds || (data.data?.homeworkIds) || [];
+    const lxRes = await fetch(`${LX_ORIGIN}/api/GetPdf?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&PdfId=${encodeURIComponent(pdfId)}&AttachmentId=${encodeURIComponent(attachmentId)}`, {
+      headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+    });
+
+    if (lxRes.ok) {
+      const body = await lxRes.json();
+      const d = body?.data;
+      if (d?.baseUrl && d?.key) {
+        const fullUrl = `${d.baseUrl.replace(/\/+$/, '')}/${d.key.replace(/^\/+/, '')}`;
+        return Response.redirect(fullUrl, 302);
+      }
+      // Fallback: search through homeworkIds if direct data didn't work
+      const hwList = body.homeworkIds || d?.homeworkIds || [];
       for (const hw of hwList) {
         for (const att of (hw.attachmentIds || [])) {
-          if (attachId && att._id === attachId) {
+          if (attachmentId && att._id === attachmentId) {
             const direct = (att.baseUrl && att.key) ? `${att.baseUrl.replace(/\/+$/, '')}/${att.key.replace(/^\/+/, '')}` : att.baseUrl;
             if (direct) return Response.redirect(direct, 302);
           }
@@ -1312,7 +1324,7 @@ async function handlePwPdfRedirect(url) {
     }
   } catch (_) {}
 
-  return jsonResponse({ success: false, error: 'Could not resolve PDF' }, 404);
+  return jsonResponse({ success: false, error: 'PDF not available' }, 404);
 }
 
 // ─── UNIVERSAL WILDCARD CORS PROXY ───────────────────────────────────────────

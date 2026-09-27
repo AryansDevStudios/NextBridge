@@ -473,7 +473,24 @@ export default function YouTubePlayerCore({
                       if (oRes.ok) {
                         const oData = await oRes.json();
                         if (oData?.clearKeys && typeof oData.clearKeys === 'object') {
-                          keys = { ...oData.clearKeys };
+                          const normalizedKeys = { ...oData.clearKeys };
+                          for (const [k, v] of Object.entries(oData.clearKeys)) {
+                            if (!k.includes('-') && k.length === 32) {
+                              const hyphenated = `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
+                              normalizedKeys[hyphenated] = v;
+                            } else if (k.includes('-')) {
+                              normalizedKeys[k.replace(/-/g, '')] = v;
+                            }
+                          }
+                          keys = normalizedKeys;
+                          break;
+                        } else if (oData?.key || oData?.data?.key) {
+                          const hexKey = oData?.key || oData?.data?.key;
+                          const cleanKid = kid.replace(/-/g, '').toLowerCase();
+                          keys = {
+                            [cleanKid]: hexKey.toLowerCase(),
+                            [kid.toLowerCase()]: hexKey.toLowerCase()
+                          };
                           break;
                         }
                       }
