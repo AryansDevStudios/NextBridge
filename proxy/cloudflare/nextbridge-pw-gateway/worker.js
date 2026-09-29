@@ -28,16 +28,52 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 };
 
+const FIREBASE_DB_URL = 'https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app';
+
 // Fallback known folder signatures (when upstream API signature endpoint throttles)
 const FALLBACK_SIGNATURES = {
   'a558fffd-9f3f-4334-ac96-50c13dd2cfc7':
     'Signature=jNepjtfmz52QXRhnbc6fpfUzjhRJrHDPwrRYYh9crNIgJvqy3cmNSfCiNsaiPmQEHFa6EJ8tKNBPlUufLmbSNugAsyFjW5yRJixcxLF0QWcjvEy~lUd9dPNXMZ0ZCGq7cCiOjxPn200yPolUMpQlfnzVTks3~cAFFiwUZS9dvZ5ssTOpmIJoDsuCqbvEqnYl1-JWIHuRfGO3sVAjl1Mm-cEbbavfCc5Lavgwa9YieCV~opvKuLW8HqEytkZE2yzjZkVEughljmlL-jFIonuSNUNZrhlRtg7aX31xjENZ4lRj2-EqGoXezLr4WDzTqilIHV9pZ~uWDrtlAqlD0efXGg__&Key-Pair-Id=APKAXVKMENFCRKTG5XE2&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kMWQzNHA4dno2M29pcS5jbG91ZGZyb250Lm5ldC9hNTU4ZmZmZC05ZjNmLTQzMzQtYWM5Ni01MGMxM2RkMmNmYzcvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc4ODcyNjMyN30sIkRhdGVHcmVhdGVyVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjo1NzY2ODAxMX19fV19',
   'dd3326fa-0ece-4bfe-8972-032cf2e46e04':
     'Signature=PRPN2G6cgfE7rk4sAaft2dq9fRbnrBdRvx2-jSdYvjQHcKml2yiV4g7sKE5Rgv86e13BlDX-xBkmS19SEpA-TV8Vg~YeT6sO-lEYLXkyU-KOq1XdJ2YUPMmrxbJYF4Db3yORDM23kGVc17o9QM5~5DapMH5OMB2z2c9AajcHQC7qZ~KF5TwgYM-~kmaM8WaztUKhLHBeZfmWN1dJCIWyshaNlyZm2s18vqFLT8KNCrfiGG414LNEdugx4ZsisLY5Uksozpr-knfd428syuZdARMpyUcmj4enndJMnpcARF2iUr-pEUfaSeX3kXC6j9E8JJSFqidsVPPBcMqxqRxWaw__&Key-Pair-Id=APKAXVKMENFCRKTG5XE2&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kMWQzNHA4dno2M29pcS5jbG91ZGZyb250Lm5ldC9kZDMzMjZmYS0wZWNlLTRiZmUtODk3Mi0wMzJjZjJlNDZlMDQvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc4OTU4OTU5OX0sIkRhdGVHcmVhdGVyVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNTc5ODk3NDA1fX19XX0_',
+  'c698a999-5b4a-4540-8a90-d460815da0f2':
+    'Signature=EZ3a4a-tzKdYeL6hBA~WT64jrScnuiyqL3q2x94ly3IylCxHIxYdyeMI4qytvjXI2qZQAUHWL3rmb4Hk2CjbJV9PMQIRG4BNoNrJSo4uvLIU4tjbu56gjqFJdt2Q0o8b4qinjLW-tBjzSV6TQXbTCH4u08kVDcKpK9-LHatjGvKn1AYhbg-6GLxOTNbS6aNZuRFzA4KqCTd4nXIclsImL2Qr5T3Yr9ZFv9mS1AKgFFAOV0O0-GAOHAbRXjoRd3k6Xes0dfvrffu~0VcWn8n3AShtSw5zTk7BSlI-dNpd1fgxEqsPj4JliR8~VgKdLDj3wY0q9~8Xat2yZ3KQrN9ZkQ__&Key-Pair-Id=APKAXVKMENFCRKTG5XE2&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kMWQzNHA4dno2M29pcS5jbG91ZGZyb250Lm5ldC9jNjk4YTk5OS01YjRhLTQ1NDAtOGE5MC1kNDYwODE1ZGEwZjIvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc5MDcxMjYxMX0sIkRhdGVHcmVhdGVyVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoyMDk1MDc4OTR9fX1dfQ__',
 };
 
 // Official PW Guest JWT token for Tier-2 fallback
 const PENPENCIL_GUEST_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDcSemACt8x4iTMCda8Yhe3iZaWbvV5XKSTbuAn0M';
+
+// ─── FIREBASE CLOUD SIGNATURE CACHE ──────────────────────────────────────────
+
+async function getCachedSignature(folder) {
+  if (!folder) return null;
+  if (FALLBACK_SIGNATURES[folder]) return FALLBACK_SIGNATURES[folder];
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/pw_signatures/${encodeURIComponent(folder)}.json`, {
+      headers: { 'User-Agent': UA }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.signedQuery) {
+        return data.signedQuery;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+function saveCachedSignature(folder, signedQuery, ctx) {
+  if (!folder || !signedQuery || !signedQuery.includes('Signature=')) return;
+  const clean = signedQuery.replace(/^\?/, '');
+  const promise = fetch(`${FIREBASE_DB_URL}/pw_signatures/${encodeURIComponent(folder)}.json`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ signedQuery: clean, updatedAt: Date.now() })
+  }).catch(() => {});
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    ctx.waitUntil(promise);
+  }
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -394,7 +430,7 @@ async function handleRpcAction(body, request, env, ctx) {
     }
 
     case 'parcham_vid': {
-      return handleParchamVid(params, request.url);
+      return handleParchamVid(params, request, env, ctx);
     }
 
     default:
@@ -408,7 +444,7 @@ async function handleRpcAction(body, request, env, ctx) {
 /**
  * Resolves video stream manifest + DRM ClearKeys (parcham_vid)
  */
-async function handleParchamVid(params, requestUrl) {
+async function handleParchamVid(params, request, env = null, ctx = null) {
   const childId = String(params.childId || '').trim();
   const videoId = String(params.videoId || '').trim();
   const vUrl = String(params.vUrl || '').trim();
@@ -455,6 +491,32 @@ async function handleParchamVid(params, requestUrl) {
       } catch (_) {}
     }
 
+    // Tier 1c: Try NextHope container orchestrator pool
+    if (!videoInfo?.url) {
+      for (let c = 1; c <= 4; c++) {
+        try {
+          const nhRes = await fetch(`https://pw.nexthope.site/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}&containerNum=${c}&topicId=all`, {
+            headers: {
+              'User-Agent': UA,
+              'Origin': 'https://pw.nexthope.site',
+              'Referer': `https://pw.nexthope.site/watch?batchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ChildId=${encodeURIComponent(cid)}&Type=penpencilvdo`
+            }
+          });
+          if (nhRes.ok) {
+            const nhJson = await nhRes.json();
+            if (nhJson?.success && (nhJson?.data?.streamUrl || nhJson?.data?.url)) {
+              videoInfo = {
+                url: nhJson.data.streamUrl || nhJson.data.url,
+                signedUrl: nhJson.data.signedUrl || '',
+                clearKeys: nhJson.data.clearKeys || null
+              };
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     // Tier 2 Fallback: Query PenPencil / StudySpark with guest JWT
     if (!videoInfo?.url) {
       try {
@@ -476,7 +538,24 @@ async function handleParchamVid(params, requestUrl) {
     }
   }
 
-  // Tier 3: If vUrl was passed directly from schedule item
+  // Tier 3: Schedule API direct lookup (resolves underlying CloudFront stream URL)
+  if (!videoInfo?.url && batchId && subjectId && targetId) {
+    try {
+      const schedRes = await fetch(`${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(targetId)}`, {
+        headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
+      });
+      if (schedRes.ok) {
+        const schedJson = await schedRes.json();
+        const schedData = schedJson?.data;
+        const sUrl = schedData?.url || schedData?.videoDetails?.videoUrl;
+        if (sUrl) {
+          videoInfo = { url: sUrl, signedUrl: '' };
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Tier 4: If vUrl was passed directly from schedule item
   if (!videoInfo?.url && vUrl && (vUrl.includes('.mpd') || vUrl.includes('.m3u8'))) {
     videoInfo = { url: vUrl, signedUrl: '' };
   }
@@ -493,9 +572,14 @@ async function handleParchamVid(params, requestUrl) {
   const host = extractHost(rawUrl) || DEFAULT_CF_HOST;
   let signedQuery = videoInfo.signedUrl || '';
 
-  // If no signed query was returned from API, check fallback constants
-  if (!signedQuery && folder && FALLBACK_SIGNATURES[folder]) {
-    signedQuery = FALLBACK_SIGNATURES[folder];
+  // If no signed query was returned from API, check fallback constants and Firebase cache
+  if (!signedQuery && folder) {
+    if (FALLBACK_SIGNATURES[folder]) {
+      signedQuery = FALLBACK_SIGNATURES[folder];
+    } else {
+      const cached = await getCachedSignature(folder);
+      if (cached) signedQuery = cached;
+    }
   }
 
   // Clean signed query format
@@ -503,24 +587,47 @@ async function handleParchamVid(params, requestUrl) {
     signedQuery = `?${signedQuery}`;
   }
 
+  // If a valid signed query was acquired, cache it to Firebase RTDB in the background
+  if (folder && signedQuery && signedQuery.includes('Signature=')) {
+    saveCachedSignature(folder, signedQuery, ctx);
+  }
+
   // Resolve ClearKeys from master.mpd if available
-  let clearKeys = null;
-  if (rawUrl.includes('.mpd')) {
+  let clearKeys = videoInfo.clearKeys || null;
+  if (!clearKeys && rawUrl.includes('.mpd')) {
     try {
       const probeUrl = `https://${host}/${folder}/master.mpd${signedQuery}`;
-      const probeRes = await fetch(probeUrl, {
+      let probeRes = await fetch(probeUrl, {
         headers: { 'User-Agent': UA }
-      });
-      if (probeRes.ok) {
+      }).catch(() => null);
+
+      if (!probeRes || !probeRes.ok) {
+        probeRes = await fetch(`https://bidweb.lol/${host}/${folder}/master.mpd${signedQuery}`, {
+          headers: { 'User-Agent': UA }
+        }).catch(() => null);
+      }
+
+      if (probeRes && probeRes.ok) {
         const mpdText = await probeRes.text();
-        const kidMatch = mpdText.match(/default_KID="([0-9a-fA-F-]+)"/);
+        const kidMatch = mpdText.match(/default_KID="([0-9a-fA-F-]+)"/i) || mpdText.match(/cenc:default_KID="([0-9a-fA-F-]+)"/i);
         if (kidMatch) {
-          const kid = kidMatch[1];
-          const otpRes = await fetch(`${LX_ORIGIN}/api/get-otp?kid=${encodeURIComponent(kid)}`, {
+          const kidRaw = kidMatch[1];
+          const kidClean = kidRaw.replace(/-/g, '').toLowerCase();
+
+          // 1. Try LearnxPW get-otp with clean kid
+          let otpRes = await fetch(`${LX_ORIGIN}/api/get-otp?kid=${encodeURIComponent(kidClean)}`, {
             headers: { 'User-Agent': UA }
-          });
-          if (otpRes.ok) {
-            const otpJson = await otpRes.json();
+          }).catch(() => null);
+
+          // 2. If LearnxPW fails, try NextHope get-otp with clean kid
+          if (!otpRes || !otpRes.ok) {
+            otpRes = await fetch(`https://pw.nexthope.site/api/get-otp?kid=${encodeURIComponent(kidClean)}&batchId=${encodeURIComponent(batchId)}`, {
+              headers: { 'User-Agent': UA }
+            }).catch(() => null);
+          }
+
+          if (otpRes && otpRes.ok) {
+            const otpJson = await otpRes.json().catch(() => ({}));
             if (otpJson?.clearKeys) {
               clearKeys = otpJson.clearKeys;
             }
@@ -585,9 +692,16 @@ async function handleManifest(url, request, env, ctx) {
     sigQuery = cfParams.toString() ? `?${cfParams.toString()}` : '';
   }
 
-  // Fallback to known folder signatures if needed
-  if (!sigQuery && FALLBACK_SIGNATURES[folder]) {
-    sigQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+  // Fallback to known folder signatures or Firebase cache if needed
+  if (!sigQuery) {
+    if (FALLBACK_SIGNATURES[folder]) {
+      sigQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+    } else {
+      const cached = await getCachedSignature(folder);
+      if (cached) {
+        sigQuery = cached.startsWith('?') ? cached : `?${cached}`;
+      }
+    }
   }
 
   // 1. Media Segment Proxying (init.mp4, 1.mp4, chunk.m4s, .ts, enc.key, etc.)
@@ -705,7 +819,14 @@ async function handleRelay(path, url, request) {
 
   if (signedQuery && !signedQuery.startsWith('?')) signedQuery = `?${signedQuery}`;
   if (!signedQuery && url.searchParams.has('Signature')) signedQuery = url.search;
-  if (!signedQuery && FALLBACK_SIGNATURES[folder]) signedQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+  if (!signedQuery) {
+    if (FALLBACK_SIGNATURES[folder]) {
+      signedQuery = `?${FALLBACK_SIGNATURES[folder]}`;
+    } else {
+      const cached = await getCachedSignature(folder);
+      if (cached) signedQuery = cached.startsWith('?') ? cached : `?${cached}`;
+    }
+  }
 
   const assetParts = parts.slice(cursor);
   const assetPath = assetParts.join('/');
