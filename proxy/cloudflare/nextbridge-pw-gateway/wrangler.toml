@@ -2,6 +2,7 @@ name = "nextbridge-pw-gateway"
 main = "worker.js"
 compatibility_date = "2024-09-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "84bc7812b41cd68e12e1b3592c0371b7"
 
 [vars]
 ENVIRONMENT = "production"

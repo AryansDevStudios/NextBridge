@@ -75,6 +75,32 @@ function saveCachedSignature(folder, signedQuery, ctx) {
   }
 }
 
+// ─── FIREBASE MANAGED NEXTHOPE AUTH COOKIE ───────────────────────────────────
+
+let cachedAuthCookie = null;
+let cachedAuthCookieExpiry = 0;
+
+async function getPwAuthCookie() {
+  const now = Date.now();
+  if (cachedAuthCookie && now < cachedAuthCookieExpiry) {
+    return cachedAuthCookie;
+  }
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/pw_auth.json`, {
+      headers: { 'User-Agent': UA }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.cookie) {
+        cachedAuthCookie = data.cookie;
+        cachedAuthCookieExpiry = now + 5 * 60 * 1000; // Cache 5 min at edge
+        return cachedAuthCookie;
+      }
+    }
+  } catch (_) {}
+  return cachedAuthCookie || '';
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
@@ -433,6 +459,40 @@ async function handleRpcAction(body, request, env, ctx) {
       return handleParchamVid(params, request, env, ctx);
     }
 
+    case 'pw_auth_info': {
+      try {
+        const res = await fetch(`${FIREBASE_DB_URL}/pw_auth.json`, { headers: { 'User-Agent': UA } });
+        const data = res.ok ? await res.json() : null;
+        return jsonResponse({ success: true, data });
+      } catch (e) {
+        return jsonResponse({ success: false, error: e.message }, 500);
+      }
+    }
+
+    case 'pw_save_auth': {
+      try {
+        const cookieStr = String(params.cookie || '').trim();
+        if (!cookieStr) return jsonResponse({ success: false, error: 'Cookie is required' }, 400);
+        const anon_id = (cookieStr.match(/anon_id=([0-9a-fA-F-]+)/) || [])[1] || '';
+        const bodyData = {
+          cookie: cookieStr,
+          anon_id,
+          updatedAt: Date.now(),
+          updatedBy: params.updatedBy || 'Admin'
+        };
+        const res = await fetch(`${FIREBASE_DB_URL}/pw_auth.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyData)
+        });
+        cachedAuthCookie = cookieStr;
+        cachedAuthCookieExpiry = Date.now() + 5 * 60 * 1000;
+        return jsonResponse({ success: res.ok, data: bodyData });
+      } catch (e) {
+        return jsonResponse({ success: false, error: e.message }, 500);
+      }
+    }
+
     default:
       return jsonResponse({ success: false, error: `Unknown action: ${action}` }, 400);
     }
@@ -491,24 +551,32 @@ async function handleParchamVid(params, request, env = null, ctx = null) {
       } catch (_) {}
     }
 
-    // Tier 1c: Try NextHope container orchestrator pool
+    // Tier 1c: Try NextHope container orchestrator pool with Firebase-managed auth cookie
     if (!videoInfo?.url) {
+      const authCookie = await getPwAuthCookie();
+      const nhHeaders = {
+        'User-Agent': UA,
+        'Origin': 'https://pw.nexthope.site',
+        'Referer': `https://pw.nexthope.site/watch?batchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ChildId=${encodeURIComponent(cid)}&Type=penpencilvdo`
+      };
+      if (authCookie) {
+        nhHeaders['Cookie'] = authCookie;
+      }
+
       for (let c = 1; c <= 4; c++) {
         try {
           const nhRes = await fetch(`https://pw.nexthope.site/api/get-video-url?batchId=${encodeURIComponent(batchId)}&subjectId=${encodeURIComponent(subjectId)}&childId=${encodeURIComponent(cid)}&containerNum=${c}&topicId=all`, {
-            headers: {
-              'User-Agent': UA,
-              'Origin': 'https://pw.nexthope.site',
-              'Referer': `https://pw.nexthope.site/watch?batchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ChildId=${encodeURIComponent(cid)}&Type=penpencilvdo`
-            }
+            headers: nhHeaders
           });
           if (nhRes.ok) {
             const nhJson = await nhRes.json();
-            if (nhJson?.success && (nhJson?.data?.streamUrl || nhJson?.data?.url)) {
+            const targetUrl = nhJson?.data?.directUrl || nhJson?.directUrl || nhJson?.data?.streamUrl || nhJson?.data?.url || nhJson?.streamUrl || nhJson?.url;
+            if (nhJson?.success && targetUrl) {
+              const sigPart = nhJson.data?.signedUrl || nhJson.signedUrl || (targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?')) : '');
               videoInfo = {
-                url: nhJson.data.streamUrl || nhJson.data.url,
-                signedUrl: nhJson.data.signedUrl || '',
-                clearKeys: nhJson.data.clearKeys || null
+                url: targetUrl,
+                signedUrl: sigPart,
+                clearKeys: nhJson.data?.clearKeys || nhJson.clearKeys || null
               };
               break;
             }
@@ -920,6 +988,8 @@ async function fetchUpstream(targetUrl) {
 
 function extractFolder(url) {
   try {
+    const uuidMatch = url.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
+    if (uuidMatch) return uuidMatch[1];
     const u = new URL(url);
     const parts = u.pathname.split('/').filter(Boolean);
     return parts[0] || '';
@@ -930,8 +1000,12 @@ function extractFolder(url) {
 
 function extractHost(url) {
   try {
-    return new URL(url).host;
+    if (url.includes('cloudfront.net')) {
+      const match = url.match(/([a-zA-Z0-9-]+\.cloudfront\.net)/i);
+      if (match) return match[1];
+    }
+    return new URL(url).host || DEFAULT_CF_HOST;
   } catch {
-    return '';
+    return DEFAULT_CF_HOST;
   }
 }

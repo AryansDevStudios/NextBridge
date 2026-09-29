@@ -20,7 +20,8 @@ import {
   Download,
   Trash2,
   Megaphone,
-  Layers
+  Layers,
+  Key
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
@@ -28,6 +29,7 @@ import RenderSyncPanel from './RenderSyncPanel';
 import AdminAnalytics from './AdminAnalytics';
 import BroadcastUpdateModal from './BroadcastUpdateModal';
 import AdminNoticeBoard from './AdminNoticeBoard';
+import AdminPwAuthPanel from './AdminPwAuthPanel';
 import AppVersionSettingsModal from './AppVersionSettingsModal';
 import BulkBatchManagerModal from './BulkBatchManagerModal';
 import { 
@@ -296,6 +298,13 @@ export default function Dashboard({ onLogout }) {
               >
                 <RefreshCw size={14} />
                 <span className="hidden sm:inline">Sync</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('pw-auth')}
+                className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'pw-auth' ? 'bg-[#262626] text-amber-400 border border-amber-500/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
+              >
+                <Key size={14} />
+                <span className="hidden sm:inline">PW Auth</span>
               </button>
             </div>
             
@@ -786,6 +795,10 @@ export default function Dashboard({ onLogout }) {
 
         {activeTab === 'sync' && (
           <RenderSyncPanel />
+        )}
+
+        {activeTab === 'pw-auth' && (
+          <AdminPwAuthPanel />
         )}
       </div>
 
