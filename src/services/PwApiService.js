@@ -6,14 +6,38 @@
 
 const PW_GATEWAYS = [
   'https://nextbridgeapi.adsbackend01.workers.dev',
-  'https://nextbridgeapi.adsbackend02.workers.dev',
-  'https://nextbridgeapi.adsbackend03.workers.dev',
   'https://nextbridgeapi.adsbackend04.workers.dev',
   'https://nextbridgeapi.adsbackend05.workers.dev',
-  'https://nextbridgeapi.adsbackend06.workers.dev',
   'https://nextbridge-pw-gateway.adsbackend01.workers.dev',
+  'https://nextbridgeapi.adsbackend02.workers.dev',
+  'https://nextbridgeapi.adsbackend03.workers.dev',
+  'https://nextbridgeapi.adsbackend06.workers.dev',
   'https://nexthope-pw.space-z.ai'
 ];
+
+const FIREBASE_DB_URL = 'https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app';
+const batchCache = new Map();
+
+async function getCachedBatchData(batchId) {
+  if (!batchId) return null;
+  const cleanId = String(batchId).trim();
+  if (batchCache.has(cleanId)) return batchCache.get(cleanId);
+
+  const candidateKeys = [cleanId, cleanId.replace(/^batch_/, '')];
+  for (const k of candidateKeys) {
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/nexthope_batches/batch_${encodeURIComponent(k)}.json`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.subjects) && data.subjects.length > 0) {
+          batchCache.set(cleanId, data);
+          return data;
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
+}
 
 // Active base URL defaults to our high-speed unified Cloudflare Edge Gateway
 let activeBaseUrl = PW_GATEWAYS[0];
@@ -78,6 +102,23 @@ export const pwApiService = {
    * Fetch batch detail & all subjects
    */
   async getBatchSubjects(batchId) {
+    // 1. Try Firebase RTDB pre-cached batch tree first
+    const cachedBatch = await getCachedBatchData(batchId);
+    if (cachedBatch && Array.isArray(cachedBatch.subjects) && cachedBatch.subjects.length > 0) {
+      return cachedBatch.subjects.map(sub => ({
+        id: sub.subjectId || sub.id,
+        subject_id: sub.subjectId || sub.id,
+        subject_name: sub.subject_name || sub.name || sub.title,
+        batchSubjectId: sub.batchSubjectId,
+        masterId: sub.masterId,
+        batchId,
+        isRootSubject: true,
+        isDynamicPw: true,
+        itemCount: `${sub.folders?.length || 0} Chapters`
+      }));
+    }
+
+    // 2. Fallback to live RPC
     const data = await callRpc('pw_btch_dtl', { batchId });
     if (!data || !data.subjects) return [];
 
@@ -102,6 +143,44 @@ export const pwApiService = {
     const masterId = subject.masterId;
     const batchSubjectId = subject.batchSubjectId;
 
+    // 1. Try Firebase RTDB pre-cached folders
+    const cachedBatch = await getCachedBatchData(batchId);
+    if (cachedBatch && Array.isArray(cachedBatch.subjects)) {
+      const sObj = cachedBatch.subjects.find(s => 
+        String(s.subjectId || s.id) === String(subjectId) ||
+        String(s.subject_name || s.name || '').toLowerCase() === String(subject.subject_name || subject.subject || subject.name || '').toLowerCase()
+      );
+      if (sObj && Array.isArray(sObj.folders) && sObj.folders.length > 0) {
+        return sObj.folders.map((u, idx) => {
+          const orderNum = u.order || (idx + 1);
+          const chPill = `CH - ${String(orderNum).padStart(2, '0')}`;
+          const smPill = `SM - ${String(orderNum).padStart(2, '0')}`;
+          const vids = (u.items || []).filter(it => it.type === 'video').length;
+          const notes = (u.items || []).filter(it => it.type === 'pdf').length;
+
+          return {
+            id: u.id,
+            title: u.title || u.name,
+            isFolder: true,
+            isDynamicPwFolder: true,
+            batchId,
+            subjectId,
+            masterId,
+            batchSubjectId,
+            chapterId: u.id,
+            order: orderNum,
+            chPill,
+            smPill,
+            videos: vids,
+            dpp: 0,
+            notes: notes,
+            itemCount: `Lectures: ${vids} • Notes: ${notes}`
+          };
+        });
+      }
+    }
+
+    // 2. Fallback to live RPC
     const data = await callRpc('pw_sub_topics', {
       batchId,
       subjectId,
@@ -110,7 +189,7 @@ export const pwApiService = {
       limit: 100
     });
 
-    const units = data?.data || [];
+    const units = Array.isArray(data) ? data : (data?.data || []);
     return units.map((u, idx) => {
       const orderNum = u.order || (idx + 1);
       const chPill = `CH - ${String(orderNum).padStart(2, '0')}`;
@@ -147,12 +226,43 @@ export const pwApiService = {
     const subjectId = typeof subject === 'string' ? subject : (subject.subjectId || subject.subject_id);
     const masterId = subject.masterId;
 
-    // Fetch lectures, notes, and DPP PDFs in parallel
+    // 1. Try Firebase RTDB pre-cached items
+    const cachedBatch = await getCachedBatchData(batchId);
+    if (cachedBatch && Array.isArray(cachedBatch.subjects)) {
+      const sObj = cachedBatch.subjects.find(s => 
+        String(s.subjectId || s.id) === String(subjectId) ||
+        String(s.subject_name || s.name || '').toLowerCase() === String(subject.subject_name || subject.subject || subject.name || '').toLowerCase()
+      );
+      if (sObj && Array.isArray(sObj.folders)) {
+        const fObj = sObj.folders.find(f => String(f.id) === String(chapterId) || String(f.title) === String(folderTitle));
+        if (fObj && Array.isArray(fObj.items) && fObj.items.length > 0) {
+          return fObj.items.map(it => ({
+            ...it,
+            folder_path: folderTitle || it.folder_path,
+            subject_name: subject.subject_name || subject.subject || it.subject_name
+          }));
+        }
+      }
+    }
+
+    // 2. Fallback to live RPC
     const [lecturesRes, notesRes, dppPdfRes] = await Promise.allSettled([
       callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'LECTURE', skip: 0, limit: 100 }),
       callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'NOTES', skip: 0, limit: 100 }),
       callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'DPP_PDF', skip: 0, limit: 100 })
     ]);
+
+    const extractArray = (resVal) => {
+      if (!resVal) return [];
+      if (Array.isArray(resVal)) return resVal;
+      if (Array.isArray(resVal.data)) return resVal.data;
+      if (Array.isArray(resVal.data?.data)) return resVal.data.data;
+      return [];
+    };
+
+    const lecturesList = lecturesRes.status === 'fulfilled' ? extractArray(lecturesRes.value) : [];
+    const notesList = notesRes.status === 'fulfilled' ? extractArray(notesRes.value) : [];
+    const dppPdfList = dppPdfRes.status === 'fulfilled' ? extractArray(dppPdfRes.value) : [];
 
     const items = [];
 
@@ -166,38 +276,36 @@ export const pwApiService = {
     };
 
     // Parse Lectures
-    if (lecturesRes.status === 'fulfilled' && Array.isArray(lecturesRes.value)) {
-      lecturesRes.value.forEach(item => {
-        const d = item.data || {};
-        let durationSecs = 0;
-        if (d.videoDetails?.duration) {
-          const parts = String(d.videoDetails.duration).split(':').map(Number);
-          if (parts.length === 3) durationSecs = parts[0] * 3600 + parts[1] * 60 + parts[2];
-          else if (parts.length === 2) durationSecs = parts[0] * 60 + parts[1];
-        }
+    lecturesList.forEach(item => {
+      const d = item.data || {};
+      let durationSecs = 0;
+      if (d.videoDetails?.duration) {
+        const parts = String(d.videoDetails.duration).split(':').map(Number);
+        if (parts.length === 3) durationSecs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        else if (parts.length === 2) durationSecs = parts[0] * 60 + parts[1];
+      }
 
-        items.push({
-          id: item._id || d._id,
-          title: d.topic || 'Video Lecture',
-          type: 'video',
-          subCategory: 'LECTURE',
-          badgeText: 'VIDEO',
-          isDynamicPw: true,
-          batchId,
-          subjectId,
-          masterId,
-          scheduleId: item._id || d._id,
-          videoId: d.videoDetails?._id || d.videoDetails?.id || '',
-          vUrl: d.url || d.videoDetails?.videoUrl || '',
-          folder_path: folderTitle,
-          thumbnail: d.videoDetails?.image || '',
-          duration: durationSecs,
-          dateStr: formatDateStr(d.date),
-          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-          subject_name: subject.subject_name || subject.subject || 'Physics'
-        });
+      items.push({
+        id: item._id || d._id,
+        title: d.topic || 'Video Lecture',
+        type: 'video',
+        subCategory: 'LECTURE',
+        badgeText: 'VIDEO',
+        isDynamicPw: true,
+        batchId,
+        subjectId,
+        masterId,
+        scheduleId: item._id || d._id,
+        videoId: d.videoDetails?._id || d.videoDetails?.id || '',
+        vUrl: d.url || d.videoDetails?.videoUrl || '',
+        folder_path: folderTitle,
+        thumbnail: d.videoDetails?.image || '',
+        duration: durationSecs,
+        dateStr: formatDateStr(d.date),
+        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+        subject_name: subject.subject_name || subject.subject || 'Physics'
       });
-    }
+    });
 
     // Helper to safely resolve attachment URLs from PW responses
     const isFullPdfUrl = (u) => {
@@ -227,64 +335,60 @@ export const pwApiService = {
     };
 
     // Parse Notes
-    if (notesRes.status === 'fulfilled' && Array.isArray(notesRes.value)) {
-      notesRes.value.forEach(item => {
-        const d = item.data || {};
-        const homework = d.homeworkIds?.[0];
-        const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
-        const pdfUrl = resolveAttachmentPdfUrl(d);
-        const cleanScheduleId = item._id || d._id;
+    notesList.forEach(item => {
+      const d = item.data || {};
+      const homework = d.homeworkIds?.[0];
+      const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
+      const pdfUrl = resolveAttachmentPdfUrl(d);
+      const cleanScheduleId = item._id || d._id;
 
-        items.push({
-          id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
-          title: d.topic || homework?.topic || 'Class Notes',
-          type: 'pdf',
-          subCategory: 'NOTES',
-          badgeText: 'NOTES',
-          isDynamicPw: true,
-          batchId,
-          subjectId,
-          scheduleId: cleanScheduleId,
-          attachmentId: attach?._id || '',
-          url: pdfUrl,
-          raw_file_url: pdfUrl,
-          folder_path: folderTitle,
-          dateStr: formatDateStr(d.date),
-          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-          subject_name: subject.subject_name || subject.subject || 'Physics'
-        });
+      items.push({
+        id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
+        title: d.topic || homework?.topic || 'Class Notes',
+        type: 'pdf',
+        subCategory: 'NOTES',
+        badgeText: 'NOTES',
+        isDynamicPw: true,
+        batchId,
+        subjectId,
+        scheduleId: cleanScheduleId,
+        attachmentId: attach?._id || '',
+        url: pdfUrl,
+        raw_file_url: pdfUrl,
+        folder_path: folderTitle,
+        dateStr: formatDateStr(d.date),
+        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+        subject_name: subject.subject_name || subject.subject || 'Physics'
       });
-    }
+    });
 
     // Parse DPP PDFs
-    if (dppPdfRes.status === 'fulfilled' && Array.isArray(dppPdfRes.value)) {
-      dppPdfRes.value.forEach(item => {
-        const d = item.data || {};
-        const homework = d.homeworkIds?.[0];
-        const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
-        const pdfUrl = resolveAttachmentPdfUrl(d);
-        const cleanScheduleId = item._id || d._id;
+    dppPdfList.forEach(item => {
+      const d = item.data || {};
+      const homework = d.homeworkIds?.[0];
+      const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
+      const pdfUrl = resolveAttachmentPdfUrl(d);
+      const cleanScheduleId = item._id || d._id;
 
-        items.push({
-          id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,
-          title: d.topic || homework?.topic || 'Daily Practice Problem (DPP)',
-          type: 'pdf',
-          subCategory: 'DPP_PDF',
-          badgeText: 'DPP PDF',
-          isDynamicPw: true,
-          batchId,
-          subjectId,
-          scheduleId: cleanScheduleId,
-          attachmentId: attach?._id || '',
-          url: pdfUrl,
-          raw_file_url: pdfUrl,
-          folder_path: folderTitle,
-          dateStr: formatDateStr(d.date),
-          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-          subject_name: subject.subject_name || subject.subject || 'Physics'
-        });
+      items.push({
+        id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,
+        title: d.topic || homework?.topic || 'Daily Practice Problem (DPP)',
+        type: 'pdf',
+        subCategory: 'DPP_PDF',
+        badgeText: 'DPP PDF',
+        isDynamicPw: true,
+        batchId,
+        subjectId,
+        scheduleId: cleanScheduleId,
+        attachmentId: attach?._id || '',
+        url: pdfUrl,
+        raw_file_url: pdfUrl,
+        folder_path: folderTitle,
+        dateStr: formatDateStr(d.date),
+        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+        subject_name: subject.subject_name || subject.subject || 'Physics'
       });
-    }
+    });
 
     return items;
   },

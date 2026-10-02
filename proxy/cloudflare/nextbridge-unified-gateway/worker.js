@@ -711,7 +711,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
       const targetUrl = `${LX_ORIGIN}/api/SubjectInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&page=${page}`;
       const res = await fetchDirect(targetUrl);
-      if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
+      if (!res.ok) return jsonResponse({ success: false, error: `Upstream error ${res.status}`, status: res.status }, 502);
 
       const json = await res.json();
       const chapters = Array.isArray(json?.data) ? json.data : [];
@@ -750,7 +750,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
       const targetUrl = `${LX_ORIGIN}/api/TopicInfo?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&TopicId=${encodeURIComponent(tagId)}&ContentType=${upstreamType}&page=${page}`;
       const res = await fetchDirect(targetUrl);
-      if (!res.ok) return jsonResponse({ success: true, data: [] });
+      if (!res.ok) return jsonResponse({ success: false, error: `Upstream error ${res.status}`, status: res.status }, 502);
 
       const json = await res.json();
       const rawItems = Array.isArray(json?.data) ? json.data : [];
@@ -821,7 +821,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
       const targetUrl = `${LX_ORIGIN}/api/Schedule?BatchId=${encodeURIComponent(batchId)}&SubjectId=${encodeURIComponent(subjectId)}&ContentId=${encodeURIComponent(scheduleId)}`;
       const res = await fetchDirect(targetUrl);
-      if (!res.ok) return jsonResponse({ success: true, data: null });
+      if (!res.ok) return jsonResponse({ success: false, error: `Upstream error ${res.status}`, status: res.status }, 502);
 
       const json = await res.json();
       const detail = json?.data;
@@ -875,7 +875,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
       const targetUrl = `${LX_ORIGIN}/api/dpp-list?batchId=${encodeURIComponent(batchId)}&batchSubjectId=${encodeURIComponent(batchSubjectId)}&chapterId=${encodeURIComponent(chapterId)}&page=${page}&limit=${limit}`;
       const res = await fetchDirect(targetUrl);
-      if (!res.ok) return jsonResponse({ success: true, data: { data: [] } });
+      if (!res.ok) return jsonResponse({ success: false, error: `Upstream error ${res.status}`, status: res.status }, 502);
 
       const json = await res.json();
       const items = Array.isArray(json?.data) ? json.data : [];
@@ -931,7 +931,7 @@ async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
 
       const targetUrl = `${LX_ORIGIN}/api/BatchInfo?BatchId=${encodeURIComponent(batchId)}&Type=announcement&page=${page}`;
       const res = await fetchDirect(targetUrl);
-      if (!res.ok) return jsonResponse({ success: true, data: [] });
+      if (!res.ok) return jsonResponse({ success: false, error: `Upstream error ${res.status}`, status: res.status }, 502);
       const json = await res.json();
       return jsonResponse({ success: true, data: Array.isArray(json?.data) ? json.data : [] });
     }
