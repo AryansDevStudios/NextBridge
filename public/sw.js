@@ -5,7 +5,7 @@
  * - Network-first for API, cache-first for static assets
  */
 
-const CACHE_VERSION = 'nb-v3.3.18';
+const CACHE_VERSION = 'nb-v3.4.0';
 const SHELL_CACHE  = `${CACHE_VERSION}-shell`;
 const API_CACHE    = `${CACHE_VERSION}-api`;
 
@@ -78,17 +78,32 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// ─── Activate: prune old caches ────────────────────────────────────────────────
+// ─── Activate: purge old caches immediately ──────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
         keys
           .filter((k) => k !== SHELL_CACHE && k !== API_CACHE)
-          .map((k) => caches.delete(k))
+          .map((k) => {
+            console.log('[SW] Deleting stale cache:', k);
+            return caches.delete(k);
+          })
       )
     ).then(() => self.clients.claim())
   );
+});
+
+// ─── Message: Instant SkipWaiting and Cache Invalidation ─────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING' || event.data?.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
+  if (event.data === 'CLEAR_CACHE' || event.data?.action === 'clearCache') {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+    );
+  }
 });
 
 // ─── Fetch: main routing ───────────────────────────────────────────────────────
@@ -204,9 +219,11 @@ async function handleNavigation(request) {
   try {
     // Try network first
     const networkResponse = await fetch(request);
-    // Cache the fresh response
-    const cache = await caches.open(SHELL_CACHE);
-    cache.put(request, networkResponse.clone());
+    // Cache the fresh response under /index.html for offline fallback (not dynamic query URLs)
+    if (networkResponse && networkResponse.ok) {
+      const cache = await caches.open(SHELL_CACHE);
+      cache.put('/index.html', networkResponse.clone());
+    }
     return networkResponse;
   } catch {
     // Offline → serve cached shell

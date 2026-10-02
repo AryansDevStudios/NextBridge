@@ -15,6 +15,21 @@ if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform?.()) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then((reg) => {
         console.log('[SW] Registered, scope:', reg.scope);
+        // Aggressively check for a fresh service worker on every page load
+        reg.update();
+        if (reg.waiting) {
+          reg.waiting.postMessage({ action: 'skipWaiting' });
+        }
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ action: 'skipWaiting' });
+              }
+            });
+          }
+        });
       })
       .catch((err) => {
         console.warn('[SW] Registration failed:', err);

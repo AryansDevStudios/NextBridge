@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.18';
-export const CURRENT_LATEST_CODE = 30318;
+export const CURRENT_LATEST_VERSION = '3.4.0';
+export const CURRENT_LATEST_CODE = 30400;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.18',
-  latestVersionCode: 30318,
+  latestAppVersion: '3.4.0',
+  latestVersionCode: 30400,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.18: Fix SW manifest cache poisoning, DASH player init errors, and Netlify proxy routing.'
+  releaseNotes: '• Version 3.4.0: Direct Cloudflare Workers 01-06 routing for DASH manifests and segments, multi-worker failover, and zero-cache stale purge.'
 };
 
 /**
