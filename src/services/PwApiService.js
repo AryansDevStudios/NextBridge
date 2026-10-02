@@ -456,10 +456,55 @@ export const pwApiService = {
               const newArrivals = liveItems.filter(it => !cachedIds.has(String(it.id || it.scheduleId)));
               if (newArrivals.length > 0) {
                 newArrivals.forEach(it => { it.isNewlyUploaded = true; });
+
+                // Instantly resolve stream URLs and DRM ClearKeys for any newly discovered lectures BEFORE saving
+                await Promise.allSettled(newArrivals.map(async (item) => {
+                  if (item.type === 'video') {
+                    try {
+                      const streamRes = await callRpc('parcham_vid', {
+                        batchId: item.batchId || batchId,
+                        subjectId: item.masterId || item.subjectId || subjectId,
+                        childId: item.scheduleId || item.id,
+                        videoId: item.videoId || '',
+                        vUrl: item.vUrl || item.url || ''
+                      });
+                      if (streamRes && streamRes.url) {
+                        item.url = streamRes.url;
+                        item.stream_url = streamRes.url;
+                        item.video_url = streamRes.url;
+                        item.clear_keys = streamRes.clearKeys || null;
+                        item.clearKeys = streamRes.clearKeys || null;
+                        item.has_keys = Boolean(streamRes.clearKeys && Object.keys(streamRes.clearKeys).length > 0);
+                        item.isPreResolved = true;
+                      }
+                    } catch (_) {}
+                  }
+                }));
+
                 const merged = [...newArrivals, ...cachedItems];
                 onLiveUpdate(merged, newArrivals);
-                // Patch cloud database in background so other students get it immediately
+                // Patch cloud database in background with fully resolved streams and DRM keys
                 patchFirebaseChapterItems(batchId, subjectId, chapterId, merged);
+
+                // Log discovery to Firebase RTDB audit log
+                fetch(`${FIREBASE_DB_URL}/pw_sync_logs/${Date.now()}.json`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    timestamp: Date.now(),
+                    type: 'new_lectures_detected',
+                    batchId,
+                    subjectId,
+                    chapterId,
+                    chapterTitle: folderTitle,
+                    count: newArrivals.length,
+                    lectures: newArrivals.filter(i => i.type === 'video').map(i => ({
+                      id: i.id,
+                      title: i.title,
+                      hasKeys: Boolean(i.has_keys)
+                    }))
+                  })
+                }).catch(() => {});
               }
             }
           } catch (_) {}
@@ -586,6 +631,16 @@ export const pwApiService = {
 
     if (typeof batchIdOrItem === 'object' && batchIdOrItem !== null) {
       const it = batchIdOrItem;
+      // Instant return if stream & keys are already pre-resolved in Firebase RTDB
+      const directStream = it.stream_url || it.video_url;
+      if (directStream && (directStream.includes('.mpd') || directStream.includes('.m3u8') || directStream.includes('.mp4'))) {
+        const manifestUrl = directStream.startsWith('http') ? directStream : `${activeBaseUrl}${directStream.startsWith('/') ? '' : '/'}${directStream}`;
+        return {
+          manifestUrl,
+          clearKeys: it.clear_keys || it.clearKeys || null,
+          kind: directStream.includes('.mpd') ? 'dash' : 'hls'
+        };
+      }
       bId = it.batchId;
       sId = it.scheduleId || it.id;
       mId = it.masterId;
