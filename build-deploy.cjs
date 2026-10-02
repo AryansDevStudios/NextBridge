@@ -61,6 +61,7 @@ async function buildAndConsolidate() {
 /api/course-proxy/* https://course.nexttoppers.com/:splat 200!
 /api/lxpdf/* https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/:splat 200!
 /api/lxpdf https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf 200!
+/manifest/* https://nextbridgeapi.adsbackend01.workers.dev/manifest/:splat 200!
 /admin/* /admin/index.html 200
 /* /index.html 200
   `.trim();

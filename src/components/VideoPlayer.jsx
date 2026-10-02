@@ -26,7 +26,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
-import { pwApiService, toProxiedPdfUrl, getPdfProxyCandidates } from '../services/PwApiService';
+import { pwApiService, toProxiedPdfUrl, getPdfProxyCandidates, isCloudFrontSignatureExpired } from '../services/PwApiService';
 import { ntApiService } from '../services/NtApiService';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
@@ -73,9 +73,13 @@ const VideoPlayer = ({ item, onClose, user }) => {
     item.isDynamicPw && (
       !item.url ||
       item.url === '' ||
+      item.url.startsWith('/manifest/') ||
+      item.url.startsWith('/') ||
       item.url.includes('/api/lxpdf') ||
       item.url.includes('lxpdf') ||
       item.url.toLowerCase().endsWith('.pdf') ||
+      isCloudFrontSignatureExpired(item.url) ||
+      isCloudFrontSignatureExpired(item.stream_url) ||
       (item.stream_url && (item.stream_url.includes('/api/lxpdf') || item.stream_url.includes('lxpdf')))
     )
   );
@@ -84,7 +88,10 @@ const VideoPlayer = ({ item, onClose, user }) => {
     if (isVideoNeedingResolution) {
       return { ...item, url: '' };
     }
-    return item;
+    const fullUrl = item.url && (item.url.startsWith('/manifest/') || item.url.startsWith('/'))
+      ? `${pwApiService.getPwBaseUrl()}${item.url.startsWith('/') ? '' : '/'}${item.url}`
+      : item.url;
+    return { ...item, url: fullUrl };
   });
   const [isResolvingVideo, setIsResolvingVideo] = useState(isVideoNeedingResolution);
   const [videoResolveError, setVideoResolveError] = useState('');
@@ -111,7 +118,10 @@ const VideoPlayer = ({ item, onClose, user }) => {
         }
       });
     } else {
-      setResolvedVideoItem(item);
+      const fullUrl = item.url && (item.url.startsWith('/manifest/') || item.url.startsWith('/'))
+        ? `${pwApiService.getPwBaseUrl()}${item.url.startsWith('/') ? '' : '/'}${item.url}`
+        : item.url;
+      setResolvedVideoItem({ ...item, url: fullUrl });
       setIsResolvingVideo(false);
     }
     return () => { isMounted = false; };

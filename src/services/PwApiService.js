@@ -46,6 +46,25 @@ export function getPwBaseUrl() {
   return activeBaseUrl;
 }
 
+/**
+ * Checks if a CloudFront signed URL contains an expired DateLessThan policy epoch.
+ */
+export function isCloudFrontSignatureExpired(url) {
+  if (!url || typeof url !== 'string') return false;
+  const match = url.match(/Policy=([A-Za-z0-9_~-]+)/);
+  if (!match) return false;
+  try {
+    const b64 = match[1].replace(/-/g, '+').replace(/~/g, '/').replace(/_/g, '=');
+    const jsonStr = atob(b64);
+    const policy = JSON.parse(jsonStr);
+    const dateLessThan = policy?.Statement?.[0]?.Condition?.DateLessThan?.['AWS:EpochTime'];
+    if (dateLessThan && typeof dateLessThan === 'number') {
+      return (dateLessThan * 1000) <= (Date.now() + 60000);
+    }
+  } catch (_) {}
+  return false;
+}
+
 // In-memory cache for ultra-fast navigation
 const memoryCache = new Map();
 
@@ -442,13 +461,22 @@ export const pwApiService = {
         );
         if (sObj && Array.isArray(sObj.folders)) {
           const fObj = sObj.folders.find(f => String(f.id) === String(chapterId) || String(f.title) === String(folderTitle));
-          if (fObj && Array.isArray(fObj.items) && fObj.items.length > 0) {
-            cachedItems = fObj.items.map(it => ({
-              ...it,
-              folder_path: folderTitle || it.folder_path,
-              subject_name: subject.subject_name || subject.subject || it.subject_name
-            }));
-          }
+            cachedItems = fObj.items.map(it => {
+              let itemUrl = it.url || '';
+              if (itemUrl.startsWith('/manifest/') || itemUrl.startsWith('/pw/manifest/')) {
+                itemUrl = `${activeBaseUrl}${itemUrl}`;
+              }
+              // If the CloudFront signature in the cached stream is expired, clear it so it triggers fresh on-demand resolution
+              if (isCloudFrontSignatureExpired(itemUrl) || isCloudFrontSignatureExpired(it.stream_url)) {
+                itemUrl = '';
+              }
+              return {
+                ...it,
+                url: itemUrl,
+                folder_path: folderTitle || it.folder_path,
+                subject_name: subject.subject_name || subject.subject || it.subject_name
+              };
+            });
         }
       }
     }
@@ -640,9 +668,13 @@ export const pwApiService = {
 
     if (typeof batchIdOrItem === 'object' && batchIdOrItem !== null) {
       const it = batchIdOrItem;
-      // Instant return if stream & keys are already pre-resolved in Firebase RTDB
+      // Instant return if stream & keys are already pre-resolved in Firebase RTDB AND signature is not expired
       const directStream = it.stream_url || it.video_url;
-      if (directStream && (directStream.includes('.mpd') || directStream.includes('.m3u8') || directStream.includes('.mp4'))) {
+      if (
+        directStream &&
+        !isCloudFrontSignatureExpired(directStream) &&
+        (directStream.includes('.mpd') || directStream.includes('.m3u8') || directStream.includes('.mp4'))
+      ) {
         const manifestUrl = directStream.startsWith('http') ? directStream : `${activeBaseUrl}${directStream.startsWith('/') ? '' : '/'}${directStream}`;
         return {
           manifestUrl,

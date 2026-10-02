@@ -35,6 +35,40 @@ import './YouTubePlayer.css';
 
 const ImmersiveMode = registerPlugin('ImmersiveMode');
 
+// High-speed Cloudflare Edge Worker cluster for Physics Wallah video streaming
+const PW_WORKER_GATEWAYS = [
+  'https://nextbridgeapi.adsbackend01.workers.dev',
+  'https://nextbridgeapi.adsbackend02.workers.dev',
+  'https://nextbridgeapi.adsbackend03.workers.dev',
+  'https://nextbridgeapi.adsbackend04.workers.dev',
+  'https://nextbridgeapi.adsbackend05.workers.dev',
+  'https://nextbridgeapi.adsbackend06.workers.dev'
+];
+
+function resolveWorkerManifestUrl(rawUrl, workerIndex = 0) {
+  if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+  const workerBase = PW_WORKER_GATEWAYS[workerIndex % PW_WORKER_GATEWAYS.length];
+
+  if (rawUrl.startsWith('/manifest/') || rawUrl.startsWith('/pw/manifest/')) {
+    return `${workerBase}${rawUrl}`;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    // If the manifest URL accidentally targets the Netlify SPA host or local window origin, force it to Cloudflare workers
+    if (
+      (typeof window !== 'undefined' && (parsed.origin === window.location.origin || parsed.host === window.location.host)) ||
+      parsed.hostname.includes('netlify.app')
+    ) {
+      if (parsed.pathname.includes('/manifest/')) {
+        return `${workerBase}${parsed.pathname}${parsed.search}`;
+      }
+    }
+  } catch (_) {}
+
+  return rawUrl;
+}
+
 export default function YouTubePlayerCore({
   item,
   url,
@@ -398,7 +432,8 @@ export default function YouTubePlayerCore({
     const video = videoRef.current;
     if (!video) return;
 
-    const targetUrl = offlineUrl || (item?.hlsUrl && item.hlsUrl.includes('.m3u8') ? item.hlsUrl : convertDownloadUrlToHls(url || item?.url));
+    const rawTarget = offlineUrl || (item?.hlsUrl && item.hlsUrl.includes('.m3u8') ? item.hlsUrl : convertDownloadUrlToHls(url || item?.url));
+    const targetUrl = resolveWorkerManifestUrl(rawTarget, 0);
 
     // Guard: Do not attempt to initialize video playback for empty URLs or PDF documents
     if (!targetUrl || targetUrl.includes('/api/lxpdf') || targetUrl.includes('lxpdf') || targetUrl.toLowerCase().endsWith('.pdf')) {
@@ -499,8 +534,36 @@ export default function YouTubePlayerCore({
             setIsBuffering(Boolean(event.buffering));
           });
 
-          // Intercept and sanitize DASH MPD manifests with unescaped ampersands in XML attributes
+          let currentWorkerIdx = 0;
+
+          // Networking Engine: Guard requests and sanitize manifest responses
           const netEngine = shakaPlayer.getNetworkingEngine();
+          if (netEngine && typeof netEngine.registerRequestFilter === 'function') {
+            netEngine.registerRequestFilter((type, request) => {
+              for (let i = 0; i < request.uris.length; i++) {
+                const uri = request.uris[i];
+                if (!uri) continue;
+                if (uri.startsWith('/manifest/') || uri.startsWith('/pw/manifest/')) {
+                  const base = PW_WORKER_GATEWAYS[currentWorkerIdx % PW_WORKER_GATEWAYS.length];
+                  request.uris[i] = `${base}${uri}`;
+                } else {
+                  try {
+                    const u = new URL(uri);
+                    if (
+                      (typeof window !== 'undefined' && (u.origin === window.location.origin || u.host === window.location.host)) ||
+                      u.hostname.includes('netlify.app')
+                    ) {
+                      if (u.pathname.includes('/manifest/')) {
+                        const base = PW_WORKER_GATEWAYS[currentWorkerIdx % PW_WORKER_GATEWAYS.length];
+                        request.uris[i] = `${base}${u.pathname}${u.search}`;
+                      }
+                    }
+                  } catch (_) {}
+                }
+              }
+            });
+          }
+
           if (netEngine && typeof netEngine.registerResponseFilter === 'function') {
             netEngine.registerResponseFilter((type, response) => {
               if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST && response.data) {
@@ -517,8 +580,26 @@ export default function YouTubePlayerCore({
             });
           }
 
-          // Load manifest directly at initialSeek
-          await shakaPlayer.load(targetUrl, initialSeek > 0 ? initialSeek : undefined);
+          // Multi-worker failover: try workers 01 to 06 in sequence if an edge worker fails or throttles
+          let loadSuccess = false;
+          let lastLoadError = null;
+
+          for (let attempt = 0; attempt < PW_WORKER_GATEWAYS.length; attempt++) {
+            currentWorkerIdx = attempt;
+            const workerManifestUrl = resolveWorkerManifestUrl(targetUrl, attempt);
+            try {
+              await shakaPlayer.load(workerManifestUrl, initialSeek > 0 ? initialSeek : undefined);
+              loadSuccess = true;
+              break;
+            } catch (err) {
+              lastLoadError = err;
+              console.warn(`[Shaka] Worker ${PW_WORKER_GATEWAYS[attempt]} failed: ${err?.message || err}. Retrying fallback worker...`);
+            }
+          }
+
+          if (!loadSuccess && lastLoadError) {
+            throw lastLoadError;
+          }
           if (isDisposed) return;
 
           // Re-apply playback speed right after load to override browser reset
