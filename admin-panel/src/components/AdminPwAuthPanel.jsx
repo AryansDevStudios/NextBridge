@@ -436,7 +436,11 @@ export default function AdminPwAuthPanel() {
                       videoId: it.videoId || '',
                       vUrl: it.vUrl || it.url || ''
                     });
-                    if (vidRes && vidRes.url) {
+                    const isValidSig = vidRes?.url && (
+                      !vidRes.url.includes('sig=') ||
+                      (!vidRes.url.includes('sig=&') && !vidRes.url.endsWith('sig='))
+                    );
+                    if (vidRes && vidRes.url && isValidSig) {
                       it.url = vidRes.url;
                       it.stream_url = vidRes.url;
                       it.video_url = vidRes.url;
@@ -449,6 +453,8 @@ export default function AdminPwAuthPanel() {
                       totalKeysResolved++;
                       setSyncProgress(prev => ({ ...prev, keysResolved: totalKeysResolved }));
                       addLog('success', `  🔑 Pre-resolved keys for "${it.title.substring(0, 35)}..."`);
+                    } else if (vidRes && vidRes.url && !isValidSig) {
+                      addLog('warn', `  ⚠️ Skipping "${it.title.substring(0, 35)}..." - Upstream returned empty signature`);
                     }
                   } catch (_) {}
                 }
@@ -583,7 +589,11 @@ export default function AdminPwAuthPanel() {
                   videoId: d.videoDetails?._id || '',
                   vUrl: d.url || d.videoDetails?.videoUrl || ''
                 });
-                if (vidRes && vidRes.url) {
+                const isValidSig = vidRes?.url && (
+                  !vidRes.url.includes('sig=') ||
+                  (!vidRes.url.includes('sig=&') && !vidRes.url.endsWith('sig='))
+                );
+                if (vidRes && vidRes.url && isValidSig) {
                   streamUrl = vidRes.url;
                   clearKeys = vidRes.clearKeys || null;
                   totalKeysResolved++;
