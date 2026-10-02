@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.15';
-export const CURRENT_LATEST_CODE = 30315;
+export const CURRENT_LATEST_VERSION = '3.3.16';
+export const CURRENT_LATEST_CODE = 30316;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.15',
-  latestVersionCode: 30315,
+  latestAppVersion: '3.3.16',
+  latestVersionCode: 30316,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.15: 4-tier proxy waterfall prioritizing Cloudflare Edge Workers cluster, Netlify Edge CDN, Render, and Archive.'
+  releaseNotes: '• Version 3.3.16: DASH MPD XML manifest entity sanitization and video playback safeguards.'
 };
 
 /**

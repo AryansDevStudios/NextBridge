@@ -400,6 +400,11 @@ export default function YouTubePlayerCore({
 
     const targetUrl = offlineUrl || (item?.hlsUrl && item.hlsUrl.includes('.m3u8') ? item.hlsUrl : convertDownloadUrlToHls(url || item?.url));
 
+    // Guard: Do not attempt to initialize video playback for empty URLs or PDF documents
+    if (!targetUrl || targetUrl.includes('/api/lxpdf') || targetUrl.includes('lxpdf') || targetUrl.toLowerCase().endsWith('.pdf')) {
+      return;
+    }
+
     // Apply initial speed, volume, and pitch preservation
     applySpeed(playbackSpeedRef.current);
     video.volume = volume;
@@ -493,6 +498,24 @@ export default function YouTubePlayerCore({
           shakaPlayer.addEventListener('buffering', (event) => {
             setIsBuffering(Boolean(event.buffering));
           });
+
+          // Intercept and sanitize DASH MPD manifests with unescaped ampersands in XML attributes
+          const netEngine = shakaPlayer.getNetworkingEngine();
+          if (netEngine && typeof netEngine.registerResponseFilter === 'function') {
+            netEngine.registerResponseFilter((type, response) => {
+              if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST && response.data) {
+                try {
+                  const text = shaka.util.StringUtils.fromUTF8(response.data);
+                  if (text && text.includes('<MPD') && text.includes('&')) {
+                    const sanitized = text.replace(/&(?!(amp|lt|gt|quot|apos);)/g, '&amp;');
+                    if (sanitized !== text) {
+                      response.data = shaka.util.StringUtils.toUTF8(sanitized);
+                    }
+                  }
+                } catch (_) {}
+              }
+            });
+          }
 
           // Load manifest directly at initialSeek
           await shakaPlayer.load(targetUrl, initialSeek > 0 ? initialSeek : undefined);

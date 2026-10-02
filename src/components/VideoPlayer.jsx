@@ -68,13 +68,30 @@ const VideoPlayer = ({ item, onClose, user }) => {
   const [pdfDownloadError, setPdfDownloadError] = useState('');
 
   // ── Video Resolution State ──
-  const [resolvedVideoItem, setResolvedVideoItem] = useState(item);
-  const [isResolvingVideo, setIsResolvingVideo] = useState(false);
+  const isVideoNeedingResolution = Boolean(
+    item.type !== 'pdf' &&
+    item.isDynamicPw && (
+      !item.url ||
+      item.url === '' ||
+      item.url.includes('/api/lxpdf') ||
+      item.url.includes('lxpdf') ||
+      item.url.toLowerCase().endsWith('.pdf') ||
+      (item.stream_url && (item.stream_url.includes('/api/lxpdf') || item.stream_url.includes('lxpdf')))
+    )
+  );
+
+  const [resolvedVideoItem, setResolvedVideoItem] = useState(() => {
+    if (isVideoNeedingResolution) {
+      return { ...item, url: '' };
+    }
+    return item;
+  });
+  const [isResolvingVideo, setIsResolvingVideo] = useState(isVideoNeedingResolution);
   const [videoResolveError, setVideoResolveError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
-    if (item.type !== 'pdf' && item.isDynamicPw && (!item.url || item.url === '')) {
+    if (isVideoNeedingResolution) {
       setIsResolvingVideo(true);
       pwApiService.getVideoPlaybackInfo(item).then(({ manifestUrl, clearKeys }) => {
         if (isMounted) {
@@ -93,9 +110,12 @@ const VideoPlayer = ({ item, onClose, user }) => {
           setIsResolvingVideo(false);
         }
       });
+    } else {
+      setResolvedVideoItem(item);
+      setIsResolvingVideo(false);
     }
     return () => { isMounted = false; };
-  }, [item]);
+  }, [item, isVideoNeedingResolution]);
 
   const isDirectCloudFrontPdf = Boolean(
     item.type === 'pdf' &&

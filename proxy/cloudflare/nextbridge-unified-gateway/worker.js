@@ -1306,10 +1306,14 @@ async function handlePwManifest(url, request, env, ctx, prefix = '') {
   if (sigQuery) {
     const qClean = sigQuery.replace(/^\?/, '');
     const hostParam = host !== DEFAULT_CF_HOST ? `&host=${encodeURIComponent(host)}` : '';
-    text = text.replace(/initialization="([^"?]+)"/g, (_m, p1) => `initialization="${p1}?${qClean}${hostParam}"`);
-    text = text.replace(/media="([^"?]+)"/g, (_m, p1) => `media="${p1}?${qClean}${hostParam}"`);
-    text = text.replace(/sourceURL="([^"?]+)"/g, (_m, p1) => `sourceURL="${p1}?${qClean}${hostParam}"`);
+    const qXml = (qClean + hostParam).replace(/&(?!(amp|lt|gt|quot|apos);)/g, '&amp;');
+    text = text.replace(/initialization="([^"?]+)"/g, (_m, p1) => `initialization="${p1}?${qXml}"`);
+    text = text.replace(/media="([^"?]+)"/g, (_m, p1) => `media="${p1}?${qXml}"`);
+    text = text.replace(/sourceURL="([^"?]+)"/g, (_m, p1) => `sourceURL="${p1}?${qXml}"`);
   }
+
+  // Ensure all remaining bare ampersands inside attributes in the XML document are safely escaped
+  text = text.replace(/&(?!(amp|lt|gt|quot|apos);)/g, '&amp;');
 
   return new Response(text, {
     status: 200,
