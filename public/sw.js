@@ -15,6 +15,11 @@ const SHELL_ASSETS = [
   '/index.html',
   '/manifest.json',
   '/favicon.png',
+  '/pdfjs/web/viewer.html',
+  '/pdfjs/web/viewer.css',
+  '/pdfjs/web/viewer.js',
+  '/pdfjs/build/pdf.js',
+  '/pdfjs/build/pdf.worker.js'
 ];
 
 // ─── IndexedDB helpers (mirrors Capacitor Filesystem web adapter) ──────────────

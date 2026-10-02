@@ -59,6 +59,8 @@ async function buildAndConsolidate() {
 /api/pw-static/* https://static.pw.live/:splat 200!
 /api/pw-gateway/* https://nexthope-pw.space-z.ai/:splat 200!
 /api/course-proxy/* https://course.nexttoppers.com/:splat 200!
+/api/lxpdf/* https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/:splat 200!
+/api/lxpdf https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf 200!
 /admin/* /admin/index.html 200
 /* /index.html 200
   `.trim();

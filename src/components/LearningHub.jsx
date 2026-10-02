@@ -59,6 +59,7 @@ import { APP_VERSION } from '../utils/version';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { notificationService } from '../services/NotificationService';
+import { getUrlParams, updateUrlParams } from '../utils/navigationHelper';
 
 const FIREBASE_DB_URL = "https://nxttopperindexdb-default-rtdb.asia-southeast1.firebasedatabase.app";
 
@@ -93,7 +94,15 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState(null);
-  const [activeTab, setActiveTab] = useState('courses'); // 'batches' | 'courses' | 'textbook' | 'pyq' | 'history' | 'downloads'
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const params = getUrlParams();
+      if (params.tab && ['courses', 'batches', 'textbook', 'pyq', 'history', 'downloads'].includes(params.tab)) {
+        return params.tab;
+      }
+    } catch (_) {}
+    return 'courses';
+  });
 
   // Batch Permissions & Active Batch State
   const allowedBatchIds = useMemo(() => {
@@ -106,6 +115,10 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
 
   const [activeBatchId, setActiveBatchId] = useState(() => {
     try {
+      const params = getUrlParams();
+      if (params.batch && allowedBatchIds.includes(String(params.batch))) {
+        return String(params.batch);
+      }
       const saved = localStorage.getItem('last_selected_batch_id');
       if (saved && allowedBatchIds.includes(String(saved))) {
         return String(saved);
@@ -123,6 +136,10 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       setActiveBatchId(allowedBatchIds[0]);
     }
   }, [allowedBatchIds]);
+
+  useEffect(() => {
+    updateUrlParams({ tab: activeTab, batch: activeBatchId }, true);
+  }, [activeTab, activeBatchId]);
 
   const [pwItemsMap, setPwItemsMap] = useState({});
   const [pwLoading, setPwLoading] = useState(false);
@@ -600,7 +617,13 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     if (Capacitor.isNativePlatform()) {
       PrivacyScreen.disable().catch(() => {});
     }
-    setPlayingVideo(null);
+    const params = getUrlParams();
+    if (params.play && window.history.length > 1) {
+      window.history.back();
+    } else {
+      updateUrlParams({ play: null, type: null });
+      setPlayingVideo(null);
+    }
   };
 
   // Load downloaded lectures from device registry
@@ -697,61 +720,30 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     const setupBackButton = async () => {
       try {
         backListener = await App.addListener('backButton', () => {
-          // 1. If video or PDF player is open
-          if (playingVideoRef.current) {
-            if (document.fullscreenElement) {
-              document.exitFullscreen().catch(() => {});
-              return;
-            }
-            closeVideo();
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
             return;
           }
 
-          // 2. If in Batches tab
-          if (activeTabRef.current === 'batches') {
-            if (navigator.onLine && allowedSections.courses) {
-              setActiveTab('courses');
-            } else {
-              setActiveTab('downloads');
-            }
+          const params = getUrlParams();
+          const isDeep = Boolean(
+            params.play ||
+            params.chapter ||
+            params.subject ||
+            params.folder ||
+            playingVideoRef.current ||
+            (params.tab && params.tab !== 'courses') ||
+            (currentPathRef.current && currentPathRef.current.length > 0) ||
+            (downloadPathRef.current && downloadPathRef.current.length > 0) ||
+            searchQueryRef.current
+          );
+
+          if (isDeep && window.history.length > 1) {
+            window.history.back();
             return;
           }
 
-          // 3. If in History tab
-          if (activeTabRef.current === 'history') {
-            if (navigator.onLine && allowedSections.courses) {
-              setActiveTab('courses');
-            } else {
-              setActiveTab('downloads');
-            }
-            return;
-          }
-
-          // 3. If in Downloads tab
-          if (activeTabRef.current === 'downloads') {
-            if (downloadPathRef.current && downloadPathRef.current.length > 0) {
-              setDownloadPath(prev => prev.slice(0, -1));
-              return;
-            }
-            if (navigator.onLine && allowedSections.courses) {
-              setActiveTab('courses');
-            }
-            return;
-          }
-
-          // 4. If searching, clear search query
-          if (searchQueryRef.current) {
-            setSearchQuery('');
-            return;
-          }
-
-          // 5. If inside a folder hierarchy, go up one folder
-          if (currentPathRef.current && currentPathRef.current.length > 0) {
-            setCurrentPath(prev => prev.slice(0, -1));
-            return;
-          }
-
-          // 6. At root, exit app
+          // At root, exit app
           App.exitApp();
         });
       } catch (e) {
@@ -768,25 +760,42 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     };
   }, [allowedSections.courses]);
 
-  // Web fallback for browser popstate
+  // Universal popstate for browser back & Capacitor back events
   useEffect(() => {
     const handlePop = () => {
-      if (playingVideoRef.current) {
+      const params = getUrlParams();
+
+      // 1. If player was open and play is not in URL, close player
+      if (!params.play && playingVideoRef.current) {
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
-          return;
+        }
+        if (Capacitor.isNativePlatform()) {
+          PrivacyScreen.disable().catch(() => {});
         }
         setPlayingVideo(null);
         return;
       }
+
+      // 2. Synchronize active tab from URL
+      if (params.tab && params.tab !== activeTabRef.current) {
+        setActiveTab(params.tab);
+        return;
+      }
+
+      // 3. Batches tab back
       if (activeTabRef.current === 'batches') {
         setActiveTab(allowedSections.courses ? 'courses' : 'downloads');
         return;
       }
+
+      // 4. History tab back
       if (activeTabRef.current === 'history') {
         setActiveTab(allowedSections.courses ? 'courses' : 'downloads');
         return;
       }
+
+      // 5. Downloads tab back
       if (activeTabRef.current === 'downloads') {
         if (downloadPathRef.current && downloadPathRef.current.length > 0) {
           setDownloadPath(prev => prev.slice(0, -1));
@@ -795,19 +804,21 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
         setActiveTab('courses');
         return;
       }
+
+      // 6. Search query back
       if (searchQueryRef.current) {
         setSearchQuery('');
         return;
       }
+
+      // 7. Folder hierarchy back
       if (currentPathRef.current && currentPathRef.current.length > 0) {
         setCurrentPath(prev => prev.slice(0, -1));
       }
     };
 
-    if (!Capacitor.isNativePlatform()) {
-      window.addEventListener('popstate', handlePop);
-      return () => window.removeEventListener('popstate', handlePop);
-    }
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
   }, [allowedSections.courses]);
 
   const fetchCourseData = async (batchIdToFetch) => {
@@ -1018,13 +1029,14 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
     setNtFoldersMap({});
     fetchCourseData(strId);
     setActiveTab('courses');
+    updateUrlParams({ tab: 'courses', batch: strId, subject: null, chapter: null, play: null, type: null, folder: null });
   };
 
   const handleFolderClick = (subjectId, itemOrFolder) => {
-    if (!Capacitor.isNativePlatform()) {
-      window.history.pushState({ folder: true }, '');
-    }
-    setCurrentPath([...currentPath, { subjectId, ...itemOrFolder }]);
+    const nextPath = [...currentPath, { subjectId, ...itemOrFolder }];
+    const folderSlug = nextPath.map(f => f.name || f.title || f.id).join('/');
+    updateUrlParams({ folder: encodeURIComponent(folderSlug) });
+    setCurrentPath(nextPath);
     setSearchQuery('');
   };
 
@@ -1060,10 +1072,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       return;
     }
 
-    if (!Capacitor.isNativePlatform()) {
-      window.history.pushState({ player: true }, '');
-    }
-
+    updateUrlParams({ play: item.id, type: item.type || 'video' });
     setPlayingVideo(item);
   };
 
@@ -1074,9 +1083,7 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       return;
     }
 
-    if (!Capacitor.isNativePlatform()) {
-      window.history.pushState({ player: true }, '');
-    }
+    updateUrlParams({ play: item.id, type: item.type || 'video' });
 
     if (item.type === 'pdf') {
       let pdfUrl = item.url;

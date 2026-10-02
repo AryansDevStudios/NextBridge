@@ -21,11 +21,12 @@ import {
   Trash2,
   Megaphone,
   Layers,
-  Key
+  Key,
+  Server
 } from 'lucide-react';
 import StudentModal from './StudentModal';
 import AdminCourseLibrary from './AdminCourseLibrary';
-import RenderSyncPanel from './RenderSyncPanel';
+import AdminNtHubPanel from './AdminNtHubPanel';
 import AdminAnalytics from './AdminAnalytics';
 import BroadcastUpdateModal from './BroadcastUpdateModal';
 import AdminNoticeBoard from './AdminNoticeBoard';
@@ -238,7 +239,36 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const [activeTab, setActiveTab] = useState('students'); // 'students', 'analytics', 'library', 'sync'
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p && ['students', 'analytics', 'library', 'notices', 'nt-hub', 'sync', 'pw-auth'].includes(p)) {
+        return p === 'sync' ? 'nt-hub' : p;
+      }
+    } catch (_) {}
+    return 'students';
+  });
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.pushState({ tab }, '', url.toString());
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    const handlePop = () => {
+      try {
+        const p = new URLSearchParams(window.location.search).get('tab');
+        if (p) setActiveTab(p === 'sync' ? 'nt-hub' : p);
+        else setActiveTab('students');
+      } catch (_) {}
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f3f4f6]">
@@ -261,46 +291,46 @@ export default function Dashboard({ onLogout }) {
             </button>
           </div>
 
-          {/* Navigation Tabs (Full width 5-column grid on mobile, inline on desktop) */}
+          {/* Navigation Tabs (Full width 6-column grid on mobile, inline on desktop) */}
           <div className="w-full md:w-auto flex items-center gap-2">
-            <div className="grid grid-cols-5 gap-1 w-full md:flex md:w-auto bg-[#181818] md:bg-transparent p-1 md:p-0 rounded-xl md:rounded-none border md:border-0 border-[#262626]">
+            <div className="grid grid-cols-6 gap-1 w-full md:flex md:w-auto bg-[#181818] md:bg-transparent p-1 md:p-0 rounded-xl md:rounded-none border md:border-0 border-[#262626]">
               <button 
-                onClick={() => setActiveTab('students')}
+                onClick={() => handleTabChange('students')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'students' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Users size={14} />
                 <span className="hidden sm:inline">Students</span>
               </button>
               <button 
-                onClick={() => setActiveTab('analytics')}
+                onClick={() => handleTabChange('analytics')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'analytics' ? 'bg-[#262626] text-[#f59e0b] border border-[#f59e0b]/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Trophy size={14} />
                 <span className="hidden sm:inline">Analytics</span>
               </button>
               <button 
-                onClick={() => setActiveTab('library')}
+                onClick={() => handleTabChange('library')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'library' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <BookOpen size={14} />
                 <span className="hidden sm:inline">Library</span>
               </button>
               <button 
-                onClick={() => setActiveTab('notices')}
+                onClick={() => handleTabChange('notices')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'notices' ? 'bg-[#262626] text-amber-400 border border-amber-500/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Megaphone size={14} />
                 <span className="hidden sm:inline">Notices</span>
               </button>
               <button 
-                onClick={() => setActiveTab('sync')}
-                className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'sync' ? 'bg-[#262626] text-white border border-[#3a3a3a] shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
+                onClick={() => handleTabChange('nt-hub')}
+                className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'nt-hub' || activeTab === 'sync' ? 'bg-[#262626] text-emerald-400 border border-emerald-500/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
-                <RefreshCw size={14} />
-                <span className="hidden sm:inline">Sync</span>
+                <Server size={14} />
+                <span className="hidden sm:inline">NT Hub</span>
               </button>
               <button 
-                onClick={() => setActiveTab('pw-auth')}
+                onClick={() => handleTabChange('pw-auth')}
                 className={`flex items-center justify-center space-x-1 py-2 md:py-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition text-center ${activeTab === 'pw-auth' ? 'bg-[#262626] text-amber-400 border border-amber-500/30 shadow-sm' : 'text-[#9ca3af] hover:text-white'}`}
               >
                 <Key size={14} />
@@ -793,8 +823,8 @@ export default function Dashboard({ onLogout }) {
           <AdminNoticeBoard />
         )}
 
-        {activeTab === 'sync' && (
-          <RenderSyncPanel />
+        {(activeTab === 'nt-hub' || activeTab === 'sync') && (
+          <AdminNtHubPanel />
         )}
 
         {activeTab === 'pw-auth' && (

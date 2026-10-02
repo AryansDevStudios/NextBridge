@@ -27,6 +27,18 @@
   force = true
 
 [[redirects]]
+  from = "/api/lxpdf"
+  to = "https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/lxpdf/*"
+  to = "https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
   status = 200

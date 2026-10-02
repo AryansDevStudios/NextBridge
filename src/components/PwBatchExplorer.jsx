@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { pwApiService } from '../services/PwApiService';
 import { getBatchDisplayName } from '../utils/batchConfig';
+import { getUrlParams, updateUrlParams } from '../utils/navigationHelper';
 
 /**
  * Subject visual config matching dark-themed aesthetics with glowing accents
@@ -181,7 +182,7 @@ export default function PwBatchExplorer({
     });
   };
 
-  // 1. Fetch Batch Subjects
+  // 1. Fetch Batch Subjects & Deep-Link Hydration
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
@@ -191,6 +192,20 @@ export default function PwBatchExplorer({
         if (isMounted) {
           setSubjects(subs);
           setLoading(false);
+
+          // Deep-link hydration from URL query params
+          const params = getUrlParams();
+          if (params.subject && subs.length > 0) {
+            const match = subs.find(s => 
+              String(s.subject_id || s.id) === String(params.subject) || 
+              String(s.slug) === String(params.subject) ||
+              s.subject_name?.toLowerCase() === decodeURIComponent(params.subject).toLowerCase()
+            );
+            if (match) {
+              setSelectedSubject(match);
+              setLevel(params.chapter ? 'content' : 'chapters');
+            }
+          }
         }
       })
       .catch(err => {
@@ -201,23 +216,81 @@ export default function PwBatchExplorer({
     return () => { isMounted = false; };
   }, [batchId]);
 
-  // 2. Fetch Chapters when entering a Subject
+  // 2. Fetch Chapters when entering a Subject & Hydrate Chapter from URL
   useEffect(() => {
     if (!selectedSubject) return;
     const subId = selectedSubject.subject_id || selectedSubject.id;
-    if (chaptersMap[subId]) return;
+    if (chaptersMap[subId]) {
+      const params = getUrlParams();
+      if (params.chapter && !selectedChapter) {
+        const chaps = chaptersMap[subId];
+        const matchCh = chaps.find(c => 
+          String(c.chapterId || c.id) === String(params.chapter) || 
+          String(c.slug) === String(params.chapter) ||
+          c.title?.toLowerCase() === decodeURIComponent(params.chapter).toLowerCase()
+        );
+        if (matchCh) {
+          setSelectedChapter(matchCh);
+          setLevel('content');
+        }
+      }
+      return;
+    }
 
     setLoading(true);
     pwApiService.getSubjectChapters(batchId, selectedSubject)
       .then(chaps => {
         setChaptersMap(prev => ({ ...prev, [subId]: chaps }));
         setLoading(false);
+
+        const params = getUrlParams();
+        if (params.chapter) {
+          const matchCh = chaps.find(c => 
+            String(c.chapterId || c.id) === String(params.chapter) || 
+            String(c.slug) === String(params.chapter) ||
+            c.title?.toLowerCase() === decodeURIComponent(params.chapter).toLowerCase()
+          );
+          if (matchCh) {
+            setSelectedChapter(matchCh);
+            setLevel('content');
+          }
+        }
       })
       .catch(err => {
         console.error('Failed to load PW chapters:', err);
         setLoading(false);
       });
-  }, [selectedSubject, batchId]);
+  }, [selectedSubject, batchId, selectedChapter]);
+
+  // Popstate listener to sync back navigation with URL
+  useEffect(() => {
+    const handlePop = () => {
+      const params = getUrlParams();
+      const subParam = params.subject;
+      const chParam = params.chapter;
+
+      if (!subParam) {
+        setLevel('subjects');
+        setSelectedSubject(null);
+        setSelectedChapter(null);
+      } else if (!chParam) {
+        setLevel('chapters');
+        setSelectedChapter(null);
+        if (subjects.length > 0) {
+          const match = subjects.find(s => 
+            String(s.subject_id || s.id) === String(subParam) || 
+            String(s.slug) === String(subParam)
+          );
+          if (match) setSelectedSubject(match);
+        }
+      } else {
+        setLevel('content');
+      }
+    };
+
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [subjects]);
 
   // 3. Fetch Content when entering a Chapter (SWR with Realtime Live Revalidation)
   useEffect(() => {
@@ -251,6 +324,8 @@ export default function PwBatchExplorer({
 
   // Handlers
   const handleOpenSubject = (subject) => {
+    const subId = subject.subject_id || subject.id;
+    updateUrlParams({ subject: subId, chapter: null, play: null, type: null });
     setSelectedSubject(subject);
     setSelectedChapter(null);
     setLevel('chapters');
@@ -259,6 +334,9 @@ export default function PwBatchExplorer({
   };
 
   const handleOpenChapter = (chapter, defaultFilter = 'all') => {
+    const subId = selectedSubject?.subject_id || selectedSubject?.id;
+    const chId = chapter.chapterId || chapter.id;
+    updateUrlParams({ subject: subId, chapter: chId, play: null, type: null });
     setSelectedChapter(chapter);
     setLevel('content');
     setActiveContentFilter(defaultFilter);
@@ -268,12 +346,25 @@ export default function PwBatchExplorer({
   const handleBack = () => {
     setSearchQuery('');
     if (level === 'content') {
-      setLevel('chapters');
-      setSelectedChapter(null);
+      const params = getUrlParams();
+      if (params.chapter && window.history.length > 1) {
+        window.history.back();
+      } else {
+        updateUrlParams({ chapter: null, play: null, type: null });
+        setLevel('chapters');
+        setSelectedChapter(null);
+      }
     } else if (level === 'chapters') {
-      setLevel('subjects');
-      setSelectedSubject(null);
+      const params = getUrlParams();
+      if (params.subject && window.history.length > 1) {
+        window.history.back();
+      } else {
+        updateUrlParams({ subject: null, chapter: null, play: null, type: null });
+        setLevel('subjects');
+        setSelectedSubject(null);
+      }
     } else if (level === 'subjects') {
+      updateUrlParams({ subject: null, chapter: null, play: null, type: null });
       if (onBackToBatches) onBackToBatches();
     }
   };
@@ -445,7 +536,7 @@ export default function PwBatchExplorer({
 
     // Enriched allDpps (for DPPs tab)
     const enrichedAllDpps = dpps.map(d => {
-      const parentVid = videos.find(v => isResourceLinkedToVideo(d, vid));
+      const parentVid = videos.find(v => isResourceLinkedToVideo(d, v));
       const vidMeta = parentVid ? extractLectureMeta(parentVid.title) : null;
       return {
         ...d,
@@ -537,6 +628,7 @@ export default function PwBatchExplorer({
         <span
           className="breadcrumb-item"
           onClick={() => {
+            updateUrlParams({ subject: null, chapter: null, play: null, type: null });
             setLevel('subjects');
             setSelectedSubject(null);
             setSelectedChapter(null);
@@ -552,6 +644,7 @@ export default function PwBatchExplorer({
             <span
               className="breadcrumb-item"
               onClick={() => {
+                updateUrlParams({ chapter: null, play: null, type: null });
                 setLevel('chapters');
                 setSelectedChapter(null);
                 setSearchQuery('');

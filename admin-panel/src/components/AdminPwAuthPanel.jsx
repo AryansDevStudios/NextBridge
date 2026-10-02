@@ -129,7 +129,7 @@ export default function AdminPwAuthPanel() {
     dbUpdates: 0
   });
   const [consoleLogs, setConsoleLogs] = useState([]);
-  const consoleBottomRef = useRef(null);
+  const consoleContainerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
   // ── Auto Sync Config State ──
@@ -220,10 +220,10 @@ export default function AdminPwAuthPanel() {
     fetchSyncAuditLogs();
   }, []);
 
-  // Auto-scroll console
+  // Auto-scroll console strictly within its container (prevents window jumping)
   useEffect(() => {
-    if (consoleBottomRef.current) {
-      consoleBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (consoleContainerRef.current) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
     }
   }, [consoleLogs]);
 
@@ -1249,7 +1249,7 @@ export default function AdminPwAuthPanel() {
             </div>
           </div>
 
-          <div className="p-3 font-mono text-xs max-h-64 overflow-y-auto space-y-1 select-text custom-scrollbar">
+          <div ref={consoleContainerRef} className="p-3 font-mono text-xs max-h-64 overflow-y-auto space-y-1 select-text custom-scrollbar">
             {consoleLogs.length === 0 ? (
               <p className="text-[#525252] italic">Ready. Click "Start Sync Now" to run real-time crawler and key resolver.</p>
             ) : (
@@ -1267,7 +1267,6 @@ export default function AdminPwAuthPanel() {
                 );
               })
             )}
-            <div ref={consoleBottomRef} />
           </div>
         </div>
 

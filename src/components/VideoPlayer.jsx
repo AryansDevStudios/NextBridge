@@ -305,61 +305,118 @@ const VideoPlayer = ({ item, onClose, user }) => {
     };
   }, [item?.id, item?.isSecure, item?.preventScreenshots, item?.secureVideo]);
 
+// Module-level in-memory cache for resolved PDF blob URLs (0ms instant re-opening across lectures & notes)
+const pdfBlobCache = new Map();
+
+async function fetchVerifiedPdfBlob(candidates, signal) {
+  for (const url of candidates) {
+    if (!url) continue;
+    if (url.startsWith('blob:') || url.startsWith('file:') || url.startsWith('capacitor:')) {
+      return { blobUrl: url, blob: null };
+    }
+    try {
+      const res = await fetch(url, {
+        signal,
+        headers: { Accept: 'application/pdf,application/octet-stream,*/*' }
+      });
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      if (!blob || blob.size < 100) continue;
+      // Validate PDF header magic bytes "%PDF-"
+      const head = await blob.slice(0, 5).text().catch(() => '');
+      if (head.startsWith('%PDF') || blob.type === 'application/pdf') {
+        const blobUrl = URL.createObjectURL(blob);
+        return { blobUrl, blob };
+      }
+    } catch (_) {
+      // try next candidate URL
+    }
+  }
+  return null;
+}
+
   // PDF reading tracker
   useEffect(() => {
     if (item.type === 'pdf') {
       let isMounted = true;
+      const abortCtrl = new AbortController();
+
       const syncPdfUrl = async () => {
         try {
           setPdfResolveError('');
+          const cacheKey = String(item.id || item.url || '');
+          if (cacheKey && pdfBlobCache.has(cacheKey)) {
+            setResolvedPdfUrl(pdfBlobCache.get(cacheKey));
+            setIsResolvingPdf(false);
+            return;
+          }
+
+          setIsResolvingPdf(true);
+
           // 1. Check local offline download first
           const localUrl = await downloadManager.getPdfLocalUrl(item);
           if (isMounted && localUrl && localUrl !== item.url) {
+            if (cacheKey) pdfBlobCache.set(cacheKey, localUrl);
             setResolvedPdfUrl(localUrl);
             setIsResolvingPdf(false);
             return;
           }
 
+          let resolvedDirectUrl = item.url || '';
+
           // 2. Resolve NextToppers on-demand PDFs via edge pipeline
           if (isNtPdfNeedingResolution) {
-            setIsResolvingPdf(true);
-            const directUrl = await ntApiService.resolvePdfUrl(item);
-            if (isMounted) {
-              if (directUrl && !directUrl.includes('/dl/r/')) {
-                setResolvedPdfUrl(directUrl);
-                setIsResolvingPdf(false);
-              } else {
-                throw new Error('Unable to resolve direct PDF document from NextToppers edge pipeline.');
-              }
+            resolvedDirectUrl = await ntApiService.resolvePdfUrl(item);
+            if (!resolvedDirectUrl || resolvedDirectUrl.includes('/dl/r/')) {
+              throw new Error('Unable to resolve direct PDF document from NextToppers edge pipeline.');
             }
-            return;
+          } else if (item.isDynamicPw || (item.url || '').includes('lxpdf') || (item.url || '').includes('space-z.ai') || (item.url || '').includes('static.pw.live')) {
+            // 3. Resolve PW on-demand PDFs
+            resolvedDirectUrl = await pwApiService.resolvePdfUrl(item);
+            if (!resolvedDirectUrl) {
+              throw new Error('Unable to resolve document stream from Physics Wallah gateway.');
+            }
           }
 
-          // 3. Resolve PW on-demand PDFs
-          if (item.isDynamicPw || (item.url || '').includes('lxpdf') || (item.url || '').includes('space-z.ai') || (item.url || '').includes('static.pw.live')) {
-            setIsResolvingPdf(true);
-            const directUrl = await pwApiService.resolvePdfUrl(item);
-            if (isMounted) {
-              if (directUrl) {
-                setResolvedPdfUrl(directUrl);
-                setIsResolvingPdf(false);
-              } else {
-                throw new Error('Unable to resolve document stream from Physics Wallah gateway.');
-              }
-            }
+          // Build candidate URLs with proxy fallbacks
+          const cleanUrl = resolvedDirectUrl.startsWith('/api/lxpdf/') 
+            ? decodeURIComponent(resolvedDirectUrl.replace('/api/lxpdf/', ''))
+            : resolvedDirectUrl;
+
+          const candidates = [
+            resolvedDirectUrl,
+            cleanUrl !== resolvedDirectUrl ? cleanUrl : null,
+            toProxiedPdfUrl(cleanUrl),
+            `/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
+            `https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
+            `https://nextbridgeapi.adsbackend04.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
+            `https://nxttoppers-archive.onrender.com/api/proxy/pdf?url=${encodeURIComponent(cleanUrl)}`
+          ].filter(Boolean);
+
+          const result = await fetchVerifiedPdfBlob(candidates, abortCtrl.signal);
+          if (!isMounted) return;
+
+          if (result && result.blobUrl) {
+            if (cacheKey) pdfBlobCache.set(cacheKey, result.blobUrl);
+            setResolvedPdfUrl(result.blobUrl);
+            setIsResolvingPdf(false);
           } else {
-            // 4. Regular NextToppers / NCERT / CBSE PDFs
-            if (isMounted) {
-              setResolvedPdfUrl(item.url || '');
-              setIsResolvingPdf(false);
-            }
+            // Fallback to proxied URL if blob creation failed
+            const fallbackProxied = isNtPdfNeedingResolution 
+              ? ntApiService.toProxiedUrl(resolvedDirectUrl)
+              : toProxiedPdfUrl(resolvedDirectUrl);
+            setResolvedPdfUrl(fallbackProxied);
+            setIsResolvingPdf(false);
           }
         } catch (e) {
           console.warn('[VideoPlayer] PDF resolution error:', e);
           if (isMounted) {
             setIsResolvingPdf(false);
             setPdfResolveError(e.message || 'Failed to load PDF document');
-            if (item.url) setResolvedPdfUrl(isNtPdfNeedingResolution ? ntApiService.toProxiedUrl(item.url) : toProxiedPdfUrl(item.url));
+            if (item.url) {
+              const fallbackUrl = isNtPdfNeedingResolution ? ntApiService.toProxiedUrl(item.url) : toProxiedPdfUrl(item.url);
+              setResolvedPdfUrl(fallbackUrl);
+            }
           }
         }
       };
@@ -402,6 +459,7 @@ const VideoPlayer = ({ item, onClose, user }) => {
 
       return () => {
         isMounted = false;
+        try { abortCtrl.abort(); } catch (_) {}
         clearInterval(pdfInterval);
         flushPdfTime();
         unsub();
@@ -834,9 +892,22 @@ const VideoPlayer = ({ item, onClose, user }) => {
                     ? ntApiService.resolvePdfUrl(item) 
                     : pwApiService.resolvePdfUrl(item);
 
-                  resolvePromise.then(url => {
+                  resolvePromise.then(async url => {
                     if (url && !url.includes('/dl/r/')) {
-                      setResolvedPdfUrl(url);
+                      const cleanUrl = url.startsWith('/api/lxpdf/') ? decodeURIComponent(url.replace('/api/lxpdf/', '')) : url;
+                      const candidates = [
+                        url,
+                        cleanUrl !== url ? cleanUrl : null,
+                        toProxiedPdfUrl(cleanUrl),
+                        `/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
+                        `https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
+                        `https://nxttoppers-archive.onrender.com/api/proxy/pdf?url=${encodeURIComponent(cleanUrl)}`
+                      ].filter(Boolean);
+                      const res = await fetchVerifiedPdfBlob(candidates);
+                      const finalUrl = res?.blobUrl || (isNtPdfNeedingResolution ? ntApiService.toProxiedUrl(url) : toProxiedPdfUrl(url));
+                      const cacheKey = String(item.id || item.url || '');
+                      if (cacheKey && res?.blobUrl) pdfBlobCache.set(cacheKey, res.blobUrl);
+                      setResolvedPdfUrl(finalUrl);
                       setIsResolvingPdf(false);
                     } else {
                       setPdfResolveError('Retry failed. Upstream source unavailable.');
