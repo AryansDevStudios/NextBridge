@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.13';
-export const CURRENT_LATEST_CODE = 30313;
+export const CURRENT_LATEST_VERSION = '3.3.14';
+export const CURRENT_LATEST_CODE = 30314;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.13',
-  latestVersionCode: 30313,
+  latestAppVersion: '3.3.14',
+  latestVersionCode: 30314,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.13: Fix lecture/PDF click handlers, remove Live Sync button, and add Clear App Cache in Student Profile.'
+  releaseNotes: '• Version 3.3.14: Safe targeted cache cleaner preserving device binding and authentication, multi-layer web device ID persistence.'
 };
 
 /**

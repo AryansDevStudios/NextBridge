@@ -189,4 +189,7 @@ export const ntApiService = {
     folderCache.clear();
     pdfCache.clear();
   },
+  clearCaches() {
+    this.clearCache();
+  },
 };

@@ -234,40 +234,95 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       if (typeof pwApiService.clearCaches === 'function') {
         pwApiService.clearCaches();
       }
+      if (typeof ntApiService.clearCaches === 'function') {
+        ntApiService.clearCaches();
+      }
 
-      // 3. Clear temporary local storage keys without deleting downloads, auth, notes or history
-      const protectedKeys = [
-        'downloaded_lectures',
+      // 3. TARGETED Cache Clearing in localStorage ONLY:
+      // Only remove specific catalog, batch, and PDF cache keys.
+      // NEVER delete authentication credentials, device IDs, downloaded lectures, notes, or history.
+      const cacheKeyPrefixes = [
+        'pw_batches_',
+        'pw_subjects_',
+        'pw_chapters_',
+        'pw_items_',
+        'pw_schedule_',
+        'nt_batch_',
+        'nt_subjects_',
+        'nt_folders_',
+        'ncert_catalog_',
+        'pyq_catalog_',
+        'pdf_cache_',
+        'pdf_index_',
+        'pdf_blob_',
+        'cached_batch_'
+      ];
+
+      const exactCacheKeys = [
+        'pw_batches_cache',
+        'ncert_catalog_cache',
+        'cached_announcements'
+      ];
+
+      // Absolutely forbidden terms — if a key matches ANY of these, it must NEVER be touched
+      const strictlyForbiddenTerms = [
+        'device',
+        'dev_',
+        '_app_',
         'pat',
-        'student_pat',
+        'auth',
         'student',
         'user',
-        'auth_student',
-        'recent_watched_lectures',
-        'hidden_watch_history',
-        'local_daily_video_time',
-        'local_video_stats',
-        'notified_announcement_ids',
-        'last_read_announcement_time',
-        'last_selected_batch_id'
+        'admin',
+        'token',
+        'bound',
+        'download',
+        'history',
+        'watch',
+        'note',
+        'pos_',
+        'volume',
+        'speed',
+        'quality',
+        'stat',
+        'daily',
+        'last_selected'
       ];
 
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (!k) continue;
-        const isProtected = protectedKeys.includes(k) || 
-                            k.startsWith('video_notes_') || 
-                            k.startsWith('lecture_pos_') || 
-                            k.startsWith('video_pos_') ||
-                            k.startsWith('download_');
-        if (!isProtected) {
+
+        const lowerK = k.toLowerCase();
+        const isForbidden = strictlyForbiddenTerms.some(term => lowerK.includes(term));
+        if (isForbidden) continue;
+
+        const isExactMatch = exactCacheKeys.includes(k);
+        const isPrefixMatch = cacheKeyPrefixes.some(p => k.startsWith(p));
+
+        if (isExactMatch || isPrefixMatch) {
           keysToRemove.push(k);
         }
       }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
 
-      setCacheClearToast('✓ Cache cleared successfully! (Offline downloads preserved)');
+      keysToRemove.forEach(k => {
+        try { localStorage.removeItem(k); } catch (_) {}
+      });
+
+      // 4. Double safeguard: ensure device ID is firmly persisted
+      try {
+        let devId = localStorage.getItem('_app_device_id');
+        if (!devId) {
+          const match = document.cookie.match(/(?:^|;\s*)_app_device_id=([^;]+)/);
+          if (match && match[1]) {
+            devId = decodeURIComponent(match[1]);
+            localStorage.setItem('_app_device_id', devId);
+          }
+        }
+      } catch (_) {}
+
+      setCacheClearToast('✓ Cache cleared successfully! (Login & downloads preserved)');
       setTimeout(() => setCacheClearToast(''), 4000);
     } catch (e) {
       console.warn('Cache clearing error:', e);

@@ -326,6 +326,56 @@ export default function App() {
   };
 
 
+  const persistWebDeviceId = (id) => {
+    if (!id || typeof window === 'undefined') return;
+    try { localStorage.setItem('_app_device_id', id); } catch (_) {}
+    try { sessionStorage.setItem('_app_device_id', id); } catch (_) {}
+    try {
+      const d = new Date();
+      d.setTime(d.getTime() + (3650 * 24 * 60 * 60 * 1000)); // 10 years
+      document.cookie = `_app_device_id=${encodeURIComponent(id)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+    } catch (_) {}
+  };
+
+  const getPersistentWebDeviceId = () => {
+    if (typeof window === 'undefined') return 'dev_server_' + Date.now();
+    // 1. Check localStorage
+    let id = null;
+    try {
+      id = localStorage.getItem('_app_device_id');
+    } catch (_) {}
+    if (id) {
+      persistWebDeviceId(id);
+      return id;
+    }
+
+    // 2. Check document.cookie fallback
+    try {
+      const match = document.cookie.match(/(?:^|;\s*)_app_device_id=([^;]+)/);
+      if (match && match[1]) {
+        id = decodeURIComponent(match[1]);
+        if (id) {
+          persistWebDeviceId(id);
+          return id;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Check sessionStorage fallback
+    try {
+      id = sessionStorage.getItem('_app_device_id');
+      if (id) {
+        persistWebDeviceId(id);
+        return id;
+      }
+    } catch (_) {}
+
+    // 4. Generate fresh device ID and persist across all 3 layers
+    id = 'dev_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    persistWebDeviceId(id);
+    return id;
+  };
+
   const getDeviceData = async () => {
     try {
       let identifier = null;
@@ -343,11 +393,9 @@ export default function App() {
 
       // Robust persistent fallback for emulators or web previews
       if (!identifier) {
-        identifier = localStorage.getItem('_app_device_id');
-        if (!identifier) {
-          identifier = 'dev_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
-          localStorage.setItem('_app_device_id', identifier);
-        }
+        identifier = getPersistentWebDeviceId();
+      } else {
+        persistWebDeviceId(identifier);
       }
 
       try {
@@ -361,8 +409,7 @@ export default function App() {
       return combined;
     } catch (e) {
       console.warn('[Device] getDeviceData error, fallback generated:', e);
-      const fallbackId = localStorage.getItem('_app_device_id') || 'dev_fallback_' + Date.now();
-      localStorage.setItem('_app_device_id', fallbackId);
+      const fallbackId = getPersistentWebDeviceId();
       return { androidId: fallbackId, model: 'Android', osVersion: '14' };
     }
   };
@@ -834,6 +881,24 @@ export default function App() {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
               <RefreshCw size={18} /> Check Status Again
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsDeviceBound(false);
+                setErrorMsg('');
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                padding: '6px',
+                textAlign: 'center'
+              }}
+            >
+              Use a different PAT
             </button>
           </div>
         ) : (
