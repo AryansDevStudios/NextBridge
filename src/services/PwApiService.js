@@ -127,7 +127,16 @@ async function patchFirebaseChapterItems(batchId, subjectId, chapterId, updatedI
   } catch (_) {}
 }
 
+export function clearPwApiCaches() {
+  batchCache.clear();
+  memoryCache.clear();
+}
+
 export const pwApiService = {
+  clearCaches() {
+    clearPwApiCaches();
+  },
+
   /**
    * Fetch today's live/scheduled lectures on demand
    */

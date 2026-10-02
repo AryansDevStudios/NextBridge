@@ -155,6 +155,8 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [deleteModalItem, setDeleteModalItem] = useState(null);
   const [blockedDownloadItem, setBlockedDownloadItem] = useState(null);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheClearToast, setCacheClearToast] = useState('');
 
   // ── Notice Board & Announcements ──
   const [announcements, setAnnouncements] = useState([]);
@@ -211,6 +213,69 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
       localStorage.setItem('last_read_announcement_time', Date.now().toString());
       setUnreadNoticesCount(0);
     } catch (_) {}
+  };
+
+  const handleClearAllCaches = async () => {
+    setClearingCache(true);
+    try {
+      // 1. Clear Web Cache Storage (service worker & dynamic caches, preserving download caches)
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(
+          cacheKeys.map(key => {
+            if (!key.toLowerCase().includes('download')) {
+              return caches.delete(key);
+            }
+          })
+        );
+      }
+
+      // 2. Clear API memory caches
+      if (typeof pwApiService.clearCaches === 'function') {
+        pwApiService.clearCaches();
+      }
+
+      // 3. Clear temporary local storage keys without deleting downloads, auth, notes or history
+      const protectedKeys = [
+        'downloaded_lectures',
+        'pat',
+        'student_pat',
+        'student',
+        'user',
+        'auth_student',
+        'recent_watched_lectures',
+        'hidden_watch_history',
+        'local_daily_video_time',
+        'local_video_stats',
+        'notified_announcement_ids',
+        'last_read_announcement_time',
+        'last_selected_batch_id'
+      ];
+
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        const isProtected = protectedKeys.includes(k) || 
+                            k.startsWith('video_notes_') || 
+                            k.startsWith('lecture_pos_') || 
+                            k.startsWith('video_pos_') ||
+                            k.startsWith('download_');
+        if (!isProtected) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+
+      setCacheClearToast('✓ Cache cleared successfully! (Offline downloads preserved)');
+      setTimeout(() => setCacheClearToast(''), 4000);
+    } catch (e) {
+      console.warn('Cache clearing error:', e);
+      setCacheClearToast('Cache cleared with warnings.');
+      setTimeout(() => setCacheClearToast(''), 4000);
+    } finally {
+      setClearingCache(false);
+    }
   };
 
   const getDownloadItemSection = (item) => {
@@ -3278,7 +3343,47 @@ const LearningHub = ({ user, runtimeVersion, onOpenAdmin }) => {
                   ) : null}
                 </span>
               </div>
+              <div className="profile-detail-row" style={{ alignItems: 'center' }}>
+                <span className="profile-detail-label">App Cache</span>
+                <button 
+                  onClick={handleClearAllCaches}
+                  disabled={clearingCache}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: clearingCache ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                  title="Clear API responses and web cache (offline downloads remain safe)"
+                >
+                  <Trash2 size={13} />
+                  <span>{clearingCache ? 'Clearing...' : 'Clear All Cache'}</span>
+                </button>
+              </div>
             </div>
+
+            {cacheClearToast && (
+              <div style={{
+                marginTop: '12px',
+                padding: '8px 12px',
+                background: 'rgba(34, 197, 94, 0.15)',
+                border: '1px solid rgba(34, 197, 94, 0.35)',
+                borderRadius: '8px',
+                color: '#4ade80',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                textAlign: 'center'
+              }}>
+                {cacheClearToast}
+              </div>
+            )}
 
             <div style={{ marginTop: '20px' }}>
               <button

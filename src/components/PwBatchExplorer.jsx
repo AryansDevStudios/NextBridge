@@ -369,6 +369,20 @@ export default function PwBatchExplorer({
     }
   };
 
+  const handleOpenItem = (item) => {
+    if (!item) return;
+    if (onPlayVideo) {
+      onPlayVideo(item);
+    }
+  };
+
+  const handleOpenPdf = (item) => {
+    if (!item) return;
+    if (onPlayVideo) {
+      onPlayVideo({ ...item, type: 'pdf' });
+    }
+  };
+
   // Filtered Subjects
   const filteredSubjects = useMemo(() => {
     let list = subjects;
@@ -942,35 +956,6 @@ export default function PwBatchExplorer({
               {tab.label}
             </button>
           ))
-        )}
-
-        {/* Live Sync Action Button in Content View */}
-        {level === 'content' && (
-          <button
-            type="button"
-            onClick={() => setIsRefreshing(true)}
-            disabled={isRefreshing}
-            title="Check for newly uploaded lectures right now"
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid var(--border-color)',
-              color: isRefreshing ? 'var(--accent)' : 'var(--text-secondary)',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: isRefreshing ? 'wait' : 'pointer',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <RefreshCw size={13} className={isRefreshing ? "animate-spin text-amber-400" : ""} />
-            <span>{isRefreshing ? 'Checking Live...' : 'Live Sync'}</span>
-          </button>
         )}
       </div>
 
