@@ -26,7 +26,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
-import { pwApiService, toProxiedPdfUrl } from '../services/PwApiService';
+import { pwApiService, toProxiedPdfUrl, getPdfProxyCandidates } from '../services/PwApiService';
 import { ntApiService } from '../services/NtApiService';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
@@ -378,20 +378,15 @@ async function fetchVerifiedPdfBlob(candidates, signal) {
             }
           }
 
-          // Build candidate URLs with proxy fallbacks
+          // Build candidate URLs with 4-tier proxy fallbacks (Cloudflare -> Netlify -> Render -> Archive)
           const cleanUrl = resolvedDirectUrl.startsWith('/api/lxpdf/') 
             ? decodeURIComponent(resolvedDirectUrl.replace('/api/lxpdf/', ''))
             : resolvedDirectUrl;
 
-          const candidates = [
+          const candidates = Array.from(new Set([
             resolvedDirectUrl,
-            cleanUrl !== resolvedDirectUrl ? cleanUrl : null,
-            toProxiedPdfUrl(cleanUrl),
-            `/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
-            `https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
-            `https://nextbridgeapi.adsbackend04.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
-            `https://nxttoppers-archive.onrender.com/api/proxy/pdf?url=${encodeURIComponent(cleanUrl)}`
-          ].filter(Boolean);
+            ...getPdfProxyCandidates(cleanUrl)
+          ].filter(Boolean)));
 
           const result = await fetchVerifiedPdfBlob(candidates, abortCtrl.signal);
           if (!isMounted) return;
@@ -895,14 +890,10 @@ async function fetchVerifiedPdfBlob(candidates, signal) {
                   resolvePromise.then(async url => {
                     if (url && !url.includes('/dl/r/')) {
                       const cleanUrl = url.startsWith('/api/lxpdf/') ? decodeURIComponent(url.replace('/api/lxpdf/', '')) : url;
-                      const candidates = [
+                      const candidates = Array.from(new Set([
                         url,
-                        cleanUrl !== url ? cleanUrl : null,
-                        toProxiedPdfUrl(cleanUrl),
-                        `/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
-                        `https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/${encodeURIComponent(cleanUrl)}`,
-                        `https://nxttoppers-archive.onrender.com/api/proxy/pdf?url=${encodeURIComponent(cleanUrl)}`
-                      ].filter(Boolean);
+                        ...getPdfProxyCandidates(cleanUrl)
+                      ].filter(Boolean)));
                       const res = await fetchVerifiedPdfBlob(candidates);
                       const finalUrl = res?.blobUrl || (isNtPdfNeedingResolution ? ntApiService.toProxiedUrl(url) : toProxiedPdfUrl(url));
                       const cacheKey = String(item.id || item.url || '');

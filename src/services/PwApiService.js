@@ -680,8 +680,8 @@ export const pwApiService = {
 };
 
 /**
- * Transforms any static.pw.live URL into a CORS-safe proxied URL.
- * Uses lightweight Render CORS proxy as primary to avoid consuming Netlify bandwidth limits.
+ * Transforms any static.pw.live URL into a CORS-safe proxied URL using our
+ * high-performance Cloudflare Edge Gateway (Tier 1) as primary.
  */
 export function toProxiedPdfUrl(url) {
   if (!url || typeof url !== 'string') return '';
@@ -689,28 +689,117 @@ export function toProxiedPdfUrl(url) {
   if (url.includes('static.pw.live') && stripped.length < 5) {
     return ''; // Never proxy bare domain
   }
-  // If already proxied via Render or Netlify, return as is
-  if (url.includes('corsproxy-bppd.onrender.com') || url.startsWith('/api/pw-static') || url.includes('/api/pw-static/')) {
+  // If already proxied via Cloudflare, Netlify, or Render, return as is
+  if (
+    url.includes('workers.dev/api/proxy') ||
+    url.includes('corsproxy-bppd.onrender.com') ||
+    url.startsWith('/api/pw-static') ||
+    url.includes('/api/pw-static/')
+  ) {
     return url;
   }
 
   if (url.includes('static.pw.live')) {
-    // Primary: Render CORS proxy (Cloudflare cached, preserves Netlify 100GB monthly quota)
-    return `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(url)}`;
+    // Tier 1 Primary: Cloudflare Edge Worker Proxy (adsbackend01...06)
+    const baseUrl = activeBaseUrl.includes('workers.dev') ? activeBaseUrl : 'https://nextbridgeapi.adsbackend01.workers.dev';
+    return `${baseUrl}/api/proxy?url=${encodeURIComponent(url)}`;
   }
 
   return url;
 }
 
 /**
+ * Generates an ordered waterfall array of proxy candidate URLs according to priority:
+ * Tier 1: Cloudflare Edge Workers (adsbackend01 through adsbackend06)
+ * Tier 2: Netlify Edge Reverse Proxy CDN (/api/pw-static/...)
+ * Tier 3: Render Proxy (corsproxy-bppd.onrender.com)
+ * Tier 4: Backup Archive Proxy & Direct Fallback
+ */
+export function getPdfProxyCandidates(url) {
+  if (!url || typeof url !== 'string') return [];
+  const rawUrl = url.trim();
+
+  // Extract clean target URL if already wrapped in a proxy
+  let targetUrl = rawUrl;
+  if (
+    targetUrl.includes('corsproxy-bppd.onrender.com') ||
+    targetUrl.includes('/api/proxy?url=') ||
+    targetUrl.includes('/proxy/pdf?url=')
+  ) {
+    try {
+      const parsed = new URL(targetUrl);
+      const inner = parsed.searchParams.get('url');
+      if (inner) targetUrl = inner;
+    } catch (_) {}
+  }
+
+  const encodedTarget = encodeURIComponent(targetUrl);
+  const candidates = [];
+
+  // Direct access first if already a CORS-friendly domain (e.g. AWS CloudFront)
+  if (targetUrl.includes('cloudfront.net')) {
+    candidates.push(targetUrl);
+  }
+
+  // ─── TIER 1: Cloudflare Edge Workers Cluster (adsbackend01 to adsbackend06) ───
+  const cfWorkers = [
+    'https://nextbridgeapi.adsbackend01.workers.dev',
+    'https://nextbridgeapi.adsbackend02.workers.dev',
+    'https://nextbridgeapi.adsbackend03.workers.dev',
+    'https://nextbridgeapi.adsbackend04.workers.dev',
+    'https://nextbridgeapi.adsbackend05.workers.dev',
+    'https://nextbridgeapi.adsbackend06.workers.dev',
+    'https://nextbridge-pw-gateway.adsbackend01.workers.dev'
+  ];
+
+  for (const gw of cfWorkers) {
+    candidates.push(`${gw}/api/proxy?url=${encodedTarget}`);
+  }
+
+  // Also include direct Cloudflare lxpdf handler if available
+  if (targetUrl.includes('static.pw.live')) {
+    candidates.push(`https://nextbridgeapi.adsbackend01.workers.dev/api/lxpdf/${encodedTarget}`);
+  }
+
+  // ─── TIER 2: Netlify Edge Reverse Proxy CDN ───
+  if (targetUrl.includes('static.pw.live')) {
+    const relativePath = targetUrl.replace(/^https?:\/\/static\.pw\.live\/?/, '').trim();
+    if (relativePath && relativePath.length > 4) {
+      const isNative = typeof window !== 'undefined' && (
+        window.Capacitor?.isNativePlatform?.() ||
+        window.location.protocol === 'capacitor:' ||
+        window.location.protocol === 'ionic:'
+      );
+      if (isNative) {
+        candidates.push(`https://nextbridgeweb.netlify.app/api/pw-static/${relativePath}`);
+      } else {
+        const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : '';
+        if (origin) candidates.push(`${origin}/api/pw-static/${relativePath}`);
+        candidates.push(`https://nextbridgeweb.netlify.app/api/pw-static/${relativePath}`);
+      }
+    }
+  }
+
+  // ─── TIER 3: Render Proxy ───
+  candidates.push(`https://corsproxy-bppd.onrender.com/proxy?url=${encodedTarget}`);
+
+  // ─── TIER 4: Backup Render Archive Proxy & Direct Fallback ───
+  candidates.push(`https://nxttoppers-archive.onrender.com/api/proxy/pdf?url=${encodedTarget}`);
+  candidates.push(targetUrl);
+
+  // Return unique, valid candidate list
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+/**
  * Returns Netlify edge proxy URL for a given static.pw.live URL or Render proxy URL.
- * Used as reliable instant fallback if Render is waking from cold start.
+ * Used as reliable instant fallback if needed.
  */
 export function getNetlifyFallbackPdfUrl(url) {
   if (!url || typeof url !== 'string') return '';
   let targetUrl = url;
 
-  if (url.includes('corsproxy-bppd.onrender.com')) {
+  if (url.includes('corsproxy-bppd.onrender.com') || url.includes('/api/proxy?url=')) {
     try {
       const parsed = new URL(url);
       targetUrl = parsed.searchParams.get('url') || url;

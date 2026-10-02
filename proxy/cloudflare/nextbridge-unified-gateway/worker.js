@@ -1397,7 +1397,7 @@ async function handlePwPdfRedirect(url) {
       const d = body?.data;
       if (d?.baseUrl && d?.key) {
         const fullUrl = `${d.baseUrl.replace(/\/+$/, '')}/${d.key.replace(/^\/+/, '')}`;
-        const proxiedUrl = `https://corsproxy-bppd.onrender.com/proxy?url=${encodeURIComponent(fullUrl)}`;
+        const proxiedUrl = `${url.origin}/api/proxy?url=${encodeURIComponent(fullUrl)}`;
         return new Response(null, { status: 302, headers: { ...CORS_HEADERS, 'Location': proxiedUrl } });
       }
     }
@@ -1413,17 +1413,29 @@ async function handleUniversalProxy(url, request) {
   if (!targetUrl) return jsonResponse({ error: 'Missing ?url= query parameter' }, 400);
 
   try {
+    const forwardHeaders = new Headers();
+    forwardHeaders.set('User-Agent', UA);
+    forwardHeaders.set('Accept', request.headers.get('Accept') || '*/*');
+
+    const range = request.headers.get('Range');
+    if (range) {
+      forwardHeaders.set('Range', range);
+    }
+
     const proxyRes = await fetch(targetUrl, {
       method: request.method,
-      headers: { 'User-Agent': UA },
+      headers: forwardHeaders,
     });
 
     const newHeaders = new Headers(proxyRes.headers);
     Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
-    newHeaders.set('Cache-Control', 'public, max-age=86400, immutable');
+    newHeaders.delete('Content-Security-Policy');
+    newHeaders.delete('X-Frame-Options');
+    newHeaders.set('Cache-Control', 'public, max-age=86400');
 
     return new Response(proxyRes.body, {
       status: proxyRes.status,
+      statusText: proxyRes.statusText,
       headers: newHeaders,
     });
   } catch (err) {
