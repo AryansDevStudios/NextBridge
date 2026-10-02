@@ -969,9 +969,16 @@ function jsonResponse(data, status = 200) {
 }
 
 async function fetchDirect(url) {
-  return fetch(url, {
-    headers: { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` }
-  });
+  const headers = { 'User-Agent': UA, 'Origin': LX_ORIGIN, 'Referer': `${LX_ORIGIN}/study/batches` };
+
+  // Retry up to 3 times on transient upstream errors (401/429/5xx)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(url, { headers });
+    if (res.ok || attempt === 3) return res;
+    const s = res.status;
+    if (s !== 401 && s !== 429 && s < 500) return res; // non-transient error, don't retry
+    await new Promise(r => setTimeout(r, 150 * attempt));
+  }
 }
 
 async function fetchUpstream(targetUrl) {

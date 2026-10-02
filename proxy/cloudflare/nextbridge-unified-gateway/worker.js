@@ -646,11 +646,20 @@ async function fetchDirect(targetUrl, options = {}) {
   reqHeaders.set('User-Agent', UA);
   reqHeaders.set('Origin', LX_ORIGIN);
   reqHeaders.set('Referer', `${LX_ORIGIN}/study/batches`);
-  return fetch(targetUrl, {
+  const fetchOpts = {
     method: options.method || 'GET',
     headers: reqHeaders,
     body: options.body
-  });
+  };
+
+  // Retry up to 3 times on transient upstream errors (401/429/5xx)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(targetUrl, fetchOpts);
+    if (res.ok || attempt === 3) return res;
+    const s = res.status;
+    if (s !== 401 && s !== 429 && s < 500) return res; // non-transient error, don't retry
+    await new Promise(r => setTimeout(r, 150 * attempt));
+  }
 }
 
 async function handlePwDataRpc(body, request, env, ctx, prefix = '') {
