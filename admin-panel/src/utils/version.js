@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.16';
-export const CURRENT_LATEST_CODE = 30316;
+export const CURRENT_LATEST_VERSION = '3.3.17';
+export const CURRENT_LATEST_CODE = 30317;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.16',
-  latestVersionCode: 30316,
+  latestAppVersion: '3.3.17',
+  latestVersionCode: 30317,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.16: DASH MPD XML manifest entity sanitization and video playback safeguards.'
+  releaseNotes: '• Version 3.3.17: Upstream retry resilience and DASH manifest XML entity sanitization.'
 };
 
 /**
