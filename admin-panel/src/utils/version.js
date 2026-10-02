@@ -28,18 +28,18 @@
  */
 
 // ─── BUMP BOTH OF THESE ON EVERY RELEASE ───────────────────
-export const CURRENT_LATEST_VERSION = '3.3.11';
-export const CURRENT_LATEST_CODE = 30311;
+export const CURRENT_LATEST_VERSION = '3.3.12';
+export const CURRENT_LATEST_CODE = 30312;
 // ───────────────────────────────────────────────────────────
 
 export const DEFAULT_ANDROID_VERSION_CONFIG = {
   minAppVersion: '2.7.0',
   minVersionCode: 20700,
-  latestAppVersion: '3.3.11',
-  latestVersionCode: 30311,
+  latestAppVersion: '3.3.12',
+  latestVersionCode: 30312,
   apkDownloadUrl: '',
   defaultMessage: 'A mandatory app update is required to continue using NextBridge.',
-  releaseNotes: '• Version 3.3.11: Dynamic PW Auth cookie relay, RTDB signature pool integration, and Admin PW Auth manager.'
+  releaseNotes: '• Version 3.3.12: Instant PDF blob caching, URL breadcrumb & back gesture routing, NextToppers Ingestion Hub, and Admin panel scroll isolation.'
 };
 
 /**
