@@ -97,7 +97,51 @@ async function callRpc(action, params = {}, method = 'GET', payload = null) {
   throw new Error(`PW API Error: ${lastError?.message || 'All gateways unreachable'}`);
 }
 
+async function patchFirebaseChapterItems(batchId, subjectId, chapterId, updatedItems) {
+  try {
+    const cached = await getCachedBatchData(batchId);
+    if (!cached || !Array.isArray(cached.subjects)) return;
+
+    const sIdx = cached.subjects.findIndex(s => 
+      String(s.subjectId || s.id) === String(subjectId) ||
+      String(s.subject_name || s.name || '').toLowerCase() === String(subjectId).toLowerCase()
+    );
+    if (sIdx === -1) return;
+
+    const fIdx = (cached.subjects[sIdx].folders || []).findIndex(f => String(f.id) === String(chapterId));
+    if (fIdx === -1) return;
+
+    // Update in memory cache
+    cached.subjects[sIdx].folders[fIdx].items = updatedItems;
+    batchCache.set(String(batchId), cached);
+
+    // Update in Firebase RTDB asynchronously
+    const candidateKeys = [String(batchId), String(batchId).replace(/^batch_/, '')];
+    for (const k of candidateKeys) {
+      fetch(`${FIREBASE_DB_URL}/nexthope_batches/batch_${encodeURIComponent(k)}/subjects/${sIdx}/folders/${fIdx}/items.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedItems)
+      }).catch(() => {});
+    }
+  } catch (_) {}
+}
+
 export const pwApiService = {
+  /**
+   * Fetch today's live/scheduled lectures on demand
+   */
+  async getTodaysSchedule(batchId) {
+    try {
+      const data = await callRpc('pw_tdy_sch', { batchId });
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.data)) return data.data;
+      return [];
+    } catch (_) {
+      return [];
+    }
+  },
+
   /**
    * Fetch batch detail & all subjects
    */
@@ -220,92 +264,14 @@ export const pwApiService = {
   },
 
   /**
-   * Fetch lectures, DPPs, and notes for a chapter
+   * Fetch lectures, DPPs, and notes for a chapter with Stale-While-Revalidate (SWR) support.
+   * Instantly serves cached items, and revalidates upstream in the background, pushing
+   * new items into state and Firebase RTDB in real time (<1s).
    */
-  async getChapterItems(batchId, subject, chapterId, folderTitle = '') {
+  async getChapterItems(batchId, subject, chapterId, folderTitle = '', options = {}) {
     const subjectId = typeof subject === 'string' ? subject : (subject.subjectId || subject.subject_id);
     const masterId = subject.masterId;
-
-    // 1. Try Firebase RTDB pre-cached items
-    const cachedBatch = await getCachedBatchData(batchId);
-    if (cachedBatch && Array.isArray(cachedBatch.subjects)) {
-      const sObj = cachedBatch.subjects.find(s => 
-        String(s.subjectId || s.id) === String(subjectId) ||
-        String(s.subject_name || s.name || '').toLowerCase() === String(subject.subject_name || subject.subject || subject.name || '').toLowerCase()
-      );
-      if (sObj && Array.isArray(sObj.folders)) {
-        const fObj = sObj.folders.find(f => String(f.id) === String(chapterId) || String(f.title) === String(folderTitle));
-        if (fObj && Array.isArray(fObj.items) && fObj.items.length > 0) {
-          return fObj.items.map(it => ({
-            ...it,
-            folder_path: folderTitle || it.folder_path,
-            subject_name: subject.subject_name || subject.subject || it.subject_name
-          }));
-        }
-      }
-    }
-
-    // 2. Fallback to live RPC
-    const [lecturesRes, notesRes, dppPdfRes] = await Promise.allSettled([
-      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'LECTURE', skip: 0, limit: 100 }),
-      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'NOTES', skip: 0, limit: 100 }),
-      callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'DPP_PDF', skip: 0, limit: 100 })
-    ]);
-
-    const extractArray = (resVal) => {
-      if (!resVal) return [];
-      if (Array.isArray(resVal)) return resVal;
-      if (Array.isArray(resVal.data)) return resVal.data;
-      if (Array.isArray(resVal.data?.data)) return resVal.data.data;
-      return [];
-    };
-
-    const lecturesList = lecturesRes.status === 'fulfilled' ? extractArray(lecturesRes.value) : [];
-    const notesList = notesRes.status === 'fulfilled' ? extractArray(notesRes.value) : [];
-    const dppPdfList = dppPdfRes.status === 'fulfilled' ? extractArray(dppPdfRes.value) : [];
-
-    const items = [];
-
-    const formatDateStr = (dateVal) => {
-      if (!dateVal) return '';
-      try {
-        return new Date(dateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      } catch (_) {
-        return '';
-      }
-    };
-
-    // Parse Lectures
-    lecturesList.forEach(item => {
-      const d = item.data || {};
-      let durationSecs = 0;
-      if (d.videoDetails?.duration) {
-        const parts = String(d.videoDetails.duration).split(':').map(Number);
-        if (parts.length === 3) durationSecs = parts[0] * 3600 + parts[1] * 60 + parts[2];
-        else if (parts.length === 2) durationSecs = parts[0] * 60 + parts[1];
-      }
-
-      items.push({
-        id: item._id || d._id,
-        title: d.topic || 'Video Lecture',
-        type: 'video',
-        subCategory: 'LECTURE',
-        badgeText: 'VIDEO',
-        isDynamicPw: true,
-        batchId,
-        subjectId,
-        masterId,
-        scheduleId: item._id || d._id,
-        videoId: d.videoDetails?._id || d.videoDetails?.id || '',
-        vUrl: d.url || d.videoDetails?.videoUrl || '',
-        folder_path: folderTitle,
-        thumbnail: d.videoDetails?.image || '',
-        duration: durationSecs,
-        dateStr: formatDateStr(d.date),
-        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-        subject_name: subject.subject_name || subject.subject || 'Physics'
-      });
-    });
+    const { onLiveUpdate, forceLive } = (typeof options === 'object' && options !== null) ? options : {};
 
     // Helper to safely resolve attachment URLs from PW responses
     const isFullPdfUrl = (u) => {
@@ -334,63 +300,176 @@ export const pwApiService = {
       return toProxiedPdfUrl(fullUrl);
     };
 
-    // Parse Notes
-    notesList.forEach(item => {
-      const d = item.data || {};
-      const homework = d.homeworkIds?.[0];
-      const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
-      const pdfUrl = resolveAttachmentPdfUrl(d);
-      const cleanScheduleId = item._id || d._id;
+    // Live RPC Fetcher
+    const fetchLiveItems = async () => {
+      const [lecturesRes, notesRes, dppPdfRes] = await Promise.allSettled([
+        callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'LECTURE', skip: 0, limit: 100 }),
+        callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'NOTES', skip: 0, limit: 100 }),
+        callRpc('pw_sch_cntnt', { batchId, subjectId, tagId: chapterId, contentType: 'DPP_PDF', skip: 0, limit: 100 })
+      ]);
 
-      items.push({
-        id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
-        title: d.topic || homework?.topic || 'Class Notes',
-        type: 'pdf',
-        subCategory: 'NOTES',
-        badgeText: 'NOTES',
-        isDynamicPw: true,
-        batchId,
-        subjectId,
-        scheduleId: cleanScheduleId,
-        attachmentId: attach?._id || '',
-        url: pdfUrl,
-        raw_file_url: pdfUrl,
-        folder_path: folderTitle,
-        dateStr: formatDateStr(d.date),
-        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-        subject_name: subject.subject_name || subject.subject || 'Physics'
+      const extractArray = (resVal) => {
+        if (!resVal) return [];
+        if (Array.isArray(resVal)) return resVal;
+        if (Array.isArray(resVal.data)) return resVal.data;
+        if (Array.isArray(resVal.data?.data)) return resVal.data.data;
+        return [];
+      };
+
+      const lecturesList = lecturesRes.status === 'fulfilled' ? extractArray(lecturesRes.value) : [];
+      const notesList = notesRes.status === 'fulfilled' ? extractArray(notesRes.value) : [];
+      const dppPdfList = dppPdfRes.status === 'fulfilled' ? extractArray(dppPdfRes.value) : [];
+
+      const items = [];
+
+      const formatDateStr = (dateVal) => {
+        if (!dateVal) return '';
+        try {
+          return new Date(dateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        } catch (_) {
+          return '';
+        }
+      };
+
+      // Parse Lectures
+      lecturesList.forEach(item => {
+        const d = item.data || {};
+        let durationSecs = 0;
+        if (d.videoDetails?.duration) {
+          const parts = String(d.videoDetails.duration).split(':').map(Number);
+          if (parts.length === 3) durationSecs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          else if (parts.length === 2) durationSecs = parts[0] * 60 + parts[1];
+        }
+
+        items.push({
+          id: item._id || d._id,
+          title: d.topic || 'Video Lecture',
+          type: 'video',
+          subCategory: 'LECTURE',
+          badgeText: 'VIDEO',
+          isDynamicPw: true,
+          batchId,
+          subjectId,
+          masterId,
+          scheduleId: item._id || d._id,
+          videoId: d.videoDetails?._id || d.videoDetails?.id || '',
+          vUrl: d.url || d.videoDetails?.videoUrl || '',
+          folder_path: folderTitle,
+          thumbnail: d.videoDetails?.image || '',
+          duration: durationSecs,
+          dateStr: formatDateStr(d.date),
+          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+          subject_name: subject.subject_name || subject.subject || 'Physics'
+        });
       });
-    });
 
-    // Parse DPP PDFs
-    dppPdfList.forEach(item => {
-      const d = item.data || {};
-      const homework = d.homeworkIds?.[0];
-      const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
-      const pdfUrl = resolveAttachmentPdfUrl(d);
-      const cleanScheduleId = item._id || d._id;
+      // Parse Notes
+      notesList.forEach(item => {
+        const d = item.data || {};
+        const homework = d.homeworkIds?.[0];
+        const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
+        const pdfUrl = resolveAttachmentPdfUrl(d);
+        const cleanScheduleId = item._id || d._id;
 
-      items.push({
-        id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,
-        title: d.topic || homework?.topic || 'Daily Practice Problem (DPP)',
-        type: 'pdf',
-        subCategory: 'DPP_PDF',
-        badgeText: 'DPP PDF',
-        isDynamicPw: true,
-        batchId,
-        subjectId,
-        scheduleId: cleanScheduleId,
-        attachmentId: attach?._id || '',
-        url: pdfUrl,
-        raw_file_url: pdfUrl,
-        folder_path: folderTitle,
-        dateStr: formatDateStr(d.date),
-        created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
-        subject_name: subject.subject_name || subject.subject || 'Physics'
+        items.push({
+          id: item._id ? `pdf_${item._id}` : `pdf_${Math.random()}`,
+          title: d.topic || homework?.topic || 'Class Notes',
+          type: 'pdf',
+          subCategory: 'NOTES',
+          badgeText: 'NOTES',
+          isDynamicPw: true,
+          batchId,
+          subjectId,
+          scheduleId: cleanScheduleId,
+          attachmentId: attach?._id || '',
+          url: pdfUrl,
+          raw_file_url: pdfUrl,
+          folder_path: folderTitle,
+          dateStr: formatDateStr(d.date),
+          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+          subject_name: subject.subject_name || subject.subject || 'Physics'
+        });
       });
-    });
 
-    return items;
+      // Parse DPP PDFs
+      dppPdfList.forEach(item => {
+        const d = item.data || {};
+        const homework = d.homeworkIds?.[0];
+        const attach = homework?.attachmentIds?.[0] || d.attachmentIds?.[0];
+        const pdfUrl = resolveAttachmentPdfUrl(d);
+        const cleanScheduleId = item._id || d._id;
+
+        items.push({
+          id: item._id ? `dpp_${item._id}` : `dpp_${Math.random()}`,
+          title: d.topic || homework?.topic || 'Daily Practice Problem (DPP)',
+          type: 'pdf',
+          subCategory: 'DPP_PDF',
+          badgeText: 'DPP PDF',
+          isDynamicPw: true,
+          batchId,
+          subjectId,
+          scheduleId: cleanScheduleId,
+          attachmentId: attach?._id || '',
+          url: pdfUrl,
+          raw_file_url: pdfUrl,
+          folder_path: folderTitle,
+          dateStr: formatDateStr(d.date),
+          created_at: d.date ? new Date(d.date).getTime() / 1000 : 0,
+          subject_name: subject.subject_name || subject.subject || 'Physics'
+        });
+      });
+
+      return items;
+    };
+
+    // 1. Try Firebase RTDB pre-cached items
+    let cachedItems = null;
+    if (!forceLive) {
+      const cachedBatch = await getCachedBatchData(batchId);
+      if (cachedBatch && Array.isArray(cachedBatch.subjects)) {
+        const sObj = cachedBatch.subjects.find(s => 
+          String(s.subjectId || s.id) === String(subjectId) ||
+          String(s.subject_name || s.name || '').toLowerCase() === String(subject.subject_name || subject.subject || subject.name || '').toLowerCase()
+        );
+        if (sObj && Array.isArray(sObj.folders)) {
+          const fObj = sObj.folders.find(f => String(f.id) === String(chapterId) || String(f.title) === String(folderTitle));
+          if (fObj && Array.isArray(fObj.items) && fObj.items.length > 0) {
+            cachedItems = fObj.items.map(it => ({
+              ...it,
+              folder_path: folderTitle || it.folder_path,
+              subject_name: subject.subject_name || subject.subject || it.subject_name
+            }));
+          }
+        }
+      }
+    }
+
+    // 2. Stale-While-Revalidate Trigger
+    if (cachedItems && !forceLive) {
+      if (typeof onLiveUpdate === 'function') {
+        // Asynchronously check live edge worker without delaying the UI render
+        setTimeout(async () => {
+          try {
+            const liveItems = await fetchLiveItems();
+            if (liveItems && liveItems.length > 0) {
+              const cachedIds = new Set(cachedItems.map(it => String(it.id || it.scheduleId)));
+              const newArrivals = liveItems.filter(it => !cachedIds.has(String(it.id || it.scheduleId)));
+              if (newArrivals.length > 0) {
+                newArrivals.forEach(it => { it.isNewlyUploaded = true; });
+                const merged = [...newArrivals, ...cachedItems];
+                onLiveUpdate(merged, newArrivals);
+                // Patch cloud database in background so other students get it immediately
+                patchFirebaseChapterItems(batchId, subjectId, chapterId, merged);
+              }
+            }
+          } catch (_) {}
+        }, 50);
+      }
+      return cachedItems;
+    }
+
+    // 3. Fallback to live RPC
+    return fetchLiveItems();
   },
 
   /**

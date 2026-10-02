@@ -25,7 +25,8 @@ import {
   Layers,
   Info,
   Clock,
-  ExternalLink
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { pwApiService } from '../services/PwApiService';
 import { getBatchDisplayName } from '../utils/batchConfig';
@@ -151,6 +152,8 @@ export default function PwBatchExplorer({
   const [contentMap, setContentMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [liveToast, setLiveToast] = useState('');
 
   // Watched state tracking in localStorage
   const [watchedSet, setWatchedSet] = useState(() => {
@@ -215,23 +218,35 @@ export default function PwBatchExplorer({
       });
   }, [selectedSubject, batchId]);
 
-  // 3. Fetch Content when entering a Chapter
+  // 3. Fetch Content when entering a Chapter (SWR with Realtime Live Revalidation)
   useEffect(() => {
     if (!selectedChapter || !selectedSubject) return;
     const chId = selectedChapter.chapterId || selectedChapter.id;
-    if (contentMap[chId]) return;
+    if (contentMap[chId] && !isRefreshing) return;
 
-    setLoading(true);
-    pwApiService.getChapterItems(batchId, selectedSubject, chId, selectedChapter.title)
+    if (!contentMap[chId]) setLoading(true);
+
+    pwApiService.getChapterItems(batchId, selectedSubject, chId, selectedChapter.title, {
+      forceLive: isRefreshing,
+      onLiveUpdate: (freshItems, newAdditions) => {
+        setContentMap(prev => ({ ...prev, [chId]: freshItems }));
+        if (newAdditions && newAdditions.length > 0) {
+          setLiveToast(`⚡ ${newAdditions.length} newly uploaded lecture${newAdditions.length > 1 ? 's' : ''} just arrived!`);
+          setTimeout(() => setLiveToast(''), 4500);
+        }
+      }
+    })
       .then(items => {
         setContentMap(prev => ({ ...prev, [chId]: items }));
         setLoading(false);
+        setIsRefreshing(false);
       })
       .catch(err => {
         console.error('Failed to load PW chapter content:', err);
         setLoading(false);
+        setIsRefreshing(false);
       });
-  }, [selectedChapter, selectedSubject, batchId]);
+  }, [selectedChapter, selectedSubject, batchId, isRefreshing]);
 
   // Handlers
   const handleOpenSubject = (subject) => {
@@ -656,6 +671,35 @@ export default function PwBatchExplorer({
             </button>
           ))
         )}
+
+        {/* Live Sync Action Button in Content View */}
+        {level === 'content' && (
+          <button
+            type="button"
+            onClick={() => setIsRefreshing(true)}
+            disabled={isRefreshing}
+            title="Check for newly uploaded lectures right now"
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid var(--border-color)',
+              color: isRefreshing ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: isRefreshing ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <RefreshCw size={13} className={isRefreshing ? "animate-spin text-amber-400" : ""} />
+            <span>{isRefreshing ? 'Checking Live...' : 'Live Sync'}</span>
+          </button>
+        )}
       </div>
 
       {/* ── LOADING SPINNER ── */}
@@ -1008,6 +1052,22 @@ export default function PwBatchExplorer({
                         }}>
                           {item.badgeText || (isVideo ? 'VIDEO' : 'PDF')}
                         </span>
+                        {item.isNewlyUploaded && (
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: '0.65rem',
+                            fontWeight: 900,
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                            border: '1px solid rgba(245, 158, 11, 0.5)',
+                            color: '#fbbf24',
+                            letterSpacing: '0.5px',
+                            marginLeft: '6px'
+                          }}>
+                            🔥 NEW TODAY
+                          </span>
+                        )}
                       </div>
 
                       {/* Title */}
@@ -1109,6 +1169,30 @@ export default function PwBatchExplorer({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ── REALTIME LIVE TOAST NOTIFICATION ── */}
+      {liveToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 9999,
+          backgroundColor: '#0f172a',
+          border: '1px solid #f59e0b',
+          boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+          borderRadius: '12px',
+          padding: '12px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          color: '#fbbf24',
+          fontSize: '0.88rem',
+          fontWeight: 700,
+          pointerEvents: 'none'
+        }}>
+          <span>{liveToast}</span>
         </div>
       )}
     </div>
