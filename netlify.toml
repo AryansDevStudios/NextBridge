@@ -39,6 +39,12 @@
   force = true
 
 [[redirects]]
+  from = "/manifest/*"
+  to = "https://nextbridgeapi.adsbackend01.workers.dev/manifest/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
   status = 200

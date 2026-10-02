@@ -5,7 +5,7 @@
  * - Network-first for API, cache-first for static assets
  */
 
-const CACHE_VERSION = 'nb-v3.3.10';
+const CACHE_VERSION = 'nb-v3.3.18';
 const SHELL_CACHE  = `${CACHE_VERSION}-shell`;
 const API_CACHE    = `${CACHE_VERSION}-api`;
 
@@ -92,6 +92,29 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── Fetch: main routing ───────────────────────────────────────────────────────
+
+// Paths that must never be intercepted by the static asset handler.
+// These are proxy/API routes that Netlify redirects or the browser must handle directly.
+const SW_PASSTHROUGH_PREFIXES = ['/manifest/', '/api/', '/buildcode/'];
+
+// Content-Types that are safe to cache as static assets.
+// Prevents caching SPA fallback HTML responses for non-HTML resource URLs.
+const CACHEABLE_STATIC_TYPES = [
+  'application/javascript', 'text/javascript',
+  'text/css',
+  'image/', 'font/',
+  'application/wasm',
+  'application/json',
+  'image/svg+xml',
+  'application/manifest+json'
+];
+
+function isStaticContentType(contentType) {
+  if (!contentType) return false;
+  const ct = contentType.toLowerCase();
+  return CACHEABLE_STATIC_TYPES.some(t => ct.includes(t));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -102,19 +125,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Navigation requests (HTML pages) → cache-first with network fallback
+  // 2. Navigation requests (HTML pages) → network-first with cache fallback
   if (request.mode === 'navigate') {
     event.respondWith(handleNavigation(request));
     return;
   }
 
-  // 3. Same-origin JS/CSS/images → stale-while-revalidate
+  // 3. Passthrough: /manifest/, /api/, /buildcode/ — never intercept, let browser handle
+  if (SW_PASSTHROUGH_PREFIXES.some(p => url.pathname.startsWith(p))) {
+    return; // fall through to network
+  }
+
+  // 4. Same-origin JS/CSS/images → stale-while-revalidate
   if (url.origin === self.location.origin) {
     event.respondWith(handleStaticAsset(request));
     return;
   }
 
-  // 4. Cross-origin (CDN, Firebase, etc.) → network only, no cache
+  // 5. Cross-origin (CDN, Firebase, etc.) → network only, no cache
   // Just let it fall through normally
 });
 
@@ -196,10 +224,24 @@ async function handleStaticAsset(request) {
   const cache  = await caches.open(SHELL_CACHE);
   const cached = await cache.match(request);
 
-  const networkFetch = fetch(request).then((res) => {
-    if (res.ok) cache.put(request, res.clone());
+  // Start network fetch in background for revalidation
+  const networkPromise = fetch(request).then((res) => {
+    // Only cache responses with genuine static content-types.
+    // This prevents Netlify's SPA catch-all (/* → /index.html) from
+    // poisoning the cache with HTML responses for JS/CSS/image URLs.
+    if (res.ok && isStaticContentType(res.headers.get('content-type'))) {
+      cache.put(request, res.clone());
+    }
     return res;
   }).catch(() => null);
 
-  return cached || networkFetch || new Response('Offline', { status: 503 });
+  // Return cached immediately if available (stale-while-revalidate)
+  if (cached) return cached;
+
+  // No cache hit: must wait for network
+  const networkResponse = await networkPromise;
+  if (networkResponse) return networkResponse;
+
+  // Both cache and network failed
+  return new Response('Offline', { status: 503 });
 }
