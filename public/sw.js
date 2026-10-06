@@ -5,7 +5,7 @@
  * - Network-first for API, cache-first for static assets
  */
 
-const CACHE_VERSION = 'nb-v3.4.0';
+const CACHE_VERSION = 'nb-v3.4.1';
 const SHELL_CACHE  = `${CACHE_VERSION}-shell`;
 const API_CACHE    = `${CACHE_VERSION}-api`;
 
@@ -140,8 +140,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Navigation requests (HTML pages) → network-first with cache fallback
-  if (request.mode === 'navigate') {
+  // 2. Navigation & document requests (HTML pages & SPA shell) → network-first with cache fallback
+  const isDocOrNavigate = request.mode === 'navigate' ||
+    request.destination === 'document' ||
+    (request.headers.get('accept') || '').includes('text/html') ||
+    (url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/index.html'));
+
+  if (isDocOrNavigate) {
     event.respondWith(handleNavigation(request));
     return;
   }
@@ -223,6 +228,12 @@ async function handleNavigation(request) {
     if (networkResponse && networkResponse.ok) {
       const cache = await caches.open(SHELL_CACHE);
       cache.put('/index.html', networkResponse.clone());
+      return networkResponse;
+    }
+    // If server responded with 5xx (e.g. Netlify 502/503/504), serve cached shell
+    if (networkResponse && networkResponse.status >= 500) {
+      const cached = await caches.match('/index.html');
+      if (cached) return cached;
     }
     return networkResponse;
   } catch {
@@ -258,6 +269,10 @@ async function handleStaticAsset(request) {
   // No cache hit: must wait for network
   const networkResponse = await networkPromise;
   if (networkResponse) return networkResponse;
+
+  // If request happens to be for document or shell, fall back to /index.html
+  const fallbackShell = await caches.match('/index.html');
+  if (fallbackShell) return fallbackShell;
 
   // Both cache and network failed
   return new Response('Offline', { status: 503 });

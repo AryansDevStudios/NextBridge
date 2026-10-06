@@ -26,7 +26,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { downloadManager } from '../services/DownloadManager';
-import { pwApiService, toProxiedPdfUrl, getPdfProxyCandidates, isCloudFrontSignatureExpired } from '../services/PwApiService';
+import { pwApiService, getPwBaseUrl, toProxiedPdfUrl, getPdfProxyCandidates, isCloudFrontSignatureExpired } from '../services/PwApiService';
 import { ntApiService } from '../services/NtApiService';
 import YouTubePlayerCore from './YouTubePlayerCore';
 import { formatSeekTime, convertDownloadUrlToHls } from '../utils/playerHelpers';
@@ -84,14 +84,20 @@ const VideoPlayer = ({ item, onClose, user }) => {
     )
   );
 
+  const resolveInitialFullUrl = useCallback((rawItem) => {
+    if (!rawItem?.url) return '';
+    if (rawItem.url.startsWith('/manifest/') || rawItem.url.startsWith('/')) {
+      const baseUrl = (typeof pwApiService?.getPwBaseUrl === 'function' ? pwApiService.getPwBaseUrl() : getPwBaseUrl()) || '';
+      return `${baseUrl}${rawItem.url.startsWith('/') ? '' : '/'}${rawItem.url}`;
+    }
+    return rawItem.url;
+  }, []);
+
   const [resolvedVideoItem, setResolvedVideoItem] = useState(() => {
     if (isVideoNeedingResolution) {
       return { ...item, url: '' };
     }
-    const fullUrl = item.url && (item.url.startsWith('/manifest/') || item.url.startsWith('/'))
-      ? `${pwApiService.getPwBaseUrl()}${item.url.startsWith('/') ? '' : '/'}${item.url}`
-      : item.url;
-    return { ...item, url: fullUrl };
+    return { ...item, url: resolveInitialFullUrl(item) };
   });
   const [isResolvingVideo, setIsResolvingVideo] = useState(isVideoNeedingResolution);
   const [videoResolveError, setVideoResolveError] = useState('');
@@ -118,14 +124,11 @@ const VideoPlayer = ({ item, onClose, user }) => {
         }
       });
     } else {
-      const fullUrl = item.url && (item.url.startsWith('/manifest/') || item.url.startsWith('/'))
-        ? `${pwApiService.getPwBaseUrl()}${item.url.startsWith('/') ? '' : '/'}${item.url}`
-        : item.url;
-      setResolvedVideoItem({ ...item, url: fullUrl });
+      setResolvedVideoItem({ ...item, url: resolveInitialFullUrl(item) });
       setIsResolvingVideo(false);
     }
     return () => { isMounted = false; };
-  }, [item, isVideoNeedingResolution]);
+  }, [item, isVideoNeedingResolution, resolveInitialFullUrl]);
 
   const isDirectCloudFrontPdf = Boolean(
     item.type === 'pdf' &&

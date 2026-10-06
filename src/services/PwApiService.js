@@ -156,6 +156,10 @@ export const pwApiService = {
     clearPwApiCaches();
   },
 
+  getPwBaseUrl() {
+    return getPwBaseUrl();
+  },
+
   /**
    * Fetch today's live/scheduled lectures on demand
    */
